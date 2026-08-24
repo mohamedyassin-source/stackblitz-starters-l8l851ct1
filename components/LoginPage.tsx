@@ -16,7 +16,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [requirePasswordChange, setRequirePasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [tempUserData, setTempUserData] = useState<any>(null); // لحفظ بيانات المستخدم مؤقتاً
+  const [tempUserData, setTempUserData] = useState<any>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +31,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const { data, error } = await supabase
       .from('employees')
       .select('*')
-      .eq('employee_code', employeeCode.trim())
+      .or(`employee_code.eq.${employeeCode.trim()},employee_id.eq.${employeeCode.trim()}`)
       .single();
 
     setLoading(false);
@@ -41,19 +41,28 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       return;
     }
 
-    if (data.password && data.password !== password) {
+    // 🎯 كلمة المرور الافتراضية المتوقعة (إما 123456 أو كود الموظف نفسه أو كلمة السر المسجلة)
+    const isDefaultPassword = password === '123456' || password === data.employee_code;
+    const hasCustomPassword = data.password && data.password !== '';
+
+    // 1. لو الموظف معندوش باسورد مسجلة أو بيستخدم 123456 -> يحوله لتغيير الباسورد
+    if (!hasCustomPassword || isDefaultPassword || data.must_change_password) {
+      if (hasCustomPassword && data.password !== password && !isDefaultPassword) {
+        setErrorMsg('كلمة السر غير صحيحة.');
+        return;
+      }
+      setTempUserData(data);
+      setRequirePasswordChange(true);
+      return;
+    }
+
+    // 2. التحقق العادي من الباسورد للمستخدمين القدامى
+    if (data.password !== password) {
       setErrorMsg('كلمة السر غير صحيحة.');
       return;
     }
 
-    // 🚨 هل يستخدم كلمة المرور الافتراضية؟
-    if (password === '123456') {
-      setTempUserData(data); // حفظ بياناته
-      setRequirePasswordChange(true); // تحويله لشاشة تغيير الباسورد
-      return;
-    }
-
-    // 🌟 تسجيل دخول طبيعي لو الباسورد مش 123456
+    // 🌟 دخول طبيعي
     proceedToLogin(data);
   };
 
@@ -62,36 +71,38 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setErrorMsg('');
 
     if (newPassword.length < 6) {
-      setErrorMsg('كلمة السر الجديدة يجب أن تكون 6 أحرف على الأقل.');
+      setErrorMsg('كلمة السر الجديدة يجب أن تكون 6 أحرف/أرقام على الأقل.');
       return;
     }
     if (newPassword !== confirmPassword) {
       setErrorMsg('كلمات المرور غير متطابقة.');
       return;
     }
-    if (newPassword === '123456') {
-      setErrorMsg('لا يمكنك استخدام كلمة السر الافتراضية مرة أخرى.');
+    if (newPassword === '123456' || newPassword === tempUserData.employee_code) {
+      setErrorMsg('لا يمكنك استخدام كلمة السر الافتراضية أو الكود ككلمة سر جديدة.');
       return;
     }
 
     setLoading(true);
 
-    // 🌟 تحديث كلمة المرور في قاعدة البيانات
+    // 🌟 تحديث كلمة المرور في قاعدة البيانات وإزالة شرط التغيير
     const { error } = await supabase
       .from('employees')
-      .update({ password: newPassword })
+      .update({ 
+        password: newPassword,
+        must_change_password: false 
+      })
       .eq('employee_code', tempUserData.employee_code);
 
     setLoading(false);
 
     if (error) {
-      setErrorMsg('حدث خطأ أثناء تحديث كلمة المرور، يرجى المحاولة لاحقاً.');
+      setErrorMsg('حدث خطأ أثناء تحديث كلمة المرور: ' + error.message);
       return;
     }
 
-    // نجاح التغيير، الدخول للنظام
     alert('✅ تم تغيير كلمة السر بنجاح! جاري دخولك للنظام...');
-    proceedToLogin(tempUserData);
+    proceedToLogin({ ...tempUserData, password: newPassword });
   };
 
   const proceedToLogin = (data: any) => {
@@ -99,7 +110,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       code: data.employee_code,
       name: data.employee_name,
       department: data.department,
-      role: data.role || 'موظف',
+      role: data.role || (data.department === 'الموارد البشرية' ? 'HR' : 'Employee'),
       company: data.company
     };
 
@@ -129,13 +140,14 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </div>
         )}
 
-        {/* 🌟 إذا كان المستخدم يحتاج لتغيير كلمة السر */}
+        {/* 🌟 شاشة تغيير كلمة السر لأول مرة */}
         {requirePasswordChange ? (
           <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كلمة السر الجديدة:</label>
               <input
                 type="password"
+                required
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
@@ -146,6 +158,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>تأكيد كلمة السر:</label>
               <input
                 type="password"
+                required
                 placeholder="••••••••"
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}
@@ -167,6 +180,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كود الموظف:</label>
               <input
                 type="text"
+                required
                 placeholder="مثال: 10025"
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
@@ -177,6 +191,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كلمة السر:</label>
               <input
                 type="password"
+                required
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
