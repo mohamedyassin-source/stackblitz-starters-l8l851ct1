@@ -129,13 +129,15 @@ export default function SignaturesPage() {
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الموظف</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الإدارة</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>مدة التجديد</th>
+                {/* 🌟 عمود جديد لتاريخ الانتهاء الجديد */}
+                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>تاريخ الانتهاء الجديد</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>حالة التوقيع</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
               </tr>
             </thead>
             <tbody>
               {filteredRequests.length === 0 ? (
-                <tr><td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد عقود مطابقة.</td></tr>
+                <tr><td colSpan={9} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد عقود مطابقة.</td></tr>
               ) : filteredRequests.map((req) => (
                 <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? '#f8fafc' : 'transparent' }}>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
@@ -150,7 +152,16 @@ export default function SignaturesPage() {
                   <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{req.employee_code}</td>
                   <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.employee_name}</td>
                   <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{req.department || '—'}</td>
-                  <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#15803d' }}>{req.renewal_months || 12} شهور</td>
+                  
+                  {/* 🌟 مدة التجديد الفعلية */}
+                  <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#15803d' }}>
+                    {req.renewal_months ? `${req.renewal_months} شهور` : 'تاريخ مخصص'}
+                  </td>
+
+                  {/* 🌟 تاريخ نهاية العقد الجديد */}
+                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>
+                    {req.new_contract_end_date || '—'}
+                  </td>
                   
                   <td style={{ padding: '8px 10px' }}>
                     {req.signature_status === 'تم التوقيع' ? 
