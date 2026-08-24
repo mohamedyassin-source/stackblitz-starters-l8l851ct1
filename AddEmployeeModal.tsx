@@ -1,4 +1,12 @@
+'use client';
+
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import ModalShell from '@/components/ModalShell';
+import Field from '@/components/Field';
+
+const CONTRACT_TYPES = ['محدد المدة', 'محدد المدة - فوق السن', 'دائم', 'مهمة/مشروع'];
+const inputClass = "w-full px-2.5 py-2 border border-slate-300 rounded-md text-[11px] outline-none focus:border-brass-500 bg-white text-slate-800 font-bold";
 
 const EMPTY = {
   employee_code: '',
@@ -19,6 +27,7 @@ const EMPTY = {
 export default function AddEmployeeModal({ onClose, onSave }: { onClose: () => void; onSave: (data: typeof EMPTY) => Promise<void> }) {
   const [newEmp, setNewEmp] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+
   const set = (patch: Partial<typeof EMPTY>) => setNewEmp((prev) => ({ ...prev, ...patch }));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -93,7 +102,7 @@ export default function AddEmployeeModal({ onClose, onSave }: { onClose: () => v
         </div>
 
         <div className="flex gap-2 justify-end mt-4">
-          <button type="button" onClick={onClose} className="bg-white border border-paper-line px-3 py-1.5 rounded text-[10px] font-bold text-ink">
+          <button type="button" onClick={onClose} className="bg-white border border-slate-200 px-3 py-1.5 rounded text-[10px] font-bold text-slate-700">
             إلغاء
           </button>
           <button type="submit" disabled={saving} className="bg-brass-600 hover:bg-brass-700 text-white border-0 px-3.5 py-1.5 rounded-md font-bold text-[10px] disabled:opacity-60">
