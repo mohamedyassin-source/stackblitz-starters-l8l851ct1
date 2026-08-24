@@ -69,7 +69,7 @@ export default function Home() {
     document.body.classList.toggle('dark', dark);
     setCheckingAuth(false);
 
-    // استقبال أوامر التنقّل الصادرة من أي صفحة
+    // استقبال أوامر التنقّل الصادرة من أي صفحة (مثال: "اذهب لصفحة العقود وابحث عن هذا الموظف")
     const unsubscribe = onAppNavigate(({ tab }) => {
       setActiveTab(tab);
       setSidebarOpen(false);
@@ -110,8 +110,7 @@ export default function Home() {
   }
 
   return (
-    // 🌟 التعديل الجوهري هنا: h-screen و overflow-hidden عشان التطبيق كله يبقى بحجم الشاشة وميتحركش
-    <div className="flex h-screen overflow-hidden relative" style={{ background: 'var(--paper)' }}>
+    <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
 
       {/* overlay للموبايل عند فتح القائمة */}
       {sidebarOpen && (
@@ -120,7 +119,7 @@ export default function Home() {
 
       {/* ========================== الشريط الجانبي الثابت ========================== */}
       <aside
-        className={`w-[264px] h-full bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
+        className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
           sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
       >
@@ -132,7 +131,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 🌟 عناصر القائمة هي فقط من يُسمح لها بالسكرول الداخلي */}
+        {/* عناصر القائمة الجانبية الملتفة بررول متجاوب */}
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           {SIDEBAR_GROUPS.map((group, index) => {
             const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
@@ -161,7 +160,7 @@ export default function Home() {
           })}
         </nav>
 
-        {/* 🌟 الجزء السفلي مُثبت بفضل خاصية shrink-0 */}
+        {/* الجزء السفلي مثبت دائماً بعيداً عن الاسكرول */}
         <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0">
           {currentUser.role === 'Admin' && (
             <button
@@ -183,11 +182,9 @@ export default function Home() {
       </aside>
 
       {/* ========================== منطقة المحتوى الرئيسية ========================== */}
-      <div className="flex-1 flex flex-col h-full w-full lg:pr-[264px]">
-        
-        {/* 🌟 الهيدر ثابت في الأعلى (shrink-0) */}
+      <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
         <header
-          className="shrink-0 h-[72px] flex items-center justify-between px-4 sm:px-6 border-b z-30"
+          className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
           style={{ background: 'var(--paper-card)', borderColor: 'var(--line)' }}
         >
           <div className="flex items-center gap-3">
@@ -225,7 +222,6 @@ export default function Home() {
           </div>
         </header>
 
-        {/* 🌟 الـ Main هو الجزء الوحيد الذي يتمدد ويُسمح له بالسكرول الداخلي */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === 'dashboard' && <DashboardPage />}
           {activeTab === 'employees_data' && <EmployeesPage />}
