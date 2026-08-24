@@ -178,6 +178,11 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
+  // دالة استخراج المعرف لضمان عدم إرسال null
+  const getEmpId = (emp: any) => {
+    return emp.id || emp.employee_id || Number(emp.employee_code) || emp.employee_code;
+  };
+
   // دالة إنهاء التعاقد
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -199,10 +204,19 @@ export default function ContractsPage() {
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
     const [reqId] = generateSequentialIds(1);
     const payload: any = {
-      request_id: reqId, employee_code: emp.employee_code, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company,
-      contract_end_date: newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0],
+      request_id: reqId,
+      employee_id: getEmpId(emp),
+      employee_code: emp.employee_code,
+      employee_name: emp.employee_name,
+      department: emp.department,
+      job_title: emp.job_title,
+      company: emp.company,
+      contract_end_date: newContractStartDate,
+      new_contract_end_date: newContractEndDate,
+      status: 'Pending',
+      signature_status: 'قيد التوقيع',
+      request_date: new Date().toISOString().split('T')[0],
     };
-    if (emp.id) payload.employee_id = emp.id;
     const { error: reqError } = await supabase.from('renewal_requests').insert([payload]);
     if (reqError) { setActionLoading(false); return alert('خطأ: ' + reqError.message); }
     await supabase.from('employees').update({ contract_type: newContractType, contract_end_date: newContractEndDate }).eq('employee_code', emp.employee_code);
@@ -218,10 +232,20 @@ export default function ContractsPage() {
       const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
       const [reqId] = generateSequentialIds(1);
       const payload: any = {
-        request_id: reqId, employee_code: emp.employee_code, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company,
-        contract_end_date: emp.contract_end_date, new_contract_end_date: targetEndDate, renewal_months: renewalMode === 'months' ? renewalMonths : null, status: 'Pending', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0],
+        request_id: reqId,
+        employee_id: getEmpId(emp),
+        employee_code: emp.employee_code,
+        employee_name: emp.employee_name,
+        department: emp.department,
+        job_title: emp.job_title,
+        company: emp.company,
+        contract_end_date: emp.contract_end_date,
+        new_contract_end_date: targetEndDate,
+        renewal_months: renewalMode === 'months' ? renewalMonths : null,
+        status: 'Pending',
+        signature_status: 'قيد التوقيع',
+        request_date: new Date().toISOString().split('T')[0],
       };
-      if (emp.id) payload.employee_id = emp.id;
       const { error } = await supabase.from('renewal_requests').insert([payload]);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
       if (error) alert('خطأ: ' + error.message); else { setCreatedRequestData(payload); fetchData(); }
@@ -230,12 +254,21 @@ export default function ContractsPage() {
       const reqIds = generateSequentialIds(selectedEmps.length);
       const payloads = selectedEmps.map((emp, index) => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
-        const p: any = {
-          request_id: reqIds[index], employee_code: emp.employee_code, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company,
-          contract_end_date: emp.contract_end_date, new_contract_end_date: targetEndDate, renewal_months: renewalMode === 'months' ? renewalMonths : null, status: 'Pending', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0],
+        return {
+          request_id: reqIds[index],
+          employee_id: getEmpId(emp),
+          employee_code: emp.employee_code,
+          employee_name: emp.employee_name,
+          department: emp.department,
+          job_title: emp.job_title,
+          company: emp.company,
+          contract_end_date: emp.contract_end_date,
+          new_contract_end_date: targetEndDate,
+          renewal_months: renewalMode === 'months' ? renewalMonths : null,
+          status: 'Pending',
+          signature_status: 'قيد التوقيع',
+          request_date: new Date().toISOString().split('T')[0],
         };
-        if (emp.id) p.employee_id = emp.id;
-        return p;
       });
       const { error } = await supabase.from('renewal_requests').insert(payloads);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
@@ -466,7 +499,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 نافذة طلب التجديد (شاملة الخيارات المطلوبة: 1, 2, 3, 6, 9, 12 شهر + تاريخ مخصص) */}
+      {/* نافذة طلب التجديد */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
