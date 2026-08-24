@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { navigateTo } from '@/lib/navigation';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
 
@@ -223,13 +224,7 @@ export default function DashboardPage() {
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
   const handleRowClick = (empCode: string) => {
-    localStorage.setItem('jumpSearch', empCode);
-    const navButtons = document.querySelectorAll('.nav-item');
-    navButtons.forEach((btn) => {
-      if (btn.textContent?.includes('العقود الحالية')) {
-        (btn as HTMLButtonElement).click();
-      }
-    });
+    navigateTo('contracts', { jumpSearch: empCode });
   };
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', {
@@ -247,26 +242,6 @@ export default function DashboardPage() {
     ...(dashboardData?.renewalsByMonth.map((m) => m.count) || []),
     1
   );
-
-  if (loading) {
-    return (
-      <div
-        className="flex flex-col items-center justify-center gap-3 py-24"
-        style={{ color: 'var(--muted)' }}
-      >
-        <div
-          className="w-8 h-8 border-2 rounded-full animate-spin"
-          style={{
-            borderColor: 'var(--line)',
-            borderTopColor: 'var(--brass-500)',
-          }}
-        />
-        <span className="text-sm font-bold">
-          جاري تجميع البيانات الشاملة...
-        </span>
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col gap-5" style={{ direction: 'rtl' }}>
@@ -334,6 +309,7 @@ export default function DashboardPage() {
       {/* بطاقات المؤشرات الرئيسية (تم تحسين المقاس لـ 5 كروت مع كرت بلوغ سن 60) */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <KpiCard
+          loading={loading}
           tone="brass"
           title="إجمالي قوة العمل"
           value={dashboardData.totalEmps}
@@ -341,13 +317,16 @@ export default function DashboardPage() {
           icon="👥"
         />
         <KpiCard
+          loading={loading}
           tone="blue"
           title="طلبات تجديد معلقة"
           value={dashboardData.pendingRenewals}
           sub="طلب"
           icon="⏳"
+          onClick={() => navigateTo('renewals')}
         />
         <KpiCard
+          loading={loading}
           tone="amber"
           title="عقود تنتهي قريباً (60 يوم)"
           value={dashboardData.expiringSoonCount}
@@ -355,37 +334,22 @@ export default function DashboardPage() {
           icon="📆"
         />
         <KpiCard
+          loading={loading}
           tone="red"
           title="عقود منتهية (تحتاج إجراء)"
           value={dashboardData.expiredCount}
           sub="عقد"
           icon="🚨"
         />
-
-        {/* 🌟 🆕 الكارت الجديد الخاص ببلوغ سن 60 قريباً */}
-        <div
+        <KpiCard
+          loading={loading}
+          tone="amber"
+          title="سن الـ 60 قريباً (خلال 60 يوم)"
+          value={dashboardData.turning60List.length}
+          sub="عرض القائمة 👁️"
+          icon="🎂"
           onClick={() => setShowAgeModal(true)}
-          className="card p-4 flex flex-col justify-between cursor-pointer transition-all hover:scale-[1.02]"
-          style={{ background: '#fefce8', border: '1px solid #fef08a' }}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-amber-800">
-              سن الـ 60 قريباً (60 يوم)
-            </span>
-            <span className="text-xl">🎂</span>
-          </div>
-          <div className="my-2">
-            <span className="text-2xl font-black text-amber-900">
-              {dashboardData.turning60List.length}
-            </span>
-            <span className="text-[11px] text-amber-700 mr-1 font-bold">
-              موظف
-            </span>
-          </div>
-          <div className="text-[10px] font-bold text-amber-700 underline text-left">
-            عرض القائمة 👁️
-          </div>
-        </div>
+        />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">

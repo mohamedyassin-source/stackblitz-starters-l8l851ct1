@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import { onAppNavigate } from '@/lib/navigation';
 
 const LoginPage = dynamic(() => import('@/components/LoginPage'), { ssr: false });
 const DashboardPage = dynamic(() => import('@/components/DashboardPage'), { ssr: false });
@@ -67,6 +68,13 @@ export default function Home() {
     setIsDarkMode(dark);
     document.body.classList.toggle('dark', dark);
     setCheckingAuth(false);
+
+    // استقبال أوامر التنقّل الصادرة من أي صفحة (مثال: "اذهب لصفحة العقود وابحث عن هذا الموظف")
+    const unsubscribe = onAppNavigate(({ tab }) => {
+      setActiveTab(tab);
+      setSidebarOpen(false);
+    });
+    return unsubscribe;
   }, []);
 
   const toggleTheme = () => {

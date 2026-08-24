@@ -18,8 +18,8 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // 🌟 فلتر الشهر والسنة المخصص للتصدير والفلترة
-  const [selectedMonth, setSelectedMonth] = useState<string>('10'); // افتراضي: أكتوبر
+  // 🌟 فلتر الشهر والسنة المخصص للتصدير والفلترة (افتراضيًا: الشهر الحالي، وليس شهرًا ثابتًا)
+  const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
   useEffect(() => {

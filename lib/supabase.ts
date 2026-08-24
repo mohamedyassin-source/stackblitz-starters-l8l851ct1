@@ -1,6 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://ksppkaqoflpztbftqzzh.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzcHBrYXFvZmxwenRiZnRxenpoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODczNzQ3MDgsImV4cCI6MjEwMjk1MDcwOH0.0x2zVfOVFhcnQjCYFW_TjnDY8uD8iNRfOLG-Yi1T1LQ';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  // فشل واضح ومبكر بدل الاتصال بمشروع خاطئ بصمت
+  throw new Error(
+    'إعدادات Supabase غير مكتملة: تأكد من ضبط NEXT_PUBLIC_SUPABASE_URL و NEXT_PUBLIC_SUPABASE_ANON_KEY في ملف .env.local'
+  );
+}
 
 export const supabase = createClient(supabaseUrl, supabaseKey);
