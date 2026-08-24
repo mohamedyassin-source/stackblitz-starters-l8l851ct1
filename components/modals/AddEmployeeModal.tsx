@@ -2,9 +2,8 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import ModalShell from '@/components/ModalShell';
-import Field from '@/components/Field';
-
+import ModalShell from '../ModalShell';
+import Field from '../Field';
 const CONTRACT_TYPES = ['محدد المدة', 'محدد المدة - فوق السن', 'دائم', 'مهمة/مشروع'];
 const inputClass = "w-full px-2.5 py-2 border border-slate-300 rounded-md text-[11px] outline-none focus:border-brass-500 bg-white text-slate-800 font-bold";
 
