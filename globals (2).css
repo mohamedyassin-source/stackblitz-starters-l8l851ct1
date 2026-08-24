@@ -1,0 +1,142 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --navy-950: #0a0f1c;
+  --navy-900: #101828;
+  --brass-600: #9c7a2e;
+  --brass-500: #b8934a;
+  --brass-400: #d1ab63;
+  --paper: #f6f3ea;
+  --paper-card: #ffffff;
+  --line: #e6e1d3;
+  --muted: #6b7280;
+  --ink: #1b1f2a;
+  --stamp-green: #1f5c3a;
+  --stamp-green-bg: #eaf5ee;
+  --stamp-amber: #8a5a12;
+  --stamp-amber-bg: #fdf3e2;
+  --stamp-red: #8f2323;
+  --stamp-red-bg: #fbeaea;
+  --stamp-blue: #1f3f66;
+  --stamp-blue-bg: #eaf0f8;
+  --shadow-card: 0 1px 2px rgba(20, 20, 10, 0.04), 0 8px 24px rgba(20, 20, 10, 0.05);
+}
+
+/* الوضع الليلي — مصدر واحد للحقيقة، يطبَّق عبر class="dark" على body */
+body.dark {
+  --navy-950: #f8fafc;
+  --paper: #0b1220;
+  --paper-card: #131c2e;
+  --line: #253145;
+  --muted: #94a3b8;
+  --ink: #e7ecf5;
+  --stamp-green-bg: rgba(31, 92, 58, 0.18);
+  --stamp-amber-bg: rgba(138, 90, 18, 0.2);
+  --stamp-red-bg: rgba(143, 35, 35, 0.2);
+  --stamp-blue-bg: rgba(31, 63, 102, 0.2);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Tajawal', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  direction: rtl;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--brass-500); }
+
+/* تنسيق عام للجداول والبطاقات */
+.data-table { width: 100%; text-align: right; border-collapse: collapse; font-size: 12.5px; }
+.data-table th {
+  padding: 12px 14px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 11px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-card);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--ink); }
+.data-table tbody tr { transition: background-color 0.15s ease; }
+.data-table tbody tr:hover { background: var(--paper); }
+
+.card {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.field {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.field:focus { border-color: var(--brass-500); }
+
+/* أسماء classes مستخدمة في صفحات متعددة — بدون تعريف مسبق؛ إضافة انتقال سلس لتبديل الوضع الليلي */
+.db-card, .db-input { transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease; }
+.table-responsive { overflow-x: auto; }
+
+/* الختم الرسمي — يُستخدم لحالة العقود والموافقات */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.stamp-green { background: var(--stamp-green-bg); color: var(--stamp-green); }
+.stamp-amber { background: var(--stamp-amber-bg); color: var(--stamp-amber); }
+.stamp-red   { background: var(--stamp-red-bg);   color: var(--stamp-red); }
+.stamp-blue  { background: var(--stamp-blue-bg);  color: var(--stamp-blue); }
+.stamp-slate { background: var(--line); color: var(--muted); }
+
+/* الختم/الشعار الدائري */
+.seal {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--brass-400), var(--brass-600));
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 6px 14px rgba(156, 122, 46, 0.35);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--brass-400), var(--brass-600));
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
