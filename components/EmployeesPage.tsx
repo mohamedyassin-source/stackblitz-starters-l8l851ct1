@@ -12,6 +12,10 @@ export default function EmployeesPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
+  // 🌟 حالات الترتيب (Sorting)
+  const [sortColumn, setSortColumn] = useState<string>('employee_code');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   // التحديد المجمع (Checkboxes)
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
 
@@ -30,7 +34,6 @@ export default function EmployeesPage() {
     fetchEmployees();
   }, []);
 
-  // 🌟 دالة السحب القوية (تم إزالة الترتيب من قاعدة البيانات لتجنب أي أخطاء)
   const fetchEmployees = async () => {
     setLoading(true);
     let allEmps: any[] = [];
@@ -38,7 +41,6 @@ export default function EmployeesPage() {
     const step = 1000;
     
     while (true) {
-      // شلنا الـ order() من هنا عشان نسحب الداتا بأي شكل بدون ما تضرب إيرور
       const { data, error } = await supabase
         .from('employees')
         .select('*')
@@ -54,13 +56,6 @@ export default function EmployeesPage() {
       if (data.length < step) break;
       from += step;
     }
-    
-    // 🌟 الترتيب المحلي (في المتصفح): آمن 100% ومش بيعتمد على الداتا بيز
-    allEmps.sort((a, b) => {
-      const codeA = String(a.employee_code || a.EmployeeCode || a.id || '');
-      const codeB = String(b.employee_code || b.EmployeeCode || b.id || '');
-      return codeA.localeCompare(codeB);
-    });
 
     setEmployees(allEmps);
     setLoading(false);
@@ -79,25 +74,81 @@ export default function EmployeesPage() {
   const compsList = Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean)));
   const typesList = Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean)));
 
-  // الفلترة التفاعلية (بحث جزئي في كل الحقول)
-  const filteredEmployees = useMemo(() => employees.filter(emp => {
-    const term = searchTerm.toLowerCase();
-    const empCode = String(getField(emp, 'employee_code', 'EmployeeCode')).toLowerCase();
-    const empName = String(getField(emp, 'employee_name', 'ArabicName')).toLowerCase();
-    const empDept = String(getField(emp, 'department', 'Department')).toLowerCase();
-    const empComp = String(getField(emp, 'company', 'Company')).toLowerCase();
-    
-    const matchesSearch = !term || empCode.includes(term) || empName.includes(term) || empDept.includes(term);
-    const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
-    const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
-    const matchesType = !selectedType || getField(emp, 'contract_type', 'ContractType') === selectedType;
+  // 🌟 دالة تغيير الترتيب عند الضغط على أغطية الأعمدة
+  const handleSort = (columnKey: string) => {
+    if (sortColumn === columnKey) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(columnKey);
+      setSortDirection('asc');
+    }
+  };
 
-    return matchesSearch && matchesDept && matchesComp && matchesType;
-  }), [employees, searchTerm, selectedDept, selectedCompany, selectedType]);
+  // الفلترة والترتيب التفاعلي
+  const sortedAndFilteredEmployees = useMemo(() => {
+    // 1. الفلترة
+    const filtered = employees.filter(emp => {
+      const term = searchTerm.toLowerCase();
+      const empCode = String(getField(emp, 'employee_code', 'EmployeeCode')).toLowerCase();
+      const empName = String(getField(emp, 'employee_name', 'ArabicName')).toLowerCase();
+      const empDept = String(getField(emp, 'department', 'Department')).toLowerCase();
+      const empComp = String(getField(emp, 'company', 'Company')).toLowerCase();
+      
+      const matchesSearch = !term || empCode.includes(term) || empName.includes(term) || empDept.includes(term);
+      const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
+      const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
+      const matchesType = !selectedType || getField(emp, 'contract_type', 'ContractType') === selectedType;
 
-  const permCount = filteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
-  const fixedCount = filteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'محدد المدة').length;
-  const aboveAgeCount = filteredEmployees.filter(e => String(getField(e, 'contract_type', 'ContractType')).includes('فوق السن')).length;
+      return matchesSearch && matchesDept && matchesComp && matchesType;
+    });
+
+    // 2. الترتيب الديناميكي (Ascending / Descending)
+    return filtered.sort((a, b) => {
+      let valA = '';
+      let valB = '';
+
+      switch (sortColumn) {
+        case 'employee_code':
+          valA = String(getField(a, 'employee_code', 'EmployeeCode'));
+          valB = String(getField(b, 'employee_code', 'EmployeeCode'));
+          break;
+        case 'employee_name':
+          valA = String(getField(a, 'employee_name', 'ArabicName'));
+          valB = String(getField(b, 'employee_name', 'ArabicName'));
+          break;
+        case 'job_title':
+          valA = String(getField(a, 'job_title', 'JobTitle'));
+          valB = String(getField(b, 'job_title', 'JobTitle'));
+          break;
+        case 'department':
+          valA = String(getField(a, 'department', 'Department'));
+          valB = String(getField(b, 'department', 'Department'));
+          break;
+        case 'hiring_date':
+          valA = String(getField(a, 'hiring_date', 'HiringDate'));
+          valB = String(getField(b, 'hiring_date', 'HiringDate'));
+          break;
+        case 'contract_type':
+          valA = String(getField(a, 'contract_type', 'ContractType'));
+          valB = String(getField(b, 'contract_type', 'ContractType'));
+          break;
+        case 'contract_end_date':
+          valA = String(getField(a, 'contract_end_date', 'ContractEndDate'));
+          valB = String(getField(b, 'contract_end_date', 'ContractEndDate'));
+          break;
+        default:
+          valA = String(getField(a, 'employee_code', 'EmployeeCode'));
+          valB = String(getField(b, 'employee_code', 'EmployeeCode'));
+      }
+
+      const res = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+      return sortDirection === 'asc' ? res : -res;
+    });
+  }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, sortColumn, sortDirection]);
+
+  const permCount = sortedAndFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
+  const fixedCount = sortedAndFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'محدد المدة').length;
+  const aboveAgeCount = sortedAndFilteredEmployees.filter(e => String(getField(e, 'contract_type', 'ContractType')).includes('فوق السن')).length;
 
   const handleOpenEdit = async (emp: any) => {
     const code = getField(emp, 'employee_code', 'EmployeeCode', 'employee_id');
@@ -181,6 +232,11 @@ export default function EmployeesPage() {
     }
   };
 
+  const renderSortArrow = (colKey: string) => {
+    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
+    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▼</span>;
+  };
+
   return (
     <div style={{ animation: 'fadeIn 0.4s ease-in-out' }}>
       
@@ -229,12 +285,12 @@ export default function EmployeesPage() {
         <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); }} style={{ background: 'var(--line, #e2e8f0)', color: 'var(--ink, #0f172a)', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
         
         <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
-          النتائج: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{filteredEmployees.length}</span> موظف
+          النتائج: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{sortedAndFilteredEmployees.length}</span> موظف
           {selectedEmpIds.length > 0 && <span style={{ color: 'var(--brass-600, #b8934a)', marginRight: '8px' }}>| محدد: {selectedEmpIds.length}</span>}
         </div>
       </div>
 
-      {/* الجدول مع Checkboxes */}
+      {/* الجدول مع الترتيب التفاعلي قابلي للضغط على العناوين */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
@@ -244,20 +300,36 @@ export default function EmployeesPage() {
               <thead style={{ position: 'sticky', top: 0, background: 'var(--paper-card)', zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', textAlign: 'center', width: '40px' }}>
-                    <input type="checkbox" checked={selectedEmpIds.length === filteredEmployees.length && filteredEmployees.length > 0} onChange={e => setSelectedEmpIds(e.target.checked ? filteredEmployees.map(emp => emp.id || emp.employee_id) : [])} style={{ accentColor: 'var(--brass-600)' }} />
+                    <input type="checkbox" checked={selectedEmpIds.length === sortedAndFilteredEmployees.length && sortedAndFilteredEmployees.length > 0} onChange={e => setSelectedEmpIds(e.target.checked ? sortedAndFilteredEmployees.map(emp => emp.id || emp.employee_id) : [])} style={{ accentColor: 'var(--brass-600)' }} />
                   </th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>الكود</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>الاسم</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>الوظيفة</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>الإدارة</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>تاريخ التعيين</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>نوع العقد</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>نهاية العقد</th>
+                  
+                  {/* 🌟 رؤوس الأعمدة مع دعم ترتيب Asc/Desc */}
+                  <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    الكود {renderSortArrow('employee_code')}
+                  </th>
+                  <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    الاسم {renderSortArrow('employee_name')}
+                  </th>
+                  <th onClick={() => handleSort('job_title')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    الوظيفة {renderSortArrow('job_title')}
+                  </th>
+                  <th onClick={() => handleSort('department')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    الإدارة {renderSortArrow('department')}
+                  </th>
+                  <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    تاريخ التعيين {renderSortArrow('hiring_date')}
+                  </th>
+                  <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    نوع العقد {renderSortArrow('contract_type')}
+                  </th>
+                  <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
+                    نهاية العقد {renderSortArrow('contract_end_date')}
+                  </th>
                   <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', textAlign: 'center' }}>إجراء</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredEmployees.map((emp, i) => {
+                {sortedAndFilteredEmployees.map((emp, i) => {
                   const empId = emp.id || emp.employee_id;
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid var(--line, #f1f5f9)' }}>
@@ -283,9 +355,7 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      {/* ========================================================= */}
       {/* نافذة التعديل (Edit Modal) */}
-      {/* ========================================================= */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -356,9 +426,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ========================================================= */}
       {/* نافذة الإضافة (Add Modal) */}
-      {/* ========================================================= */}
       {showAddModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '650px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
