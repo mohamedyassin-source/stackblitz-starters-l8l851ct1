@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import ModalShell from '@/components/ModalShell';
-import Field from '@/components/Field';
+import Stamp from '@/components/Stamp';
 export interface PreviewData {
   emp: any;
   contracts: any[];
