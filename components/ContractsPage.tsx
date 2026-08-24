@@ -283,7 +283,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت الإحصائية (مطابقة للصورة) */}
+      {/* 🌟 الكروت الإحصائية */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>العقود المحددة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>عقود محددة المدة</p></div>
@@ -303,25 +303,58 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* شريط الفلاتر */}
-      <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>النتائج: {sortedContracts.length} عقد</div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
-          <select value={expiryStatus} onChange={(e) => setExpiryStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
+      {/* 🌟 شريط الفلاتر (مظبوط من اليمين للشمال RTL) */}
+      <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
+        
+        {/* مجموعة البحث والفلاتر (هتبدأ من اليمين) */}
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input 
+            type="text" 
+            placeholder="بحث بالاسم، الكود، الإدارة..." 
+            value={searchTerm} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '250px' }} 
+          />
+          
+          <select 
+            value={selectedDept} 
+            onChange={(e) => setSelectedDept(e.target.value)} 
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px' }}
+          >
+            <option value="">الإدارة (الكل)</option>
+            {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
+          </select>
+          
+          <select 
+            value={selectedType} 
+            onChange={(e) => setSelectedType(e.target.value)} 
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}
+          >
+            <option value="">كل أنواع العقود</option>
+            {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
+          </select>
+          
+          <select 
+            value={expiryStatus} 
+            onChange={(e) => setExpiryStatus(e.target.value)} 
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}
+          >
             <option value="">حالة الانتهاء (الكل)</option>
             <option value="expiring_60">ينتهي خلال 60 يوم</option>
             <option value="expired">منتهي الصلاحية</option>
           </select>
-          <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
-            <option value="">كل أنواع العقود</option>
-            {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
-          </select>
-          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px' }}>
-            <option value="">الإدارة (الكل)</option>
-            {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
-          </select>
-          <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '250px' }} />
+          
+          <button 
+            onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); }} 
+            style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            إعادة ضبط
+          </button>
+        </div>
+
+        {/* عدد النتائج (هيبقى على الشمال) */}
+        <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>
+          النتائج: {sortedContracts.length} عقد
         </div>
       </div>
 
