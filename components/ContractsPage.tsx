@@ -178,7 +178,6 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  // 🎯 دالة الحصول على employee_id الصحيح والمضمون
   const getEmpId = (emp: any) => {
     if (!emp) return '0';
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
@@ -197,13 +196,16 @@ export default function ContractsPage() {
     else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); fetchData(); }
   };
 
+  // 🌟 🆕 دالة إنشاء عقد جديد كلياً (مع دعم تحويل العقود الدائمة إلى محددة أو فوق السن)
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode || !newContractStartDate || !newContractEndDate) return alert('يرجى استكمال جميع البيانات.');
     if (new Date(newContractEndDate) <= new Date(newContractStartDate)) return alert('تاريخ نهاية العقد يجب أن يكون بعد تاريخ البداية.');
+    
     setActionLoading(true);
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
     const [reqId] = generateSequentialIds(1);
+
     const payload: any = {
       request_id: reqId,
       employee_id: getEmpId(emp),
@@ -212,16 +214,31 @@ export default function ContractsPage() {
       department: emp.department,
       job_title: emp.job_title,
       company: emp.company,
+      contract_start_date: newContractStartDate,
       contract_end_date: newContractStartDate,
       new_contract_end_date: newContractEndDate,
       status: 'Pending',
       signature_status: 'قيد التوقيع',
       request_date: new Date().toISOString().split('T')[0],
     };
+
     const { error: reqError } = await supabase.from('renewal_requests').insert([payload]);
-    if (reqError) { setActionLoading(false); return alert('خطأ: ' + reqError.message); }
-    await supabase.from('employees').update({ contract_type: newContractType, contract_end_date: newContractEndDate }).eq('employee_code', emp.employee_code);
-    setActionLoading(false); setIsNewContractModalOpen(false); setCreatedRequestData(payload); fetchData();
+    if (reqError) { 
+      setActionLoading(false); 
+      return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
+    }
+
+    // 🎯 التحديث التلقائي لنوع العقد وتاريخ النهاية في سجل الموظف (يحول العقد من "دائم" إلى العقد الجديد)
+    await supabase.from('employees').update({ 
+      contract_type: newContractType, 
+      contract_end_date: newContractEndDate 
+    }).eq('employee_code', emp.employee_code);
+
+    setActionLoading(false);
+    setIsNewContractModalOpen(false);
+    setCreatedRequestData(payload);
+    alert(`تم إنشاء العقد الجديد بنجاح وتحويل نوع العقد إلى (${newContractType}) ✅`);
+    fetchData();
   };
 
   const confirmRenewalAction = async () => {
@@ -465,26 +482,32 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة إنشاء عقد جديد */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد (تدعم جميع الموظفين حتى أصحاب العقود الدائمة لإنشاء عقد وتحديد نهايته) */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>📝 طلب إنشاء عقد جديد كلياً</h3>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>📝 طلب إنشاء عقد جديد تماماً</h3>
               <button onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
             <form onSubmit={handleCreateBrandNewContract}>
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>اختر الموظف *</label>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>اختر الموظف (يشمل العقود الدائمة لتعديل نوع عقدها) *</label>
                 <select required value={selectedEmployeeCode} onChange={(e) => setSelectedEmployeeCode(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
                   <option value="">-- اضغط لاختيار الموظف --</option>
-                  {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').map((emp) => (<option key={emp.employee_code} value={emp.employee_code}>{emp.employee_name} ({emp.employee_code}) - {emp.department}</option>))}
+                  {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').map((emp) => (
+                    <option key={emp.employee_code} value={emp.employee_code}>
+                      {emp.employee_name} ({emp.employee_code}) - [{emp.contract_type || 'دائم'}]
+                    </option>
+                  ))}
                 </select>
               </div>
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد الجديد *</label>
                 <select value={newContractType} onChange={(e) => setNewContractType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
-                  <option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option><option value="مهمة/مشروع">عقد مشروع/مهمة محدودة</option>
+                  <option value="محدد المدة">محدد المدة</option>
+                  <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                  <option value="مهمة/مشروع">عقد مشروع/مهمة محدودة</option>
                 </select>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
@@ -493,7 +516,7 @@ export default function ContractsPage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء العقد 📄'}</button>
+                <button type="submit" disabled={actionLoading} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء وتحديث العقد 📄'}</button>
               </div>
             </form>
           </div>
@@ -505,12 +528,10 @@ export default function ContractsPage() {
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
             
-            {/* العنوان */}
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: '#334155', textAlign: 'center', fontWeight: '800' }}>
               {modalState.type === 'single' ? `إنشاء طلب تجديد لـ (${modalState.emp?.employee_name})` : `إنشاء طلبات تجديد لـ (${selectedEmpCodes.length}) موظف`}
             </h3>
 
-            {/* شريط خيارات الراديو (تجديد بالشهور / تاريخ انتهاء مخصص) */}
             <div style={{ background: '#fdfbf7', border: '1px solid #f1e9d2', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'months' ? '#856404' : '#64748b', cursor: 'pointer' }}>
                 <input type="radio" name="renewalMode" checked={renewalMode === 'months'} onChange={() => setRenewalMode('months')} style={{ accentColor: '#b8934a' }} />
@@ -522,7 +543,6 @@ export default function ContractsPage() {
               </label>
             </div>
 
-            {/* محتوى الاختيار 1: التجديد بالشهور (1, 2, 3, 6, 9, 12) */}
             {renewalMode === 'months' && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>يرجى اختيار مدة التجديد بالشهور:</label>
@@ -539,7 +559,6 @@ export default function ContractsPage() {
               </div>
             )}
 
-            {/* محتوى الاختيار 2: تاريخ انتهاء مخصص (تحديد يدوي) */}
             {renewalMode === 'custom' && (
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>حدد تاريخ انتهاء العقد الجديد يدوياً:</label>
@@ -547,7 +566,6 @@ export default function ContractsPage() {
               </div>
             )}
 
-            {/* عرض تاريخ الانتهاء المتوقع باللون الأخضر */}
             {modalState.type === 'single' && (
               <div style={{ textAlign: 'left', fontSize: '12px', marginBottom: '24px', direction: 'ltr' }}>
                 <span style={{ color: '#15803d', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '13px' }}>
@@ -557,7 +575,6 @@ export default function ContractsPage() {
               </div>
             )}
 
-            {/* زراير الإلغاء والتأكيد */}
             <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px', direction: 'rtl' }}>
               <button 
                 onClick={confirmRenewalAction} 
