@@ -16,16 +16,22 @@ const SettingsPage = dynamic(() => import('@/components/SettingsPage'), { ssr: f
 const SIDEBAR_GROUPS = [
   { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
   { title: 'شؤون العاملين', items: [{ id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] }] },
-  { title: 'إدارة العقود', items: [
+  { 
+    title: 'إدارة العقود', 
+    items: [
       { id: 'contracts', icon: '📂', label: 'العقود الحالية', roles: ['Admin', 'HR'] },
       { id: 'renewals', icon: '⏳', label: 'طلبات التجديد', roles: ['Admin', 'HR'] },
       { id: 'signatures', icon: '✍️', label: 'توقيع العقود', roles: ['Admin', 'HR', 'Employee'] },
-  ]},
-  { title: 'المتابعة والتقارير', items: [
+    ]
+  },
+  { 
+    title: 'المتابعة والتقارير', 
+    items: [
       { id: 'reports', icon: '📈', label: 'التقارير', roles: ['Admin', 'HR'] },
       { id: 'alerts', icon: '🚨', label: 'التنبيهات', roles: ['Admin', 'HR'] },
       { id: 'audit', icon: '🕵️‍♂️', label: 'سجل العمليات', roles: ['Admin'] },
-  ]}
+    ]
+  }
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -56,7 +62,6 @@ export default function Home() {
         localStorage.removeItem('session_user');
       }
     }
-    // مصدر واحد للحقيقة للوضع الليلي، مطبَّق على body ومحفوظ محلياً
     const savedTheme = localStorage.getItem('theme');
     const dark = savedTheme === 'dark';
     setIsDarkMode(dark);
@@ -97,20 +102,20 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen" style={{ background: 'var(--paper)' }}>
+    <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
 
       {/* overlay للموبايل عند فتح القائمة */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ========================== الشريط الجانبي ========================== */}
+      {/* ========================== الشريط الجانبي الثابت ========================== */}
       <aside
-        className={`w-[264px] bg-navy-950 text-white flex flex-col fixed lg:static inset-y-0 right-0 z-50 transition-transform duration-200 ${
+        className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
           sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="flex items-center gap-3 px-5 py-6 border-b border-white/10">
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 shrink-0">
           <div className="seal w-10 h-10 text-base">★</div>
           <div>
             <h3 className="m-0 text-[17px] font-extrabold text-brass-300 leading-tight">المراسم الدولية</h3>
@@ -118,12 +123,13 @@ export default function Home() {
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 py-5">
+        {/* عناصر القائمة الجانبية الملتفة بررول متجاوب */}
+        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           {SIDEBAR_GROUPS.map((group, index) => {
             const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
             if (visibleItems.length === 0) return null;
             return (
-              <div key={index} className="mb-6">
+              <div key={index}>
                 <div className="text-[10.5px] text-slate-500 font-extrabold mb-2 px-2 tracking-wide">{group.title}</div>
                 <div className="flex flex-col gap-1">
                   {visibleItems.map(item => (
@@ -146,11 +152,12 @@ export default function Home() {
           })}
         </nav>
 
-        <div className="px-4 py-4 bg-black/20 border-t border-white/10">
+        {/* الجزء السفلي مثبت دائماً بعيداً عن الاسكرول */}
+        <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0">
           {currentUser.role === 'Admin' && (
             <button
               onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
-              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold mb-3 border transition-colors ${
+              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold mb-2 border transition-colors ${
                 activeTab === 'settings' ? 'bg-navy-700 border-navy-700 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
               }`}
             >
@@ -166,8 +173,8 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* ========================== منطقة المحتوى ========================== */}
-      <div className="flex-1 flex flex-col min-h-screen lg:mr-0">
+      {/* ========================== منطقة المحتوى الرئيسية ========================== */}
+      <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
         <header
           className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
           style={{ background: 'var(--paper-card)', borderColor: 'var(--line)' }}
