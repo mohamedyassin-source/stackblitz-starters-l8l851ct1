@@ -34,7 +34,7 @@ export default function ContractsPage() {
   const [newContractEndDate, setNewContractEndDate] = useState('');
   const [newContractType, setNewContractType] = useState('محدد المدة');
 
-  // 🌟 حالة نافذة إنهاء التعاقد (الجديدة)
+  // حالة نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
 
@@ -165,14 +165,20 @@ export default function ContractsPage() {
   };
 
   const openSingleRenewal = (emp: any) => {
-    setRenewalMode('months'); setCustomEndDate(''); setModalState({ isOpen: true, type: 'single', emp });
+    setRenewalMode('months');
+    setRenewalMonths(12);
+    setCustomEndDate('');
+    setModalState({ isOpen: true, type: 'single', emp });
   };
   const openBulkRenewal = () => {
     if (selectedEmpCodes.length === 0) return alert('يرجى تحديد موظفين أولاً');
-    setRenewalMode('months'); setCustomEndDate(''); setModalState({ isOpen: true, type: 'bulk' });
+    setRenewalMode('months');
+    setRenewalMonths(12);
+    setCustomEndDate('');
+    setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  // 🌟 دالة إنهاء التعاقد
+  // دالة إنهاء التعاقد
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى اختيار الموظف.');
@@ -258,7 +264,6 @@ export default function ContractsPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '10px' }}>
-          {/* 🌟 زرار إنهاء التعاقد الجديد */}
           <button
             onClick={() => { setTerminateEmployeeCode(''); setIsTerminateModalOpen(true); }}
             style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
@@ -283,7 +288,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت الإحصائية */}
+      {/* الكروت الإحصائية */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>العقود المحددة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>عقود محددة المدة</p></div>
@@ -303,10 +308,8 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🌟 شريط الفلاتر (مظبوط من اليمين للشمال RTL) */}
+      {/* شريط الفلاتر (RTL) */}
       <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
-        
-        {/* مجموعة البحث والفلاتر (هتبدأ من اليمين) */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input 
             type="text" 
@@ -315,44 +318,23 @@ export default function ContractsPage() {
             onChange={(e) => setSearchTerm(e.target.value)} 
             style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '250px' }} 
           />
-          
-          <select 
-            value={selectedDept} 
-            onChange={(e) => setSelectedDept(e.target.value)} 
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px' }}
-          >
+          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px' }}>
             <option value="">الإدارة (الكل)</option>
             {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
           </select>
-          
-          <select 
-            value={selectedType} 
-            onChange={(e) => setSelectedType(e.target.value)} 
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}
-          >
+          <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
             <option value="">كل أنواع العقود</option>
             {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
           </select>
-          
-          <select 
-            value={expiryStatus} 
-            onChange={(e) => setExpiryStatus(e.target.value)} 
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}
-          >
+          <select value={expiryStatus} onChange={(e) => setExpiryStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
             <option value="">حالة الانتهاء (الكل)</option>
             <option value="expiring_60">ينتهي خلال 60 يوم</option>
             <option value="expired">منتهي الصلاحية</option>
           </select>
-          
-          <button 
-            onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); }} 
-            style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-          >
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
             إعادة ضبط
           </button>
         </div>
-
-        {/* عدد النتائج (هيبقى على الشمال) */}
         <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>
           النتائج: {sortedContracts.length} عقد
         </div>
@@ -422,7 +404,7 @@ export default function ContractsPage() {
         )}
       </div>
 
-      {/* 🌟 نافذة إنهاء التعاقد */}
+      {/* نافذة إنهاء التعاقد */}
       {isTerminateModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -484,30 +466,85 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة التجديد (فردي أو مجمع) */}
+      {/* 🌟 نافذة طلب التجديد (شاملة الخيارات المطلوبة: 1, 2, 3, 6, 9, 12 شهر + تاريخ مخصص) */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-          <div style={{ width: '450px', background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h3 style={{ margin: '0 0 16px', fontSize: '16px', color: 'var(--navy-950)' }}>
-              {modalState.type === 'single' ? `تجديد عقد لـ (${modalState.emp?.employee_name})` : `توليد طلبات تجديد لـ (${selectedEmpCodes.length}) موظف`}
+          <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
+            
+            {/* العنوان */}
+            <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: '#334155', textAlign: 'center', fontWeight: '800' }}>
+              {modalState.type === 'single' ? `إنشاء طلب تجديد لـ (${modalState.emp?.employee_name})` : `إنشاء طلبات تجديد لـ (${selectedEmpCodes.length}) موظف`}
             </h3>
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 'bold' }}>اختر مدة التجديد المطلوبة:</label>
-              <select value={renewalMonths} onChange={(e) => setRenewalMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
-                <option value={3}>3 شهور (ربع سنوي)</option><option value={6}>6 شهور (نصف سنوي)</option><option value={12}>12 شهر (سنة كاملة)</option>
-              </select>
+
+            {/* شريط خيارات الراديو (تجديد بالشهور / تاريخ انتهاء مخصص) */}
+            <div style={{ background: '#fdfbf7', border: '1px solid #f1e9d2', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'months' ? '#856404' : '#64748b', cursor: 'pointer' }}>
+                <input type="radio" name="renewalMode" checked={renewalMode === 'months'} onChange={() => setRenewalMode('months')} style={{ accentColor: '#b8934a' }} />
+                تجديد بالشهور (تلقائي)
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'custom' ? '#856404' : '#64748b', cursor: 'pointer' }}>
+                <input type="radio" name="renewalMode" checked={renewalMode === 'custom'} onChange={() => setRenewalMode('custom')} style={{ accentColor: '#b8934a' }} />
+                تاريخ انتهاء مخصص
+              </label>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button onClick={() => setModalState({ isOpen: false, type: 'single' })} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>إلغاء</button>
-              <button onClick={confirmRenewalAction} disabled={actionLoading} style={{ background: '#b8934a', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>
-                {actionLoading ? 'جاري الإنشاء...' : modalState.type === 'single' ? 'حفظ وإنشاء PDF 📄' : 'توليد الطلبات المجمعة'}
+
+            {/* محتوى الاختيار 1: التجديد بالشهور (1, 2, 3, 6, 9, 12) */}
+            {renewalMode === 'months' && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>يرجى اختيار مدة التجديد بالشهور:</label>
+                <select value={renewalMonths} onChange={(e) => setRenewalMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold', background: '#fff' }}>
+                  <option value={1}>شهر واحد (1 شهر)</option>
+                  <option value={2}>شهران (2 شهر)</option>
+                  <option value={3}>3 شهور (ربع سنوي)</option>
+                  <option value={6}>6 شهور (نصف سنوي)</option>
+                  <option value={9}>9 شهور</option>
+                  <option value={12}>12 شهر (سنة كاملة)</option>
+                  <option value={24}>24 شهر (سنتين)</option>
+                  <option value={36}>36 شهر (3 سنوات)</option>
+                </select>
+              </div>
+            )}
+
+            {/* محتوى الاختيار 2: تاريخ انتهاء مخصص (تحديد يدوي) */}
+            {renewalMode === 'custom' && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>حدد تاريخ انتهاء العقد الجديد يدوياً:</label>
+                <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
+              </div>
+            )}
+
+            {/* عرض تاريخ الانتهاء المتوقع باللون الأخضر */}
+            {modalState.type === 'single' && (
+              <div style={{ textAlign: 'left', fontSize: '12px', marginBottom: '24px', direction: 'ltr' }}>
+                <span style={{ color: '#15803d', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '13px' }}>
+                  {renewalMode === 'months' ? calculateNewEndDate(modalState.emp?.contract_end_date, renewalMonths) : (customEndDate || '—')}
+                </span>
+                <span style={{ color: '#64748b', fontWeight: 'bold', marginLeft: '6px' }}>:تاريخ الانتهاء المتوقع</span>
+              </div>
+            )}
+
+            {/* زراير الإلغاء والتأكيد */}
+            <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px', direction: 'rtl' }}>
+              <button 
+                onClick={confirmRenewalAction} 
+                disabled={actionLoading} 
+                style={{ background: '#b8934a', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+              >
+                ✅ {actionLoading ? 'جاري التنفيذ...' : 'تأكيد وإجراء الطلب'}
+              </button>
+              <button 
+                onClick={() => setModalState({ isOpen: false, type: 'single' })} 
+                style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}
+              >
+                إلغاء
               </button>
             </div>
+
           </div>
         </div>
       )}
 
-      {/* نافذة الـ PDF للطباعة (بعد التجديد الفردي أو العقد الجديد) */}
+      {/* نافذة الـ PDF للطباعة */}
       {createdRequestData && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ background: '#fff', borderRadius: '12px', width: '750px', maxHeight: '90vh', overflowY: 'auto', padding: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.4)' }}>
