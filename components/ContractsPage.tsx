@@ -178,9 +178,10 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  // دالة استخراج المعرف لضمان عدم إرسال null
+  // 🎯 دالة الحصول على employee_id الصحيح والمضمون
   const getEmpId = (emp: any) => {
-    return emp.id || emp.employee_id || Number(emp.employee_code) || emp.employee_code;
+    if (!emp) return '0';
+    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
   // دالة إنهاء التعاقد
