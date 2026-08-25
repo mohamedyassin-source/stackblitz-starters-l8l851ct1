@@ -126,7 +126,21 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // 🌟 دالة رفع وتحديث البيانات يدوياً من شيت الإكسيل (تطابق كامل مع smartlist 25)
+  // 🌟 دالة مساعدة لتحويل تاريخ الإكسيل الرقمي إلى صيغة YYYY-MM-DD
+  const formatExcelDate = (val: any) => {
+    if (!val) return null;
+    if (typeof val === 'number') {
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+    }
+    if (typeof val === 'string') {
+      const date = new Date(val);
+      if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+    }
+    return null;
+  };
+
+  // 🌟 دالة رفع وتحديث البيانات يدوياً من شيت الإكسيل
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -144,13 +158,11 @@ export default function EmployeesPage() {
       }
 
       const formattedRows = excelRows.map((row: any) => {
-        // قراءة كود الموظف بكل الاحتمالات بما فيها EMPLOYEE_CODE2
         const code = String(
           row['EMPLOYEE_CODE2'] || row['EMPLOYEE_CODE'] || row['Employee_Code'] || 
           row['كود الموظف'] || row['كود'] || row['الكود'] || row['employee_code'] || row['EmployeeCode'] || ''
         ).trim();
 
-        // تحويل نوع العقد من Permanent إلى دائم
         const rawRegister = String(row['REGISTER'] || row['Register'] || row['نوع العقد'] || row['contract_type'] || '').trim();
         const contractType = (rawRegister === 'Permanent' || rawRegister === 'دائم') ? 'دائم' : (rawRegister || 'محدد المدة');
 
@@ -174,9 +186,9 @@ export default function EmployeesPage() {
           job_title: String(
             row['JOB_TITLE'] || row['JobTitle'] || row['الوظيفة'] || row['المسمى الوظيفي'] || row['job_title'] || ''
           ).trim(),
-          hiring_date: row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date'] || null,
+          hiring_date: formatExcelDate(row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date']),
           contract_type: contractType,
-          contract_end_date: contractType === 'دائم' ? null : (row['contract_end_date'] || null),
+          contract_end_date: contractType === 'دائم' ? null : formatExcelDate(row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد']),
           status: 'Active',
           email: row['EMAIL'] || row['البريد'] || row['email'] || '',
           mobile: String(row['MOBILE'] || row['Mobile'] || row['الهاتف'] || row['الموبايل'] || '').trim()
