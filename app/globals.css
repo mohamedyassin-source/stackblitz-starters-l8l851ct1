@@ -6,9 +6,9 @@
 :root {
   --navy-950: #0a0f1c;
   --navy-900: #101828;
-  --brass-600: #9c7a2e;
-  --brass-500: #b8934a;
-  --brass-400: #d1ab63;
+  --brass-600: #0f766e;
+  --brass-500: #0d9488;
+  --brass-400: #2dd4bf;
   --paper: #f6f3ea;
   --paper-card: #ffffff;
   --line: #e6e1d3;
@@ -123,7 +123,7 @@ body {
   background: linear-gradient(135deg, var(--brass-400), var(--brass-600));
   color: #fff;
   font-weight: 800;
-  box-shadow: 0 6px 14px rgba(156, 122, 46, 0.35);
+  box-shadow: 0 6px 14px rgba(13, 148, 136, 0.35);
 }
 
 .btn-primary {
