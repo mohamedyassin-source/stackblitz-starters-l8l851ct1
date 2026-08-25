@@ -143,7 +143,6 @@ export default function EmployeesPage() {
       const workbook = XLSX.read(buffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // defval: undefined مهمة جداً لكي لا يقرأ الأعمدة غير الموجودة كأنها نصوص فارغة
       const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
 
       if (excelRows.length === 0) {
@@ -157,7 +156,6 @@ export default function EmployeesPage() {
 
       const existingMap = new Map((existingEmps || []).map(emp => [String(emp.employee_code).trim(), emp]));
 
-      // دالة استخراج القيمة من صف الإكسيل لو العمود موجود، ولو مش موجود ترجع undefined
       const getVal = (row: any, keys: string[]) => {
         for (const k of keys) {
           if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
@@ -167,6 +165,7 @@ export default function EmployeesPage() {
         return undefined;
       };
 
+      // 🌟 الحل هنا: أضفنا "as any[]" لإخبار TypeScript بتجاهل خطأ النوع
       const formattedRows = excelRows.map((row: any) => {
         const code = getVal(row, ['EMPLOYEE_CODE2', 'EMPLOYEE_CODE', 'Employee_Code', 'كود الموظف', 'كود', 'الكود', 'employee_code', 'EmployeeCode']);
         if (!code) return null;
@@ -174,7 +173,6 @@ export default function EmployeesPage() {
         const existingEmp = existingMap.get(code);
         const isNew = !existingEmp;
 
-        // 1. قراءة البيانات من الإكسيل (لو متاحة)
         const excelName = getVal(row, ['Employee_NAME', 'EMPLOYEE_NAME', 'EmployeeName', 'اسم الموظف', 'الاسم', 'اسم', 'employee_name', 'ArabicName']);
         const excelNid = getVal(row, ['ID_NO', 'ID_NUMBER', 'NATIONAL_ID', 'الرقم القومي', 'national_id', 'NationalID']);
         const excelDept = getVal(row, ['DEPARTMENT', 'Department', 'الإدارة', 'القسم', 'department']);
@@ -190,7 +188,6 @@ export default function EmployeesPage() {
         const rawEndDate = row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد'];
         const excelEndDate = rawEndDate !== undefined ? formatExcelDate(rawEndDate) : undefined;
 
-        // 2. الدمج الذكي: الأولوية للإكسيل لو موجود، غير كده ياخد داتا قاعدة البيانات القديمة
         const finalName = excelName !== undefined ? excelName : (existingEmp?.employee_name || '');
         const finalNid = excelNid !== undefined ? excelNid : (existingEmp?.national_id || '');
         const finalDept = excelDept !== undefined ? excelDept : (existingEmp?.department || '');
@@ -200,24 +197,21 @@ export default function EmployeesPage() {
         const finalMobile = excelMobile !== undefined ? excelMobile : (existingEmp?.mobile || '');
         const finalHiringDate = excelHiringDate !== undefined ? excelHiringDate : (existingEmp?.hiring_date || null);
 
-        // 3. حالة الموظف: Terminated لو الإدارة "تحويلات تحت الاعتماد"
         let finalStatus = existingEmp ? existingEmp.status : 'Active';
         if (finalDept === 'تحويلات تحت الاعتماد') {
           finalStatus = 'Inactive';
         }
 
-        // 4. منطق العقود الذكي
         let finalContractType;
         let finalContractEndDate;
 
         if (isNew) {
-          // موظف جديد: العقد محدد المدة، والنهاية بعد سنة من تاريخ التعيين
           finalContractType = 'محدد المدة';
           if (finalHiringDate) {
             const hDate = new Date(finalHiringDate);
             if (!isNaN(hDate.getTime())) {
               hDate.setFullYear(hDate.getFullYear() + 1);
-              hDate.setDate(hDate.getDate() - 1); // نطرح يوم ليصبح سنة كاملة بالظبط
+              hDate.setDate(hDate.getDate() - 1);
               finalContractEndDate = hDate.toISOString().split('T')[0];
             } else {
               finalContractEndDate = null;
@@ -226,7 +220,6 @@ export default function EmployeesPage() {
             finalContractEndDate = null;
           }
         } else {
-          // موظف موجود: تحدث البيانات فقط لو الإكسيل بيحتوي على أعمدة العقود
           if (excelContractRaw !== undefined) {
             finalContractType = (excelContractRaw === 'Permanent' || excelContractRaw === 'دائم') ? 'دائم' : (excelContractRaw || 'محدد المدة');
           } else {
@@ -236,7 +229,6 @@ export default function EmployeesPage() {
           if (excelEndDate !== undefined) {
             finalContractEndDate = excelEndDate;
           } else {
-            // لو تم تعديل العقد لـ "دائم" من الإكسيل نمسح تاريخ النهاية
             if (excelContractRaw !== undefined && finalContractType === 'دائم') {
               finalContractEndDate = null;
             } else {
@@ -260,14 +252,13 @@ export default function EmployeesPage() {
           email: finalEmail,
           mobile: finalMobile
         };
-      }).filter(r => r !== null);
+      }).filter(r => r !== null) as any[]; // 👈 تم إضافة as any[] هنا لحل المشكلة
 
       if (formattedRows.length === 0) {
         alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
         return;
       }
 
-      // رفع البيانات على دفعات للحماية من التوقف
       for (let i = 0; i < formattedRows.length; i += 1000) {
         const chunk = formattedRows.slice(i, i + 1000);
         const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
@@ -521,7 +512,6 @@ export default function EmployeesPage() {
         style={{ display: 'none' }} 
       />
 
-      {/* رأس الصفحة بالأزرار المصغّرة */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين النشطين</h3>
@@ -529,7 +519,6 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-          
           <button 
             onClick={() => fileInputRef.current?.click()} 
             disabled={uploading}
@@ -558,7 +547,6 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* الكروت التفاعلية الأربعة + النسبة المئوية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
         
         <div 
@@ -631,7 +619,6 @@ export default function EmployeesPage() {
 
       </div>
 
-      {/* شريط الإجراءات المجمعة */}
       {selectedEmpIds.length > 0 && (
         <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '10px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold' }}>
@@ -651,7 +638,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* شريط الفلاتر والبحث */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '220px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         
@@ -673,7 +659,6 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* الجدول المفلتر */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
@@ -753,7 +738,6 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      {/* نافذة الملف الشامل */}
       {profileEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '600px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -782,7 +766,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* نافذة إنهاء الخدمة Terminated Modal */}
       {showTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -861,7 +844,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* نافذة النقل المجمع */}
       {showBulkTransferModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -898,7 +880,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* نافذة التعديل الشامل */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -969,7 +950,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* نافذة الإضافة المباشرة */}
       {showAddModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '650px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
