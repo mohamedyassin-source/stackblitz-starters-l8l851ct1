@@ -12,7 +12,7 @@ export default function EmployeesPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
-  // 🌟 حالات الترتيب (Sorting)
+  // حالات الترتيب (Sorting)
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
@@ -43,7 +43,7 @@ export default function EmployeesPage() {
   const compsList = Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean)));
   const typesList = Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean)));
 
-  // 🌟 دالة تغيير الترتيب عند الضغط على أغطية الأعمدة
+  // دالة تغيير الترتيب عند الضغط على أغطية الأعمدة
   const handleSort = (columnKey: string) => {
     if (sortColumn === columnKey) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
@@ -136,13 +136,19 @@ export default function EmployeesPage() {
     });
   };
 
+  // ====== دالة التعديل المحسنة ======
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
     
+    // إظهار مؤشر التحميل
+    setEditData({ ...editData, saving: true });
+    
     try {
       const empId = editData.emp.id || editData.emp.employee_id;
-      await supabase.from('employees').update({
+      
+      // تحضير بيانات التحديث
+      const updateData = {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
         english_name: getField(editData.emp, 'english_name', 'EnglishName'),
@@ -156,54 +162,99 @@ export default function EmployeesPage() {
         status: getField(editData.emp, 'status', 'Status'),
         email: getField(editData.emp, 'email', 'Email'),
         phone: getField(editData.emp, 'phone', 'Mobile')
-      }).eq(editData.emp.id ? 'id' : 'employee_id', empId);
+      };
 
+      console.log('Updating employee with data:', updateData);
+      console.log('Employee ID:', empId);
+
+      // تنفيذ التحديث في قاعدة البيانات
+      const { data, error } = await supabase
+        .from('employees')
+        .update(updateData)
+        .eq(editData.emp.id ? 'id' : 'employee_id', empId)
+        .select(); // إضافة select للحصول على البيانات المحدثة
+
+      if (error) throw error;
+      
+      console.log('Update successful:', data);
+
+      // تحديث renewal إذا وجد
       if (editData.renewal && editData.renewal.id) {
-        await supabase.from('renewal_requests').update({
-          department: getField(editData.emp, 'department', 'Department'),
-          company: getField(editData.emp, 'company', 'Company'),
-          contract_end_date: getField(editData.emp, 'contract_end_date', 'ContractEndDate')
-        }).eq('id', editData.renewal.id);
+        const { error: renewalError } = await supabase
+          .from('renewal_requests')
+          .update({
+            department: getField(editData.emp, 'department', 'Department'),
+            company: getField(editData.emp, 'company', 'Company'),
+            contract_end_date: getField(editData.emp, 'contract_end_date', 'ContractEndDate')
+          })
+          .eq('id', editData.renewal.id);
+        
+        if (renewalError) throw renewalError;
       }
 
       alert('تم حفظ التعديلات بنجاح ✅');
       setEditData(null);
-      fetchEmployees();
+      
+      // إعادة جلب البيانات مع تأخير بسيط لضمان تحديث قاعدة البيانات
+      await fetchEmployees();
+      
     } catch (err: any) {
+      console.error('Error saving employee:', err);
       alert('حدث خطأ أثناء الحفظ: ' + err.message);
+    } finally {
+      // إزالة مؤشر التحميل
+      if (editData) {
+        setEditData(prev => prev ? { ...prev, saving: false } : null);
+      }
     }
   };
 
+  // ====== دالة إضافة موظف محسنة ======
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { error } = await supabase.from('employees').insert([{
-      employee_id: `EMP-${newEmp.employee_code}`,
-      employee_code: newEmp.employee_code,
-      employee_name: newEmp.employee_name,
-      english_name: newEmp.english_name,
-      national_id: newEmp.national_id,
-      department: newEmp.department,
-      company: newEmp.company,
-      job_title: newEmp.job_title,
-      hiring_date: newEmp.hiring_date,
-      contract_type: newEmp.contract_type,
-      contract_end_date: newEmp.contract_type === 'دائم' ? null : newEmp.contract_end_date,
-      status: newEmp.status,
-      email: newEmp.email,
-      phone: newEmp.phone
-    }]);
+    
+    try {
+      const { data, error } = await supabase.from('employees').insert([{
+        employee_id: `EMP-${newEmp.employee_code}`,
+        employee_code: newEmp.employee_code,
+        employee_name: newEmp.employee_name,
+        english_name: newEmp.english_name,
+        national_id: newEmp.national_id,
+        department: newEmp.department,
+        company: newEmp.company,
+        job_title: newEmp.job_title,
+        hiring_date: newEmp.hiring_date,
+        contract_type: newEmp.contract_type,
+        contract_end_date: newEmp.contract_type === 'دائم' ? null : newEmp.contract_end_date,
+        status: newEmp.status,
+        email: newEmp.email,
+        phone: newEmp.phone
+      }]).select();
 
-    if (error) alert('خطأ أثناء الإضافة: ' + error.message);
-    else {
+      if (error) throw error;
+
       alert('تم إضافة الموظف بنجاح ✅');
       setShowAddModal(false);
-      fetchEmployees();
+      
+      // إعادة تعيين نموذج الإضافة
+      setNewEmp({
+        employee_code: '', employee_name: '', english_name: '', national_id: '',
+        department: '', company: '', job_title: '', hiring_date: '',
+        contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', phone: ''
+      });
+      
+      // إعادة جلب البيانات
+      await fetchEmployees();
+      
+    } catch (err: any) {
+      console.error('Error adding employee:', err);
+      alert('خطأ أثناء الإضافة: ' + err.message);
     }
   };
 
   const renderSortArrow = (colKey: string) => {
     if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
-    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▼</span>;
+    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
   };
 
   return (
@@ -272,7 +323,7 @@ export default function EmployeesPage() {
                     <input type="checkbox" checked={selectedEmpIds.length === sortedAndFilteredEmployees.length && sortedAndFilteredEmployees.length > 0} onChange={e => setSelectedEmpIds(e.target.checked ? sortedAndFilteredEmployees.map(emp => emp.id || emp.employee_id) : [])} style={{ accentColor: 'var(--brass-600)' }} />
                   </th>
                   
-                  {/* 🌟 رؤوس الأعمدة مع دعم ترتيب Asc/Desc */}
+                  {/* رؤوس الأعمدة مع دعم ترتيب Asc/Desc */}
                   <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
                     الكود {renderSortArrow('employee_code')}
                   </th>
@@ -387,7 +438,19 @@ export default function EmployeesPage() {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
                   <button type="button" onClick={() => setEditData(null)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                  <button type="submit" style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>حفظ كافة التعديلات</button>
+                  <button type="submit" disabled={editData.saving} style={{ 
+                    background: editData.saving ? 'var(--muted, #64748b)' : 'var(--brass-600, #0d9488)', 
+                    color: '#fff', 
+                    border: 0, 
+                    padding: '10px 20px', 
+                    borderRadius: '8px', 
+                    fontWeight: 'bold', 
+                    fontSize: '12px', 
+                    cursor: editData.saving ? 'not-allowed' : 'pointer',
+                    opacity: editData.saving ? 0.7 : 1
+                  }}>
+                    {editData.saving ? 'جاري الحفظ...' : 'حفظ كافة التعديلات'}
+                  </button>
                 </div>
               </form>
             )}
