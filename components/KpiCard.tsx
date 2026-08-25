@@ -84,7 +84,7 @@ export default function KpiCard({
         isBrass
           ? {
               background: 'linear-gradient(135deg, var(--brass-400), var(--brass-600))',
-              boxShadow: '0 10px 20px rgba(184, 147, 74, 0.25)',
+              boxShadow: '0 10px 20px rgba(13, 148, 136, 0.25)',
             }
           : undefined
       }
@@ -99,7 +99,7 @@ export default function KpiCard({
 
         <div className="flex items-baseline gap-2 mt-1">
           <span className="text-2xl font-mono font-extrabold" style={{ color: c.value }}>
-            {value.toLocaleString('ar-EG')}
+            {value.toLocaleString('en-US')}
           </span>
           {trend && (
             <span
