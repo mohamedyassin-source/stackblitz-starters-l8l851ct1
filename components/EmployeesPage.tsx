@@ -59,7 +59,7 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 🌟 1. استبعاد الموظفين المنتهية خدمتهم (Inactive/Terminated) نهائياً من كافة الحسابات والصفحة
+  // 🌟 1. استبعاد الموظفين المنتهية خدمتهم (Inactive/Terminated) نهائياً
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
@@ -69,7 +69,7 @@ export default function EmployeesPage() {
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // 🌟 2. تطبيق فلاتر البحث/الشركة/الإدارة أولاً لتتجاوب معها أرقام الكروت
+  // 🌟 2. تطبيق فلاتر البحث/الشركة/الإدارة
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -88,7 +88,7 @@ export default function EmployeesPage() {
     });
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType]);
 
-  // 🌟 3. إحصائيات الكروت الديناميكية المتأثرة بالفلاتر + حساب النسب المئوية
+  // 🌟 3. إحصائيات الكروت الديناميكية + حساب النسب المئوية
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
@@ -126,7 +126,7 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // رفع واستيراد شيت إكسيل رايت
+  // 🌟 دالة رفع وتحديث البيانات يدوياً من شيت الإكسيل (تطابق كامل مع smartlist 25)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -144,22 +144,49 @@ export default function EmployeesPage() {
       }
 
       const formattedRows = excelRows.map((row: any) => {
-        const code = String(row['كود الموظف'] || row['كود'] || row['الكود'] || row['employee_code'] || row['EmployeeCode'] || '').trim();
+        // قراءة كود الموظف بكل الاحتمالات بما فيها EMPLOYEE_CODE2
+        const code = String(
+          row['EMPLOYEE_CODE2'] || row['EMPLOYEE_CODE'] || row['Employee_Code'] || 
+          row['كود الموظف'] || row['كود'] || row['الكود'] || row['employee_code'] || row['EmployeeCode'] || ''
+        ).trim();
+
+        // تحويل نوع العقد من Permanent إلى دائم
+        const rawRegister = String(row['REGISTER'] || row['Register'] || row['نوع العقد'] || row['contract_type'] || '').trim();
+        const contractType = (rawRegister === 'Permanent' || rawRegister === 'دائم') ? 'دائم' : (rawRegister || 'محدد المدة');
+
         return {
           employee_id: `EMP-${code}`,
           employee_code: code,
-          employee_name: String(row['اسم الموظف'] || row['الاسم'] || row['اسم'] || row['employee_name'] || row['ArabicName'] || '').trim(),
-          national_id: String(row['الرقم القومي'] || row['national_id'] || row['NationalID'] || '').trim(),
-          department: String(row['الإدارة'] || row['القسم'] || row['department'] || row['Department'] || '').trim(),
-          company: String(row['الشركة'] || row['company'] || row['Company'] || '').trim(),
-          job_title: String(row['الوظيفة'] || row['المسمى الوظيفي'] || row['job_title'] || row['JobTitle'] || '').trim(),
-          hiring_date: row['تاريخ التعيين'] || row['hiring_date'] || null,
-          contract_type: row['نوع العقد'] || row['contract_type'] || 'محدد المدة',
-          contract_end_date: row['تاريخ نهاية العقد'] || row['contract_end_date'] || null,
+          employee_name: String(
+            row['Employee_NAME'] || row['EMPLOYEE_NAME'] || row['EmployeeName'] || 
+            row['اسم الموظف'] || row['الاسم'] || row['اسم'] || row['employee_name'] || row['ArabicName'] || ''
+          ).trim(),
+          national_id: String(
+            row['ID_NO'] || row['ID_NUMBER'] || row['NATIONAL_ID'] || 
+            row['الرقم القومي'] || row['national_id'] || row['NationalID'] || ''
+          ).trim(),
+          department: String(
+            row['DEPARTMENT'] || row['Department'] || row['الإدارة'] || row['القسم'] || row['department'] || ''
+          ).trim(),
+          company: String(
+            row['COMANY_NAME'] || row['COMPANY_NAME'] || row['Company'] || row['الشركة'] || row['company'] || ''
+          ).trim(),
+          job_title: String(
+            row['JOB_TITLE'] || row['JobTitle'] || row['الوظيفة'] || row['المسمى الوظيفي'] || row['job_title'] || ''
+          ).trim(),
+          hiring_date: row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date'] || null,
+          contract_type: contractType,
+          contract_end_date: contractType === 'دائم' ? null : (row['contract_end_date'] || null),
           status: 'Active',
-          email: row['البريد'] || row['email'] || ''
+          email: row['EMAIL'] || row['البريد'] || row['email'] || '',
+          phone: String(row['MOBILE'] || row['Mobile'] || row['الهاتف'] || row['الموبايل'] || '').trim()
         };
       }).filter(r => r.employee_code !== '');
+
+      if (formattedRows.length === 0) {
+        alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
+        return;
+      }
 
       const { error } = await supabase.from('employees').upsert(formattedRows, { onConflict: 'employee_code' });
       if (error) throw error;
@@ -717,7 +744,7 @@ export default function EmployeesPage() {
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
                 >
                   <option value="استقالة">استقالة</option>
-                  <option value="إنتهاء عقد">إنتهاء عقد</option>
+                  <option value="إنهاء عقد">إنهاء عقد</option>
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
                   <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
                   <option value="انقطاع عن العمل">انقطاع عن العمل</option>
