@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import ModalShell from '@/components/ModalShell';
+import ModalShell from '@/components/modals/ModalShell';
 import Field from '@/components/Field';
 
 const CONTRACT_TYPES = ['محدد المدة', 'محدد المدة - فوق السن', 'دائم', 'مهمة/مشروع'];
