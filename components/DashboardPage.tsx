@@ -135,8 +135,8 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    // 🌟 حساب معدل التجديدات الفعلي لسنة 2026 من شهر 1 لـ 12
-    const targetYear = 2026;
+    // 🌟 🆕 حساب معدل التجديدات الفعلي (استثناء العقود الدائمة ومراعاة بداية العقد الجديد)
+    const currentYear = new Date().getFullYear();
     const monthsNames = [
       'يناير',
       'فبراير',
@@ -154,28 +154,15 @@ export default function DashboardPage() {
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
     filteredRens.forEach((req) => {
-      // قبول طلبات التجديد المعتمدة الفعالة
-      const isApproved =
-        req.status === 'Approved' ||
-        req.status === 'معتمد' ||
-        req.action === 'تجديد' ||
-        req.hr_action === 'تجديد العقد';
-
-      if (isApproved) {
-        // الاعتماد على تاريخ بداية العقد الجديد لسنة 2026 أو تاريخ التجديد المعتمد
-        const renewalDateStr =
-          req.contract_start_date ||
-          req.new_start_date ||
-          req.contract_end_date ||
-          req.created_at;
-
-        if (renewalDateStr) {
-          const d = new Date(renewalDateStr);
-          if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
-            const monthIdx = d.getMonth(); // 0 لـ 11
-            if (monthIdx >= 0 && monthIdx < 12) {
-              renewalsByMonth[monthIdx].count++;
-            }
+      // فقط الطلبات المعتمدة
+      if (req.status === 'Approved') {
+        // نأخذ تاريخ بداية العقد الجديد، ولو لم يوجد نأخذ تاريخ نهاية العقد القديم كمرجع لبداية الفترة
+        const actualStartDate =
+          req.contract_start_date || req.contract_end_date || req.request_date;
+        if (actualStartDate) {
+          const d = new Date(actualStartDate);
+          if (!isNaN(d.getTime()) && d.getFullYear() === currentYear) {
+            renewalsByMonth[d.getMonth()].count++;
           }
         }
       }
@@ -188,9 +175,8 @@ export default function DashboardPage() {
       aboveAgeCount: aboveAge,
       expiredCount: expired,
       expiringSoonCount: expiring,
-      pendingRenewals: filteredRens.filter(
-        (r) => r.status === 'Pending' || r.status === 'قيد الانتظار'
-      ).length,
+      pendingRenewals: filteredRens.filter((r) => r.status === 'Pending')
+        .length,
       turning60List,
       topDepts,
       urgentAlerts,
@@ -208,7 +194,7 @@ export default function DashboardPage() {
     month: 'long',
     year: 'numeric',
   });
-  const timeFormatted = currentTime.toLocaleTimeString('en-US', {
+  const timeFormatted = currentTime.toLocaleTimeString('ar-EG', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
@@ -281,13 +267,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* بطاقات المؤشرات الرئيسية */}
+      {/* بطاقات المؤشرات الرئيسية (تم تحسين المقاس لـ 5 كروت مع كرت بلوغ سن 60) */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <KpiCard
           loading={loading}
           tone="brass"
           title="إجمالي قوة العمل"
-          value={dashboardData.totalEmps.toLocaleString('en-US')}
+          value={dashboardData.totalEmps}
           sub="موظف"
           icon="👥"
         />
@@ -295,7 +281,7 @@ export default function DashboardPage() {
           loading={loading}
           tone="blue"
           title="طلبات تجديد معلقة"
-          value={dashboardData.pendingRenewals.toLocaleString('en-US')}
+          value={dashboardData.pendingRenewals}
           sub="طلب"
           icon="⏳"
           onClick={() => navigateTo('renewals')}
@@ -304,7 +290,7 @@ export default function DashboardPage() {
           loading={loading}
           tone="amber"
           title="عقود تنتهي قريباً (60 يوم)"
-          value={dashboardData.expiringSoonCount.toLocaleString('en-US')}
+          value={dashboardData.expiringSoonCount}
           sub="عقد"
           icon="📆"
         />
@@ -312,7 +298,7 @@ export default function DashboardPage() {
           loading={loading}
           tone="red"
           title="عقود منتهية (تحتاج إجراء)"
-          value={dashboardData.expiredCount.toLocaleString('en-US')}
+          value={dashboardData.expiredCount}
           sub="عقد"
           icon="🚨"
         />
@@ -320,7 +306,7 @@ export default function DashboardPage() {
           loading={loading}
           tone="amber"
           title="سن الـ 60 قريباً (خلال 60 يوم)"
-          value={dashboardData.turning60List.length.toLocaleString('en-US')}
+          value={dashboardData.turning60List.length}
           sub="عرض القائمة 👁️"
           icon="🎂"
           onClick={() => setShowAgeModal(true)}
@@ -347,9 +333,7 @@ export default function DashboardPage() {
                     style={{ color: 'var(--ink)' }}
                   >
                     <span>{dept.name}</span>
-                    <span className="font-mono">
-                      {dept.count.toLocaleString('en-US')} موظف
-                    </span>
+                    <span>{dept.count} موظف</span>
                   </div>
                   <div
                     className="w-full h-2 rounded-full overflow-hidden"
@@ -378,13 +362,13 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 معدل التجديدات المعتمدة لسنة 2026 */}
+        {/* 🌟 🆕 معدل التجديدات المعتمدة هذا العام (تاريخ بداية العقد الفعلي الجديد) */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4
             className="m-0 mb-5 text-[13.5px] font-extrabold"
             style={{ color: 'var(--navy-950)' }}
           >
-            📈 معدل التجديدات المعتمدة لعام 2026 (بداية العقد الفعلي)
+            📈 معدل التجديدات المعتمدة هذا العام (تاريخ بداية العقد الفعلي)
           </h4>
           <div
             className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b"
@@ -399,13 +383,13 @@ export default function DashboardPage() {
                   className="flex-1 flex flex-col items-center justify-end h-full"
                 >
                   <span
-                    className="text-[10px] font-mono font-bold mb-1"
+                    className="text-[10px] font-bold mb-1"
                     style={{
                       color:
                         month.count > 0 ? 'var(--stamp-green)' : 'transparent',
                     }}
                   >
-                    {month.count.toLocaleString('en-US')}
+                    {month.count}
                   </span>
                   <div
                     className="w-full max-w-[24px] rounded-t-md transition-all duration-700"
@@ -459,7 +443,7 @@ export default function DashboardPage() {
                 className="text-base font-mono font-extrabold"
                 style={{ color: 'var(--ink)' }}
               >
-                {dashboardData.permCount.toLocaleString('en-US')}
+                {dashboardData.permCount.toLocaleString()}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -480,7 +464,7 @@ export default function DashboardPage() {
                 className="text-base font-mono font-extrabold"
                 style={{ color: 'var(--ink)' }}
               >
-                {dashboardData.fixedCount.toLocaleString('en-US')}
+                {dashboardData.fixedCount.toLocaleString()}
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -501,7 +485,7 @@ export default function DashboardPage() {
                 className="text-base font-mono font-extrabold"
                 style={{ color: 'var(--ink)' }}
               >
-                {dashboardData.aboveAgeCount.toLocaleString('en-US')}
+                {dashboardData.aboveAgeCount.toLocaleString()}
               </div>
             </div>
           </div>
@@ -514,10 +498,11 @@ export default function DashboardPage() {
               className="m-0 text-[13.5px] font-extrabold flex items-center gap-2"
               style={{ color: 'var(--stamp-red)' }}
             >
-              <span className="text-base">🚨</span> مهام عاجلة (اضغط على الموظف للتجديد)
+              <span className="text-base">🚨</span> مهام عاجلة (اضغط على الموظف
+              للتجديد)
             </h4>
             <span
-              className="text-[10px] font-mono font-bold px-2.5 py-1 rounded-full"
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full"
               style={{ background: 'var(--paper)', color: 'var(--muted)' }}
             >
               أخطر 20 عقد
@@ -566,12 +551,10 @@ export default function DashboardPage() {
                       <td>
                         {alert.status === 'expired' ? (
                           <Stamp color="red">
-                            منتهي ({Math.abs(alert.days).toLocaleString('en-US')})
+                            منتهي ({Math.abs(alert.days)})
                           </Stamp>
                         ) : (
-                          <Stamp color="amber">
-                            متبقي {alert.days.toLocaleString('en-US')} يوم
-                          </Stamp>
+                          <Stamp color="amber">متبقي {alert.days} يوم</Stamp>
                         )}
                       </td>
                     </tr>
@@ -583,7 +566,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 النافذة المنبثقة للبالغين سن الـ 60 قريباً */}
+      {/* 🌟 🆕 النافذة المنبثقة للبالغين سن الـ 60 قريباً */}
       {showAgeModal && (
         <div
           style={{
@@ -677,12 +660,36 @@ export default function DashboardPage() {
                         borderBottom: '1px solid #cbd5e1',
                       }}
                     >
-                      <th style={{ padding: '10px', color: '#475569' }}>الكود</th>
-                      <th style={{ padding: '10px', color: '#475569' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: '#475569' }}>الإدارة</th>
-                      <th style={{ padding: '10px', color: '#475569' }}>تاريخ بلوغ الـ 60</th>
-                      <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>المتبقي</th>
-                      <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>إجراء</th>
+                      <th style={{ padding: '10px', color: '#475569' }}>
+                        الكود
+                      </th>
+                      <th style={{ padding: '10px', color: '#475569' }}>
+                        الموظف
+                      </th>
+                      <th style={{ padding: '10px', color: '#475569' }}>
+                        الإدارة
+                      </th>
+                      <th style={{ padding: '10px', color: '#475569' }}>
+                        تاريخ بلوغ الـ 60
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px',
+                          color: '#475569',
+                          textAlign: 'center',
+                        }}
+                      >
+                        المتبقي
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px',
+                          color: '#475569',
+                          textAlign: 'center',
+                        }}
+                      >
+                        إجراء
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -701,7 +708,13 @@ export default function DashboardPage() {
                         >
                           {emp.employee_code}
                         </td>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>
+                        <td
+                          style={{
+                            padding: '10px',
+                            fontWeight: 'bold',
+                            color: '#0f172a',
+                          }}
+                        >
                           {emp.employee_name}
                         </td>
                         <td style={{ padding: '10px', color: '#64748b' }}>
@@ -727,7 +740,7 @@ export default function DashboardPage() {
                               fontSize: '10px',
                             }}
                           >
-                            متبقي {emp.daysLeft.toLocaleString('en-US')} يوم
+                            متبقي {emp.daysLeft} يوم
                           </span>
                         </td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
