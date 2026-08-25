@@ -301,7 +301,7 @@ export default function ContractsPage() {
           <button
             onClick={openBulkRenewal}
             disabled={selectedEmpCodes.length === 0}
-            style={{ background: selectedEmpCodes.length > 0 ? '#b8934a' : '#e2e8f0', color: selectedEmpCodes.length > 0 ? '#fff' : '#94a3b8', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: selectedEmpCodes.length > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px' }}
+            style={{ background: selectedEmpCodes.length > 0 ? '#0d9488' : '#e2e8f0', color: selectedEmpCodes.length > 0 ? '#fff' : '#94a3b8', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: selectedEmpCodes.length > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             ⚙️ توليد طلبات للمحددين ({selectedEmpCodes.length})
           </button>
@@ -312,19 +312,19 @@ export default function ContractsPage() {
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>العقود المحددة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>عقود محددة المدة</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{totalFixedContracts.toLocaleString()}</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{totalFixedContracts.toLocaleString('en-US')}</div>
         </div>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>عقود فوق السن</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تجديد سنوي</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{overAgeContracts.toLocaleString()}</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{overAgeContracts.toLocaleString('en-US')}</div>
         </div>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>تقترب من الانتهاء</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>متبقي 60 يوم أو أقل</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>{expiringSoonCount.toLocaleString()}</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>{expiringSoonCount.toLocaleString('en-US')}</div>
         </div>
         <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
           <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>عقود منتهية المدة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تحتاج تسوية أو تجديد</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>{expiredCount.toLocaleString()}</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>{expiredCount.toLocaleString('en-US')}</div>
         </div>
       </div>
 
@@ -411,7 +411,7 @@ export default function ContractsPage() {
                       <button
                         onClick={() => openSingleRenewal(emp)}
                         disabled={statusInfo.locked || actionLoading || isTerminated}
-                        style={{ background: statusInfo.locked || isTerminated ? '#e2e8f0' : '#b8934a', color: statusInfo.locked || isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
+                        style={{ background: statusInfo.locked || isTerminated ? '#e2e8f0' : '#0d9488', color: statusInfo.locked || isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
                       >
                         + إنشاء طلب
                       </button>
@@ -503,11 +503,11 @@ export default function ContractsPage() {
 
             <div style={{ background: '#fdfbf7', border: '1px solid #f1e9d2', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'months' ? '#856404' : '#64748b', cursor: 'pointer' }}>
-                <input type="radio" name="renewalMode" checked={renewalMode === 'months'} onChange={() => setRenewalMode('months')} style={{ accentColor: '#b8934a' }} />
+                <input type="radio" name="renewalMode" checked={renewalMode === 'months'} onChange={() => setRenewalMode('months')} style={{ accentColor: '#0d9488' }} />
                 تجديد بالشهور (تلقائي)
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'custom' ? '#856404' : '#64748b', cursor: 'pointer' }}>
-                <input type="radio" name="renewalMode" checked={renewalMode === 'custom'} onChange={() => setRenewalMode('custom')} style={{ accentColor: '#b8934a' }} />
+                <input type="radio" name="renewalMode" checked={renewalMode === 'custom'} onChange={() => setRenewalMode('custom')} style={{ accentColor: '#0d9488' }} />
                 تاريخ انتهاء مخصص
               </label>
             </div>
@@ -548,7 +548,7 @@ export default function ContractsPage() {
               <button 
                 onClick={confirmRenewalAction} 
                 disabled={actionLoading} 
-                style={{ background: '#b8934a', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+                style={{ background: '#0d9488', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
               >
                 ✅ {actionLoading ? 'جاري التنفيذ...' : 'تأكيد وإجراء الطلب'}
               </button>
@@ -576,7 +576,7 @@ export default function ContractsPage() {
               </div>
             </div>
             <div id="pdf-print-area" style={{ border: '2px solid #0f172a', padding: '30px', borderRadius: '8px', background: '#fff', direction: 'rtl', fontFamily: 'serif' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #b8934a', paddingBottom: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #0d9488', paddingBottom: '16px', marginBottom: '20px' }}>
                 <div><h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2><p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>قطاع الموارد البشرية والشؤون الإدارية</p></div>
                 <div style={{ textAlign: 'left', fontSize: '11px', fontFamily: 'monospace' }}><div>رقم العقد/الطلب: <strong>{createdRequestData.request_id}</strong></div><div>التاريخ: <strong>{createdRequestData.request_date}</strong></div></div>
               </div>
@@ -589,7 +589,7 @@ export default function ContractsPage() {
                 <div>تاريخ بداية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.contract_end_date}</strong></div>
                 <div>تاريخ نهاية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.new_contract_end_date}</strong></div>
               </div>
-              <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}><strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.</div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #0d9488', fontSize: '12px', marginBottom: '30px' }}><strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.</div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '50px', textAlign: 'center', fontSize: '12px' }}>
                 <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>توقيع الموظف</div><div>التوقيع: .....................</div></div>
                 <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>مراجعة الموارد البشرية</div><div>التوقيع: .....................</div></div>
