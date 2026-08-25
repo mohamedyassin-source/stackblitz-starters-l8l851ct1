@@ -1,10 +1,18 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAppData } from '@/lib/DataContext';
 
 export default function SignaturesPage() {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { renewals, loading, refresh: fetchApprovedRequests } = useAppData();
+  // نعرض فقط الطلبات المعتمدة لأنها هي التي تحتاج توقيع
+  const requests = useMemo(
+    () =>
+      renewals
+        .filter((r) => r.status === 'Approved')
+        .sort((a, b) => String(b.request_id).localeCompare(String(a.request_id))),
+    [renewals]
+  );
   const [actionLoading, setActionLoading] = useState(false);
 
   // حالات Slicers
@@ -14,18 +22,6 @@ export default function SignaturesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  useEffect(() => {
-    fetchApprovedRequests();
-  }, []);
-
-  const fetchApprovedRequests = async () => {
-    setLoading(true);
-    // نجلب فقط الطلبات المعتمدة لأنها هي التي تحتاج توقيع
-    const { data } = await supabase.from('renewal_requests').select('*').eq('status', 'Approved').order('request_id', { ascending: false });
-    if (data) setRequests(data);
-    setLoading(false);
-  };
 
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
 

@@ -1,10 +1,10 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAppData } from '@/lib/DataContext';
 
 export default function RenewalsPage() {
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { renewals: requests, loading, refresh: fetchRequests } = useAppData();
   const [actionLoading, setActionLoading] = useState(false);
 
   // حالات Slicers
@@ -21,17 +21,6 @@ export default function RenewalsPage() {
   const [renewalMode, setRenewalMode] = useState<'months' | 'custom'>('months');
   const [confirmedMonths, setConfirmedMonths] = useState<number>(12);
   const [customEndDate, setCustomEndDate] = useState<string>('');
-
-  useEffect(() => {
-    fetchRequests();
-  }, []);
-
-  const fetchRequests = async () => {
-    setLoading(true);
-    const { data } = await supabase.from('renewal_requests').select('*');
-    if (data) setRequests(data);
-    setLoading(false);
-  };
 
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;

@@ -1,15 +1,12 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
 import { navigateTo } from '@/lib/navigation';
+import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
 
 export default function DashboardPage() {
-  const [loading, setLoading] = useState(true);
-
-  const [allEmployees, setAllEmployees] = useState<any[]>([]);
-  const [allRenewals, setAllRenewals] = useState<any[]>([]);
+  const { employees: allEmployees, renewals: allRenewals, loading } = useAppData();
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
@@ -21,44 +18,8 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    fetchAllData();
     return () => clearInterval(timer);
   }, []);
-
-  const fetchAllData = async () => {
-    setLoading(true);
-    let emps: any[] = [];
-    let rens: any[] = [];
-    let from = 0;
-    const step = 1000;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      emps = [...emps, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    from = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from('renewal_requests')
-        .select('*')
-        .range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      rens = [...rens, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    setAllEmployees(emps);
-    setAllRenewals(rens);
-    setLoading(false);
-  };
 
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;

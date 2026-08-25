@@ -1,11 +1,15 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAppData } from '@/lib/DataContext';
 
 export default function AlertsPage() {
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [renewals, setRenewals] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { employees: allEmployeesRaw, renewals, loading, refresh: fetchAllData } = useAppData();
+  // تصفية العقود غير الدائمة فقط (العقود الدائمة لا تحتاج تنبيهات انتهاء)
+  const employees = useMemo(
+    () => allEmployeesRaw.filter((e) => e.contract_type !== 'دائم' && !String(e.job_title).includes('دائم')),
+    [allEmployeesRaw]
+  );
   const [actionLoading, setActionLoading] = useState(false);
 
   // مستويات التنبيه المحددة
@@ -15,43 +19,6 @@ export default function AlertsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
-
-  useEffect(() => {
-    fetchAllData();
-  }, []);
-
-  const fetchAllData = async () => {
-    setLoading(true);
-    let allEmps: any[] = [];
-    let allRens: any[] = [];
-    let from = 0;
-    const step = 1000;
-    
-    // سحب كافة الموظفين
-    while (true) {
-      const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    from = 0;
-    // سحب كافة طلبات التجديد
-    while (true) {
-      const { data, error } = await supabase.from('renewal_requests').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allRens = [...allRens, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    // تصفية العقود غير الدائمة فقط
-    const activeContracts = allEmps.filter(e => e.contract_type !== 'دائم' && !String(e.job_title).includes('دائم'));
-    setEmployees(activeContracts);
-    setRenewals(allRens);
-    setLoading(false);
-  };
 
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;

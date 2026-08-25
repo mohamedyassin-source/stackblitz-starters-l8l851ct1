@@ -1,11 +1,24 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState, useMemo } from 'react';
+import { useAppData } from '@/lib/DataContext';
+
+const MONTHS_LIST = [
+  { value: '1', label: 'يناير (01)' },
+  { value: '2', label: 'فبراير (02)' },
+  { value: '3', label: 'مارس (03)' },
+  { value: '4', label: 'أبريل (04)' },
+  { value: '5', label: 'مايو (05)' },
+  { value: '6', label: 'يونيو (06)' },
+  { value: '7', label: 'يوليو (07)' },
+  { value: '8', label: 'أغسطس (08)' },
+  { value: '9', label: 'سبتمبر (09)' },
+  { value: '10', label: 'أكتوبر (10)' },
+  { value: '11', label: 'نوفمبر (11)' },
+  { value: '12', label: 'ديسمبر (12)' },
+];
 
 export default function ReportsPage() {
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [renewals, setRenewals] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { employees, renewals, loading } = useAppData();
 
   // أنواع التقارير الجاهزة
   const [reportType, setReportType] = useState<'all' | 'expiring' | 'approved_signed' | 'pending_action' | 'by_month'>('by_month');
@@ -22,39 +35,6 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
-  useEffect(() => {
-    fetchAllData();
-  }, []);
-
-  const fetchAllData = async () => {
-    setLoading(true);
-    let allEmps: any[] = [];
-    let allRens: any[] = [];
-    let from = 0;
-    const step = 1000;
-    
-    while (true) {
-      const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('renewal_requests').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allRens = [...allRens, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    setEmployees(allEmps);
-    setRenewals(allRens);
-    setLoading(false);
-  };
-
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;
     const end = new Date(endDateStr);
@@ -63,20 +43,7 @@ export default function ReportsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  const monthsList = [
-    { value: '1', label: 'يناير (01)' },
-    { value: '2', label: 'فبراير (02)' },
-    { value: '3', label: 'مارس (03)' },
-    { value: '4', label: 'أبريل (04)' },
-    { value: '5', label: 'مايو (05)' },
-    { value: '6', label: 'يونيو (06)' },
-    { value: '7', label: 'يوليو (07)' },
-    { value: '8', label: 'أغسطس (08)' },
-    { value: '9', label: 'سبتمبر (09)' },
-    { value: '10', label: 'أكتوبر (10)' },
-    { value: '11', label: 'نوفمبر (11)' },
-    { value: '12', label: 'ديسمبر (12)' },
-  ];
+  const monthsList = MONTHS_LIST;
 
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
@@ -150,40 +117,51 @@ export default function ReportsPage() {
     return { total, expired, signed, pending };
   }, [reportData]);
 
+  // 🌟 توزيع نتائج التقرير الحالي على أشهر السنة (لعرض سريع لتمركز انتهاءات العقود)
+  const monthlyDistribution = useMemo(() => {
+    const counts = new Array(12).fill(0);
+    reportData.forEach(item => {
+      if (!item.contract_end_date) return;
+      const d = new Date(item.contract_end_date);
+      if (isNaN(d.getTime())) return;
+      counts[d.getMonth()] += 1;
+    });
+    const max = Math.max(...counts, 1);
+    return monthsList.map((m, i) => ({ label: m.label.split(' ')[0], count: counts[i], pct: (counts[i] / max) * 100 }));
+  }, [reportData, monthsList]);
+
   const handlePrint = () => {
     window.print();
   };
 
-  const handleExportCSV = () => {
+  const handleExportExcel = async () => {
     if (reportData.length === 0) return alert('لا توجد بيانات للتصدير بحسب الفلاتر المحددة.');
 
-    const monthName = monthsList.find(m => m.value === selectedMonth)?.label || selectedMonth;
-    const fileName = selectedMonth 
-      ? `تقرير_عقود_شهر_${selectedMonth}_${selectedYear || 'كل_السنوات'}.csv`
-      : `تقرير_العقود_${new Date().toISOString().slice(0, 10)}.csv`;
+    const fileName = selectedMonth
+      ? `تقرير_عقود_شهر_${selectedMonth}_${selectedYear || 'كل_السنوات'}.xlsx`
+      : `تقرير_العقود_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
-    const headers = ['كود الموظف', 'اسم الموظف', 'الشركة', 'الإدارة', 'الوظيفة', 'نوع العقد', 'تاريخ الانتهاء', 'الأيام المتبقية', 'حالة الطلب', 'حالة التوقيع'];
-    const rows = reportData.map(item => [
-      `"${item.employee_code || ''}"`,
-      `"${item.employee_name || ''}"`,
-      `"${item.company || ''}"`,
-      `"${item.department || ''}"`,
-      `"${item.job_title || ''}"`,
-      `"${item.contract_type || ''}"`,
-      `"${item.contract_end_date || ''}"`,
-      `"${item.daysRemaining !== null ? item.daysRemaining : ''}"`,
-      `"${item.renewalStatus}"`,
-      `"${item.signatureStatus}"`
-    ]);
+    const rows = reportData.map(item => ({
+      'كود الموظف': item.employee_code || '',
+      'اسم الموظف': item.employee_name || '',
+      'الشركة': item.company || '',
+      'الإدارة': item.department || '',
+      'الوظيفة': item.job_title || '',
+      'نوع العقد': item.contract_type || '',
+      'تاريخ الانتهاء': item.contract_end_date || '',
+      'الأيام المتبقية': item.daysRemaining !== null ? item.daysRemaining : '',
+      'حالة الطلب': item.renewalStatus,
+      'حالة التوقيع': item.signatureStatus,
+    }));
 
-    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', fileName);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    // التحميل الديناميكي لمكتبة xlsx يبقيها خارج الحزمة الأساسية للتطبيق
+    // (لا يحتاجها إلا مستخدم صفحة التقارير عند الضغط على زر التصدير)
+    const XLSX = await import('xlsx');
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 18 }));
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'التقرير');
+    XLSX.writeFile(workbook, fileName);
   };
 
   return (
@@ -206,8 +184,8 @@ export default function ReportsPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleExportCSV} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-            📥 تصدير Excel (CSV)
+          <button onClick={handleExportExcel} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            📥 تصدير Excel (XLSX)
           </button>
           <button onClick={handlePrint} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
             🖨️ طباعة التقرير / PDF
@@ -231,7 +209,7 @@ export default function ReportsPage() {
               if (preset.id !== 'by_month') {
                 setSelectedMonth('');
               } else {
-                setSelectedMonth('10');
+                setSelectedMonth(String(new Date().getMonth() + 1));
               }
             }}
             style={{
@@ -311,6 +289,31 @@ export default function ReportsPage() {
           <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#15803d' }}>{stats.signed.toLocaleString()} عقد</div>
         </div>
       </div>
+
+      {/* 🌟 توزيع انتهاءات عقود التقرير الحالي على أشهر السنة */}
+      {stats.total > 0 && (
+        <div className="no-print" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+          <h4 style={{ margin: '0 0 14px', fontSize: '12.5px', fontWeight: 'bold', color: 'var(--navy-950)' }}>📊 توزيع انتهاءات عقود هذا التقرير على أشهر السنة</h4>
+          <div style={{ display: 'flex', alignItems: 'end', gap: '6px', height: '110px' }}>
+            {monthlyDistribution.map((m, idx) => (
+              <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                <span style={{ fontSize: '9px', fontWeight: 'bold', color: m.count > 0 ? 'var(--brass-600)' : 'transparent', marginBottom: '3px' }}>{m.count}</span>
+                <div
+                  style={{
+                    width: '100%',
+                    maxWidth: '22px',
+                    height: `${Math.max(m.pct, m.count > 0 ? 4 : 0)}%`,
+                    borderRadius: '4px 4px 0 0',
+                    background: m.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--line)',
+                    transition: 'height 0.5s',
+                  }}
+                />
+                <span style={{ fontSize: '9px', color: 'var(--muted)', marginTop: '4px', fontWeight: 'bold' }}>{m.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* منطقة التقرير والمعاينة */}
       <div className="print-area" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px' }}>

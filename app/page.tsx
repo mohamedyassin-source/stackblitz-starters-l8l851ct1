@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { onAppNavigate } from '@/lib/navigation';
+import { DataProvider } from '@/lib/DataContext';
 
 const LoginPage = dynamic(() => import('@/components/LoginPage'), { ssr: false });
 const DashboardPage = dynamic(() => import('@/components/DashboardPage'), { ssr: false });
@@ -110,6 +111,7 @@ export default function Home() {
   }
 
   return (
+    <DataProvider>
     <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
 
       {/* overlay للموبايل عند فتح القائمة */}
@@ -235,5 +237,6 @@ export default function Home() {
         </main>
       </div>
     </div>
+    </DataProvider>
   );
 }

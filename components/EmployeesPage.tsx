@@ -1,10 +1,10 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAppData } from '@/lib/DataContext';
 
 export default function EmployeesPage() {
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { employees, loading, refresh: fetchEmployees } = useAppData();
 
   // حالات الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,37 +29,6 @@ export default function EmployeesPage() {
     department: '', company: '', job_title: '', hiring_date: '',
     contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', phone: ''
   });
-
-  useEffect(() => {
-    fetchEmployees();
-  }, []);
-
-  const fetchEmployees = async () => {
-    setLoading(true);
-    let allEmps: any[] = [];
-    let from = 0;
-    const step = 1000;
-    
-    while (true) {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('*')
-        .range(from, from + step - 1);
-
-      if (error) {
-        alert("حدث خطأ أثناء سحب بيانات الموظفين: " + error.message);
-        break;
-      }
-
-      if (!data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    setEmployees(allEmps);
-    setLoading(false);
-  };
 
   const getField = (obj: any, ...keys: string[]) => {
     if (!obj) return '';

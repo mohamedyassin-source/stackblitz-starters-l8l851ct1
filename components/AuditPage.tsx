@@ -1,38 +1,19 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState, useMemo } from 'react';
+import { useAppData } from '@/lib/DataContext';
 
 export default function AuditPage() {
-  const [logs, setLogs] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { renewals, loading, refresh } = useAppData();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAction, setSelectedAction] = useState('');
   const [dateFilter, setDateFilter] = useState('');
 
-  useEffect(() => {
-    fetchAuditData();
-  }, []);
-
-  const fetchAuditData = async () => {
-    setLoading(true);
-    let allRens: any[] = [];
-    let from = 0;
-    const step = 1000;
-    
-    // سحب كافة الطلبات لإنشاء السجل الهندسي العكسي
-    while (true) {
-      const { data, error } = await supabase.from('renewal_requests').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allRens = [...allRens, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    // 🌟 بناء سجل العمليات بذكاء من تاريخ الطلبات
+  // 🌟 بناء سجل العمليات بذكاء من تاريخ الطلبات (مشتق مباشرة من بيانات التجديدات المشتركة)
+  const logs = useMemo(() => {
     const generatedLogs: any[] = [];
 
-    allRens.forEach(req => {
+    renewals.forEach(req => {
       const baseDate = req.request_date || new Date().toISOString().split('T')[0];
       
       // 1. حركة إنشاء الطلب
@@ -100,10 +81,9 @@ export default function AuditPage() {
 
     // ترتيب السجل من الأحدث للأقدم
     generatedLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || b.id.localeCompare(a.id));
-    
-    setLogs(generatedLogs);
-    setLoading(false);
-  };
+
+    return generatedLogs;
+  }, [renewals]);
 
   // تطبيق الفلاتر
   const filteredLogs = useMemo(() => {
@@ -133,7 +113,7 @@ export default function AuditPage() {
           <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>سجل العمليات والرقابة (Audit Trail)</h3>
           <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>مراقبة وتتبع كافة الحركات والتعديلات التي تمت على المنظومة</p>
         </div>
-        <button onClick={fetchAuditData} style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+        <button onClick={refresh} style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
           🔄 تحديث السجل
         </button>
       </div>
