@@ -59,7 +59,7 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // استبعاد الموظفين المنتهية خدمتهم نهائياً
+  // 1. استبعاد الموظفين المنتهية خدمتهم نهائياً
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
@@ -69,7 +69,7 @@ export default function EmployeesPage() {
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // تطبيق فلاتر البحث/الشركة/الإدارة
+  // 2. تطبيق فلاتر البحث/الشركة/الإدارة
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -88,7 +88,7 @@ export default function EmployeesPage() {
     });
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType]);
 
-  // إحصائيات الكروت الديناميكية
+  // 3. إحصائيات الكروت الديناميكية
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
@@ -100,7 +100,7 @@ export default function EmployeesPage() {
     return { total, perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), aboveAge, aboveAgePct: calcPct(aboveAge) };
   }, [baseFilteredEmployees]);
 
-  // القائمة النهائية للجدول
+  // 4. القائمة النهائية للجدول
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -132,74 +132,7 @@ export default function EmployeesPage() {
     return null;
   };
 
-  // 🌟 دالة الإنقاذ السحرية (لاسترجاع العقود من جدول contracts إلى جدول employees)
-  const handleRescueData = async () => {
-    if (!confirm('هل أنت متأكد من بدء عملية استرجاع بيانات العقود؟ (قد تستغرق العملية دقيقة فلا تغلق الصفحة)')) return;
-
-    setUploading(true);
-    try {
-      // جلب جميع الموظفين
-      const { data: emps, error: eErr } = await supabase.from('employees').select('*');
-      if (eErr) throw eErr;
-
-      // جلب جميع العقود
-      const { data: contracts, error: cErr } = await supabase.from('contracts').select('*');
-      if (cErr) throw cErr;
-
-      if (!contracts || contracts.length === 0) {
-        alert('لم يتم العثور على أي عقود محفوظة في النظام لاسترجاعها!');
-        setUploading(false);
-        return;
-      }
-
-      const updatedEmps = [];
-
-      // مطابقة كل موظف بعقوده
-      for (const emp of (emps || [])) {
-        const empContracts = contracts.filter(c => 
-          String(c.employee_code) === String(emp.employee_code) || 
-          c.employee_id === emp.employee_id
-        );
-
-        if (empContracts.length > 0) {
-          // جلب أحدث عقد
-          empContracts.sort((a, b) => {
-            const dateA = new Date(a.contract_start_date || a.created_at).getTime();
-            const dateB = new Date(b.contract_start_date || b.created_at).getTime();
-            return dateB - dateA;
-          });
-          const latest = empContracts[0];
-
-          // إضافة الموظف لقائمة التحديث إذا كان العقد مختلفاً
-          if (emp.contract_type !== latest.contract_type || emp.contract_end_date !== latest.contract_end_date) {
-            updatedEmps.push({
-              ...emp,
-              contract_type: latest.contract_type || 'محدد المدة',
-              contract_end_date: latest.contract_end_date || null
-            });
-          }
-        }
-      }
-
-      if (updatedEmps.length > 0) {
-        // تحديث البيانات على دفعات للحماية من التوقف
-        for (let i = 0; i < updatedEmps.length; i += 500) {
-          const chunk = updatedEmps.slice(i, i + 500);
-          const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
-          if (error) throw error;
-        }
-      }
-
-      alert(`🎉 مبروك! تم إنقاذ واسترجاع عقود وتواريخ ${updatedEmps.length} موظف بنجاح.`);
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('❌ حدث خطأ أثناء الإنقاذ: ' + err.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // 🌟 دالة استيراد وتحديث الإكسيل (آمنة: تحافظ على العقود القديمة)
+  // 🌟 دالة الرفع الشاملة (تحديث جزئي للأعمدة الموجودة فقط + شروط الموظف الجديد + الإدارة)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -209,81 +142,139 @@ export default function EmployeesPage() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      
+      // defval: undefined مهمة جداً لكي لا يقرأ الأعمدة غير الموجودة كأنها نصوص فارغة
+      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
 
       if (excelRows.length === 0) {
         alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
         return;
       }
 
-      // جلب الموظفين الحاليين للحفاظ على أنواع وعقودهم التي عدلتها يدوياً
-      const { data: existingEmps, error: fetchErr } = await supabase
-        .from('employees')
-        .select('employee_code, contract_type, contract_end_date, status');
+      // جلب بيانات الموظفين الحاليين بالكامل كـ Fallback للبيانات الناقصة في الإكسيل
+      const { data: existingEmps, error: fetchErr } = await supabase.from('employees').select('*');
       if (fetchErr) throw fetchErr;
 
       const existingMap = new Map((existingEmps || []).map(emp => [String(emp.employee_code).trim(), emp]));
 
+      // دالة استخراج القيمة من صف الإكسيل لو العمود موجود، ولو مش موجود ترجع undefined
+      const getVal = (row: any, keys: string[]) => {
+        for (const k of keys) {
+          if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+            return String(row[k]).trim();
+          }
+        }
+        return undefined;
+      };
+
       const formattedRows = excelRows.map((row: any) => {
-        const code = String(
-          row['EMPLOYEE_CODE2'] || row['EMPLOYEE_CODE'] || row['Employee_Code'] || 
-          row['كود الموظف'] || row['كود'] || row['الكود'] || row['employee_code'] || row['EmployeeCode'] || ''
-        ).trim();
+        const code = getVal(row, ['EMPLOYEE_CODE2', 'EMPLOYEE_CODE', 'Employee_Code', 'كود الموظف', 'كود', 'الكود', 'employee_code', 'EmployeeCode']);
+        if (!code) return null;
 
         const existingEmp = existingMap.get(code);
+        const isNew = !existingEmp;
 
-        // إذا كان الموظف موجوداً، نحافظ على بيانات عقده، وإلا نعطيه "محدد المدة"
-        const rawRegister = String(row['REGISTER'] || row['Register'] || '').trim();
-        let defaultContractType = (rawRegister === 'Permanent' || rawRegister === 'دائم') ? 'دائم' : 'محدد المدة';
+        // 1. قراءة البيانات من الإكسيل (لو متاحة)
+        const excelName = getVal(row, ['Employee_NAME', 'EMPLOYEE_NAME', 'EmployeeName', 'اسم الموظف', 'الاسم', 'اسم', 'employee_name', 'ArabicName']);
+        const excelNid = getVal(row, ['ID_NO', 'ID_NUMBER', 'NATIONAL_ID', 'الرقم القومي', 'national_id', 'NationalID']);
+        const excelDept = getVal(row, ['DEPARTMENT', 'Department', 'الإدارة', 'القسم', 'department']);
+        const excelCompany = getVal(row, ['COMANY_NAME', 'COMPANY_NAME', 'Company', 'الشركة', 'company']);
+        const excelJob = getVal(row, ['JOB_TITLE', 'JobTitle', 'الوظيفة', 'المسمى الوظيفي', 'job_title']);
+        const excelEmail = getVal(row, ['EMAIL', 'البريد', 'email']);
+        const excelMobile = getVal(row, ['MOBILE', 'Mobile', 'الهاتف', 'الموبايل']);
         
-        const finalContractType = existingEmp ? existingEmp.contract_type : defaultContractType;
-        const finalContractEndDate = existingEmp ? existingEmp.contract_end_date : formatExcelDate(row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد']);
-        const finalStatus = existingEmp ? existingEmp.status : 'Active';
+        const rawHiring = row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date'];
+        const excelHiringDate = rawHiring !== undefined ? formatExcelDate(rawHiring) : undefined;
+
+        const excelContractRaw = getVal(row, ['REGISTER', 'Register', 'نوع العقد', 'contract_type']);
+        const rawEndDate = row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد'];
+        const excelEndDate = rawEndDate !== undefined ? formatExcelDate(rawEndDate) : undefined;
+
+        // 2. الدمج الذكي: الأولوية للإكسيل لو موجود، غير كده ياخد داتا قاعدة البيانات القديمة
+        const finalName = excelName !== undefined ? excelName : (existingEmp?.employee_name || '');
+        const finalNid = excelNid !== undefined ? excelNid : (existingEmp?.national_id || '');
+        const finalDept = excelDept !== undefined ? excelDept : (existingEmp?.department || '');
+        const finalCompany = excelCompany !== undefined ? excelCompany : (existingEmp?.company || '');
+        const finalJob = excelJob !== undefined ? excelJob : (existingEmp?.job_title || '');
+        const finalEmail = excelEmail !== undefined ? excelEmail : (existingEmp?.email || '');
+        const finalMobile = excelMobile !== undefined ? excelMobile : (existingEmp?.mobile || '');
+        const finalHiringDate = excelHiringDate !== undefined ? excelHiringDate : (existingEmp?.hiring_date || null);
+
+        // 3. حالة الموظف: Terminated لو الإدارة "تحويلات تحت الاعتماد"
+        let finalStatus = existingEmp ? existingEmp.status : 'Active';
+        if (finalDept === 'تحويلات تحت الاعتماد') {
+          finalStatus = 'Inactive';
+        }
+
+        // 4. منطق العقود الذكي
+        let finalContractType;
+        let finalContractEndDate;
+
+        if (isNew) {
+          // موظف جديد: العقد محدد المدة، والنهاية بعد سنة من تاريخ التعيين
+          finalContractType = 'محدد المدة';
+          if (finalHiringDate) {
+            const hDate = new Date(finalHiringDate);
+            if (!isNaN(hDate.getTime())) {
+              hDate.setFullYear(hDate.getFullYear() + 1);
+              hDate.setDate(hDate.getDate() - 1); // نطرح يوم ليصبح سنة كاملة بالظبط
+              finalContractEndDate = hDate.toISOString().split('T')[0];
+            } else {
+              finalContractEndDate = null;
+            }
+          } else {
+            finalContractEndDate = null;
+          }
+        } else {
+          // موظف موجود: تحدث البيانات فقط لو الإكسيل بيحتوي على أعمدة العقود
+          if (excelContractRaw !== undefined) {
+            finalContractType = (excelContractRaw === 'Permanent' || excelContractRaw === 'دائم') ? 'دائم' : (excelContractRaw || 'محدد المدة');
+          } else {
+            finalContractType = existingEmp.contract_type;
+          }
+
+          if (excelEndDate !== undefined) {
+            finalContractEndDate = excelEndDate;
+          } else {
+            // لو تم تعديل العقد لـ "دائم" من الإكسيل نمسح تاريخ النهاية
+            if (excelContractRaw !== undefined && finalContractType === 'دائم') {
+              finalContractEndDate = null;
+            } else {
+              finalContractEndDate = existingEmp.contract_end_date;
+            }
+          }
+        }
 
         return {
           employee_id: `EMP-${code}`,
           employee_code: code,
-          employee_name: String(
-            row['Employee_NAME'] || row['EMPLOYEE_NAME'] || row['EmployeeName'] || 
-            row['اسم الموظف'] || row['الاسم'] || row['اسم'] || row['employee_name'] || row['ArabicName'] || ''
-          ).trim(),
-          national_id: String(
-            row['ID_NO'] || row['ID_NUMBER'] || row['NATIONAL_ID'] || 
-            row['الرقم القومي'] || row['national_id'] || row['NationalID'] || ''
-          ).trim(),
-          department: String(
-            row['DEPARTMENT'] || row['Department'] || row['الإدارة'] || row['القسم'] || row['department'] || ''
-          ).trim(),
-          company: String(
-            row['COMANY_NAME'] || row['COMPANY_NAME'] || row['Company'] || row['الشركة'] || row['company'] || ''
-          ).trim(),
-          job_title: String(
-            row['JOB_TITLE'] || row['JobTitle'] || row['الوظيفة'] || row['المسمى الوظيفي'] || row['job_title'] || ''
-          ).trim(),
-          hiring_date: formatExcelDate(row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date']),
-          
+          employee_name: finalName,
+          national_id: finalNid,
+          department: finalDept,
+          company: finalCompany,
+          job_title: finalJob,
+          hiring_date: finalHiringDate,
           contract_type: finalContractType,
           contract_end_date: finalContractType === 'دائم' ? null : finalContractEndDate,
           status: finalStatus,
-          
-          email: row['EMAIL'] || row['البريد'] || row['email'] || '',
-          mobile: String(row['MOBILE'] || row['Mobile'] || row['الهاتف'] || row['الموبايل'] || '').trim()
+          email: finalEmail,
+          mobile: finalMobile
         };
-      }).filter(r => r.employee_code !== '');
+      }).filter(r => r !== null);
 
       if (formattedRows.length === 0) {
         alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
         return;
       }
 
-      // رفع البيانات على دفعات للحماية من توقف الشبكة
+      // رفع البيانات على دفعات للحماية من التوقف
       for (let i = 0; i < formattedRows.length; i += 1000) {
         const chunk = formattedRows.slice(i, i + 1000);
         const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
         if (error) throw error;
       }
 
-      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح (مع حماية العقود السابقة)!`);
+      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح (مع التحديث الجزئي الذكي)!`);
       await fetchEmployees();
     } catch (err: any) {
       alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
@@ -539,15 +530,6 @@ export default function EmployeesPage() {
         
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
           
-          {/* 🌟 زر الإنقاذ السحري (اضغط عليه لاسترجاع عقود الموظفين) */}
-          <button 
-            onClick={handleRescueData} 
-            disabled={uploading}
-            style={{ background: '#d97706', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: uploading ? 'not-allowed' : 'pointer' }}
-          >
-            {uploading ? 'جاري التنفيذ ⏳...' : 'استرجاع العقود 🚑'}
-          </button>
-
           <button 
             onClick={() => fileInputRef.current?.click()} 
             disabled={uploading}
