@@ -27,7 +27,7 @@ export default function EmployeesPage() {
   const [newEmp, setNewEmp] = useState({
     employee_code: '', employee_name: '', national_id: '',
     department: '', company: '', job_title: '', hiring_date: '',
-    contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', phone: ''
+    contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: ''
   });
 
   const getField = (obj: any, ...keys: string[]) => {
@@ -147,7 +147,7 @@ export default function EmployeesPage() {
     try {
       const empId = editData.emp.id || editData.emp.employee_id;
       
-      // تحضير بيانات التحديث - إزالة english_name
+      // تحضير بيانات التحديث - إزالة english_name و phone
       const updateData = {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -159,8 +159,7 @@ export default function EmployeesPage() {
         contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
         contract_end_date: getField(editData.emp, 'contract_end_date', 'ContractEndDate'),
         status: getField(editData.emp, 'status', 'Status'),
-        email: getField(editData.emp, 'email', 'Email'),
-        phone: getField(editData.emp, 'phone', 'Mobile')
+        email: getField(editData.emp, 'email', 'Email')
       };
 
       console.log('Updating employee with data:', updateData);
@@ -222,8 +221,7 @@ export default function EmployeesPage() {
         contract_type: newEmp.contract_type,
         contract_end_date: newEmp.contract_type === 'دائم' ? null : newEmp.contract_end_date,
         status: newEmp.status,
-        email: newEmp.email,
-        phone: newEmp.phone
+        email: newEmp.email
       }]).select();
 
       if (error) throw error;
@@ -235,7 +233,7 @@ export default function EmployeesPage() {
       setNewEmp({
         employee_code: '', employee_name: '', national_id: '',
         department: '', company: '', job_title: '', hiring_date: '',
-        contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', phone: ''
+        contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: ''
       });
       
       // إعادة جلب البيانات
@@ -392,8 +390,7 @@ export default function EmployeesPage() {
                       { label: 'الإدارة', key1: 'department', key2: 'Department' },
                       { label: 'الشركة', key1: 'company', key2: 'Company' },
                       { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
-                      { label: 'الموبايل', key1: 'phone', key2: 'Mobile' },
-                      { label: 'البريد', key1: 'email', key2: 'Email' },
+                      { label: 'البريد الإلكتروني', key1: 'email', key2: 'Email' },
                     ].map(field => (
                       <div key={field.label}>
                         <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
@@ -475,6 +472,7 @@ export default function EmployeesPage() {
                     <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
                   </select>
                 </div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>البريد الإلكتروني</label><input type="email" value={newEmp.email} onChange={e=>setNewEmp({...newEmp, email: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" onClick={() => setShowAddModal(false)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
