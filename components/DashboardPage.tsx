@@ -281,7 +281,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* بطاقات المؤشرات الرئيسية (الأرقام باللغة الإنجليزية en-US) */}
+      {/* بطاقات المؤشرات الرئيسية */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <KpiCard
           loading={loading}
@@ -378,7 +378,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 معدل التجديدات المعتمدة لسنة 2026 (بداية العقد الفعلي) */}
+        {/* 📈 معدل التجديدات المعتمدة لسنة 2026 */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4
             className="m-0 mb-5 text-[13.5px] font-extrabold"
@@ -611,7 +611,7 @@ export default function DashboardPage() {
             <div
               style={{
                 display: 'flex',
-                justifySpaceBetween: 'space-between',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 borderBottom: '1px solid #e2e8f0',
                 paddingBottom: '12px',
