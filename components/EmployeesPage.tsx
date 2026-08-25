@@ -118,21 +118,49 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // 🌟 دالة مساعدة لتحويل تاريخ الإكسيل الرقمي إلى صيغة صحيحة
+  // 🌟 دالة مساعدة لتحويل التواريخ بشكل قوي جداً
   const formatExcelDate = (val: any) => {
     if (!val) return null;
+    // تاريخ إكسيل رقمي (مثل 44565)
     if (typeof val === 'number') {
       const date = new Date(Math.round((val - 25569) * 86400 * 1000));
       if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
     }
+    // تاريخ نصي مكتوب يدوياً (مثل 15/10/2025 أو 2025-10-15)
     if (typeof val === 'string') {
-      const date = new Date(val);
+      const trimmed = val.trim();
+      let date = new Date(trimmed);
       if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+      
+      const parts = trimmed.split(/[-/]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          date = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
+        } else {
+          date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); // تحويل DD/MM/YYYY إلى YYYY-MM-DD
+        }
+        if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+      }
     }
     return null;
   };
 
-  // 🌟 دالة الرفع الشاملة (تحديث جزئي للأعمدة الموجودة فقط + شروط الموظف الجديد + الإدارة)
+  // دوال مساعدة لاستخراج البيانات من أي عمود وتجاهل المسافات
+  const getRawVal = (row: any, keys: string[]) => {
+    for (const k of keys) {
+      if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
+        return row[k];
+      }
+    }
+    return undefined;
+  };
+
+  const getStringVal = (row: any, keys: string[]) => {
+    const val = getRawVal(row, keys);
+    return val !== undefined ? String(val).trim() : undefined;
+  };
+
+  // 🌟 دالة الرفع الشاملة والجزئية
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -142,7 +170,6 @@ export default function EmployeesPage() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      
       const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
 
       if (excelRows.length === 0) {
@@ -150,42 +177,31 @@ export default function EmployeesPage() {
         return;
       }
 
-      // جلب بيانات الموظفين الحاليين بالكامل كـ Fallback للبيانات الناقصة في الإكسيل
       const { data: existingEmps, error: fetchErr } = await supabase.from('employees').select('*');
       if (fetchErr) throw fetchErr;
 
       const existingMap = new Map((existingEmps || []).map(emp => [String(emp.employee_code).trim(), emp]));
 
-      const getVal = (row: any, keys: string[]) => {
-        for (const k of keys) {
-          if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== '') {
-            return String(row[k]).trim();
-          }
-        }
-        return undefined;
-      };
-
-      // 🌟 الحل هنا: أضفنا "as any[]" لإخبار TypeScript بتجاهل خطأ النوع
       const formattedRows = excelRows.map((row: any) => {
-        const code = getVal(row, ['EMPLOYEE_CODE2', 'EMPLOYEE_CODE', 'Employee_Code', 'كود الموظف', 'كود', 'الكود', 'employee_code', 'EmployeeCode']);
+        const code = getStringVal(row, ['EMPLOYEE_CODE2', 'EMPLOYEE_CODE', 'Employee_Code', 'كود الموظف', 'كود', 'الكود', 'employee_code', 'EmployeeCode']);
         if (!code) return null;
 
         const existingEmp = existingMap.get(code);
         const isNew = !existingEmp;
 
-        const excelName = getVal(row, ['Employee_NAME', 'EMPLOYEE_NAME', 'EmployeeName', 'اسم الموظف', 'الاسم', 'اسم', 'employee_name', 'ArabicName']);
-        const excelNid = getVal(row, ['ID_NO', 'ID_NUMBER', 'NATIONAL_ID', 'الرقم القومي', 'national_id', 'NationalID']);
-        const excelDept = getVal(row, ['DEPARTMENT', 'Department', 'الإدارة', 'القسم', 'department']);
-        const excelCompany = getVal(row, ['COMANY_NAME', 'COMPANY_NAME', 'Company', 'الشركة', 'company']);
-        const excelJob = getVal(row, ['JOB_TITLE', 'JobTitle', 'الوظيفة', 'المسمى الوظيفي', 'job_title']);
-        const excelEmail = getVal(row, ['EMAIL', 'البريد', 'email']);
-        const excelMobile = getVal(row, ['MOBILE', 'Mobile', 'الهاتف', 'الموبايل']);
+        const excelName = getStringVal(row, ['Employee_NAME', 'EMPLOYEE_NAME', 'EmployeeName', 'اسم الموظف', 'الاسم', 'اسم', 'employee_name', 'ArabicName']);
+        const excelNid = getStringVal(row, ['ID_NO', 'ID_NUMBER', 'NATIONAL_ID', 'الرقم القومي', 'national_id', 'NationalID']);
+        const excelDept = getStringVal(row, ['DEPARTMENT', 'Department', 'الإدارة', 'القسم', 'department']);
+        const excelCompany = getStringVal(row, ['COMANY_NAME', 'COMPANY_NAME', 'Company', 'الشركة', 'company']);
+        const excelJob = getStringVal(row, ['JOB_TITLE', 'JobTitle', 'الوظيفة', 'المسمى الوظيفي', 'job_title']);
+        const excelEmail = getStringVal(row, ['EMAIL', 'البريد', 'email']);
+        const excelMobile = getStringVal(row, ['MOBILE', 'Mobile', 'الهاتف', 'الموبايل']);
         
-        const rawHiring = row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date'];
+        const rawHiring = getRawVal(row, ['HIRING_DATE', 'HiringDate', 'تاريخ التعيين', 'hiring_date']);
         const excelHiringDate = rawHiring !== undefined ? formatExcelDate(rawHiring) : undefined;
 
-        const excelContractRaw = getVal(row, ['REGISTER', 'Register', 'نوع العقد', 'contract_type']);
-        const rawEndDate = row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد'];
+        const excelContractRaw = getStringVal(row, ['REGISTER', 'Register', 'نوع العقد', 'contract_type']);
+        const rawEndDate = getRawVal(row, ['contract_end_date', 'CONTRACT_END_DATE', 'نهاية العقد', 'تاريخ نهاية العقد', 'تاريخ الانتهاء']);
         const excelEndDate = rawEndDate !== undefined ? formatExcelDate(rawEndDate) : undefined;
 
         const finalName = excelName !== undefined ? excelName : (existingEmp?.employee_name || '');
@@ -220,12 +236,20 @@ export default function EmployeesPage() {
             finalContractEndDate = null;
           }
         } else {
+          // التعرف الذكي على نوع العقد لو اتكتب في الإكسيل
           if (excelContractRaw !== undefined) {
-            finalContractType = (excelContractRaw === 'Permanent' || excelContractRaw === 'دائم') ? 'دائم' : (excelContractRaw || 'محدد المدة');
+            if (excelContractRaw.includes('دائم') || excelContractRaw.toLowerCase() === 'permanent') {
+              finalContractType = 'دائم';
+            } else if (excelContractRaw.includes('فوق السن')) {
+              finalContractType = 'محدد المدة - فوق السن';
+            } else {
+              finalContractType = 'محدد المدة';
+            }
           } else {
             finalContractType = existingEmp.contract_type;
           }
 
+          // التعرف على تاريخ الانتهاء
           if (excelEndDate !== undefined) {
             finalContractEndDate = excelEndDate;
           } else {
@@ -252,7 +276,7 @@ export default function EmployeesPage() {
           email: finalEmail,
           mobile: finalMobile
         };
-      }).filter(r => r !== null) as any[]; // 👈 تم إضافة as any[] هنا لحل المشكلة
+      }).filter(r => r !== null) as any[];
 
       if (formattedRows.length === 0) {
         alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
@@ -265,7 +289,7 @@ export default function EmployeesPage() {
         if (error) throw error;
       }
 
-      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح (مع التحديث الجزئي الذكي)!`);
+      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح!`);
       await fetchEmployees();
     } catch (err: any) {
       alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
@@ -284,7 +308,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // نتائج البحث لشاشة إنهاء الخدمة
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
@@ -519,6 +542,7 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          
           <button 
             onClick={() => fileInputRef.current?.click()} 
             disabled={uploading}
