@@ -41,25 +41,47 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       return;
     }
 
-    // كلمة المرور المتوقعة الافتراضية
     const isDefaultPassword = password === '123456' || password === data.employee_code;
     const hasCustomPassword = data.password && data.password !== '';
 
-    // التحقق من كلمة المرور المسجلة
     if (hasCustomPassword && data.password !== password && !isDefaultPassword) {
       setErrorMsg('كلمة السر غير صحيحة.');
       return;
     }
 
-    // لو الموظف يدخل بكلمة افتراضية أو لم يحدد كلمة سر مخصصة، يُعرض عليه التغيير
     if (!hasCustomPassword || isDefaultPassword) {
       setTempUserData(data);
       setRequirePasswordChange(true);
       return;
     }
 
-    // 🌟 دخول طبيعي بالكلمة الحالية
     proceedToLogin(data);
+  };
+
+  const handleOpenPasswordChange = async () => {
+    if (!employeeCode) {
+      setErrorMsg('يرجى إدخال كود الموظف أولاً لتغيير كلمة السر.');
+      return;
+    }
+
+    setLoading(true);
+    setErrorMsg('');
+
+    const { data, error } = await supabase
+      .from('employees')
+      .select('*')
+      .or(`employee_code.eq.${employeeCode.trim()},employee_id.eq.${employeeCode.trim()}`)
+      .single();
+
+    setLoading(false);
+
+    if (error || !data) {
+      setErrorMsg('كود الموظف غير موجود بالنظام.');
+      return;
+    }
+
+    setTempUserData(data);
+    setRequirePasswordChange(true);
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -81,7 +103,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
     setLoading(true);
 
-    // تحديث كلمة المرور فقط دون المساس بأعمدة غير موجودة
     const { error } = await supabase
       .from('employees')
       .update({ password: newPassword })
@@ -98,10 +119,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     proceedToLogin({ ...tempUserData, password: newPassword });
   };
 
-  // 🌟 التخطي والدخول الفوري بكلمة المرور الحالية
   const handleSkipPasswordChange = () => {
     if (tempUserData) {
       proceedToLogin(tempUserData);
+    } else {
+      setRequirePasswordChange(false);
     }
   };
 
@@ -130,7 +152,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name}، هل ترغب في تغيير كلمة السر أم التخطي؟` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
+            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
           </p>
         </div>
 
@@ -140,7 +162,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </div>
         )}
 
-        {/* 🌟 شاشة تغيير كلمة السر / أو التخطي */}
         {requirePasswordChange ? (
           <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
@@ -185,7 +206,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             </div>
           </form>
         ) : (
-          /* 🌟 نموذج الدخول العادي */
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كود الموظف:</label>
@@ -209,13 +229,24 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
+
             <button
               type="submit"
               disabled={loading}
-              style={{ marginTop: '10px', padding: '12px', borderRadius: '8px', border: 0, background: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+              style={{ marginTop: '6px', padding: '12px', borderRadius: '8px', border: 0, background: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
             >
               {loading ? 'جاري التحقق...' : 'دخول إلى النظام 🔑'}
             </button>
+
+            <div style={{ textAlign: 'center', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={handleOpenPasswordChange}
+                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                هل ترغب في تغيير كلمة السر الآن؟ 🔑
+              </button>
+            </div>
           </form>
         )}
 
