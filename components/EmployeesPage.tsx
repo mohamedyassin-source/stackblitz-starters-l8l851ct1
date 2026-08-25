@@ -48,7 +48,7 @@ export default function EmployeesPage() {
   const [newEmp, setNewEmp] = useState({
     employee_code: '', employee_name: '', national_id: '',
     department: '', company: '', job_title: '', hiring_date: '',
-    contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: ''
+    contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: ''
   });
 
   const getField = (obj: any, ...keys: string[]) => {
@@ -179,7 +179,7 @@ export default function EmployeesPage() {
           contract_end_date: contractType === 'دائم' ? null : (row['contract_end_date'] || null),
           status: 'Active',
           email: row['EMAIL'] || row['البريد'] || row['email'] || '',
-          phone: String(row['MOBILE'] || row['Mobile'] || row['الهاتف'] || row['الموبايل'] || '').trim()
+          mobile: String(row['MOBILE'] || row['Mobile'] || row['الهاتف'] || row['الموبايل'] || '').trim()
         };
       }).filter(r => r.employee_code !== '');
 
@@ -256,7 +256,8 @@ export default function EmployeesPage() {
         contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
         contract_end_date: getField(editData.emp, 'contract_end_date', 'ContractEndDate'),
         status: getField(editData.emp, 'status', 'Status'),
-        email: getField(editData.emp, 'email', 'Email')
+        email: getField(editData.emp, 'email', 'Email'),
+        mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
 
       const { error } = await supabase
@@ -359,7 +360,8 @@ export default function EmployeesPage() {
         contract_type: newEmp.contract_type,
         contract_end_date: newEmp.contract_type === 'دائم' ? null : newEmp.contract_end_date,
         status: newEmp.status,
-        email: newEmp.email
+        email: newEmp.email,
+        mobile: newEmp.mobile
       }]);
 
       if (error) throw error;
@@ -369,7 +371,7 @@ export default function EmployeesPage() {
       setNewEmp({
         employee_code: '', employee_name: '', national_id: '',
         department: '', company: '', job_title: '', hiring_date: '',
-        contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: ''
+        contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: ''
       });
       await fetchEmployees();
     } catch (err: any) {
@@ -386,6 +388,7 @@ export default function EmployeesPage() {
       'كود الموظف': getField(e, 'employee_code', 'EmployeeCode'),
       'الاسم': getField(e, 'employee_name', 'ArabicName'),
       'الرقم القومي': getField(e, 'national_id', 'NationalID'),
+      'الموبايل': getField(e, 'mobile', 'Mobile'),
       'الوظيفة': getField(e, 'job_title', 'JobTitle'),
       'الإدارة': getField(e, 'department', 'Department'),
       'الشركة': getField(e, 'company', 'Company'),
@@ -626,8 +629,8 @@ export default function EmployeesPage() {
                 {finalTableEmployees.map((emp, i) => {
                   const empId = emp.id || emp.employee_id;
                   const nationalId = getField(emp, 'national_id', 'NationalID');
-                  const email = getField(emp, 'email', 'Email');
-                  const isMissingData = !nationalId || !email;
+                  const mobile = getField(emp, 'mobile', 'Mobile');
+                  const isMissingData = !nationalId || !mobile;
                   const cType = getField(emp, 'contract_type', 'ContractType');
                   const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
 
@@ -642,7 +645,7 @@ export default function EmployeesPage() {
                       <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink, #0f172a)' }}>
                         {getField(emp, 'employee_name', 'ArabicName')}
                         {isMissingData && (
-                          <span title="بيانات غير مكتملة (ناقص الرقم القومي أو البريد)" style={{ marginRight: '6px', fontSize: '11px', cursor: 'help' }}>⚠️</span>
+                          <span title="بيانات غير مكتملة (ناقص الرقم القومي أو الموبايل)" style={{ marginRight: '6px', fontSize: '11px', cursor: 'help' }}>⚠️</span>
                         )}
                       </td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
@@ -685,7 +688,7 @@ export default function EmployeesPage() {
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>نهاية العقد:</strong> {getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>البريد الإلكتروني:</strong> {getField(profileEmp, 'email', 'Email') || 'غير مسجل'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الموبايل:</strong> {getField(profileEmp, 'mobile', 'Mobile') || 'غير مسجل'}</div>
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'left' }}>
@@ -834,7 +837,7 @@ export default function EmployeesPage() {
                       { label: 'الإدارة', key1: 'department', key2: 'Department' },
                       { label: 'الشركة', key1: 'company', key2: 'Company' },
                       { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
-                      { label: 'البريد الإلكتروني', key1: 'email', key2: 'Email' },
+                      { label: 'الموبايل', key1: 'mobile', key2: 'Mobile' },
                     ].map(field => (
                       <div key={field.label}>
                         <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
@@ -906,7 +909,7 @@ export default function EmployeesPage() {
                     <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
                   </select>
                 </div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>البريد الإلكتروني</label><input type="email" value={newEmp.email} onChange={e=>setNewEmp({...newEmp, email: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" onClick={() => setShowAddModal(false)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
