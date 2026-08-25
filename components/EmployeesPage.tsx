@@ -215,7 +215,7 @@ export default function EmployeesPage() {
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين</h3>
           <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إدارة السجل الرئيسي للموظفين</p>
         </div>
-        <button onClick={() => setShowAddModal(true)} style={{ background: 'var(--brass-600, #b8934a)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
+        <button onClick={() => setShowAddModal(true)} style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', transition: 'all 0.2s' }}>
           + إضافة موظف
         </button>
       </div>
@@ -223,15 +223,15 @@ export default function EmployeesPage() {
       {/* الكروت الثلاثة المتفاعلة */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '20px' }}>
         <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '16px 20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div><div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '4px' }}>عقود دائمة</div><div style={{ fontSize: '22px', fontWeight: '900', color: '#15803d' }}>{permCount.toLocaleString()}</div></div>
+          <div><div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '4px' }}>عقود دائمة</div><div style={{ fontSize: '22px', fontWeight: '900', color: '#15803d' }}>{permCount.toLocaleString('en-US')}</div></div>
           <div style={{ background: '#dcfce7', color: '#15803d', width: '40px', height: '40px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>🛡️</div>
         </div>
         <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '16px 20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div><div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '4px' }}>عقود محددة المدة</div><div style={{ fontSize: '22px', fontWeight: '900', color: '#2563eb' }}>{fixedCount.toLocaleString()}</div></div>
+          <div><div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '4px' }}>عقود محددة المدة</div><div style={{ fontSize: '22px', fontWeight: '900', color: '#2563eb' }}>{fixedCount.toLocaleString('en-US')}</div></div>
           <div style={{ background: '#eff6ff', color: '#2563eb', width: '40px', height: '40px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>📂</div>
         </div>
         <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '16px 20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div><div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '4px' }}>عقود فوق السن</div><div style={{ fontSize: '22px', fontWeight: '900', color: '#d97706' }}>{aboveAgeCount.toLocaleString()}</div></div>
+          <div><div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '4px' }}>عقود فوق السن</div><div style={{ fontSize: '22px', fontWeight: '900', color: '#d97706' }}>{aboveAgeCount.toLocaleString('en-US')}</div></div>
           <div style={{ background: '#fef3c7', color: '#d97706', width: '40px', height: '40px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>💼</div>
         </div>
       </div>
@@ -255,7 +255,7 @@ export default function EmployeesPage() {
         
         <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
           النتائج: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{sortedAndFilteredEmployees.length}</span> موظف
-          {selectedEmpIds.length > 0 && <span style={{ color: 'var(--brass-600, #b8934a)', marginRight: '8px' }}>| محدد: {selectedEmpIds.length}</span>}
+          {selectedEmpIds.length > 0 && <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '8px' }}>| محدد: {selectedEmpIds.length}</span>}
         </div>
       </div>
 
@@ -305,7 +305,7 @@ export default function EmployeesPage() {
                       <td style={{ padding: '10px', textAlign: 'center' }}>
                         <input type="checkbox" checked={selectedEmpIds.includes(empId)} onChange={e => setSelectedEmpIds(e.target.checked ? [...selectedEmpIds, empId] : selectedEmpIds.filter(id => id !== empId))} style={{ accentColor: 'var(--brass-600)' }} />
                       </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600, #b8934a)' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600, #0d9488)' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink, #0f172a)' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
@@ -338,7 +338,7 @@ export default function EmployeesPage() {
             ) : (
               <form onSubmit={handleSaveEdit}>
                 <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
-                  <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--brass-600, #b8934a)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات السجل الأساسي (Employees)</h4>
+                  <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--brass-600, #0d9488)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات السجل الأساسي (Employees)</h4>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                     {[
                       { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
@@ -387,7 +387,7 @@ export default function EmployeesPage() {
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
                   <button type="button" onClick={() => setEditData(null)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                  <button type="submit" style={{ background: 'var(--brass-600, #b8934a)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>حفظ كافة التعديلات</button>
+                  <button type="submit" style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>حفظ كافة التعديلات</button>
                 </div>
               </form>
             )}
@@ -422,7 +422,7 @@ export default function EmployeesPage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" onClick={() => setShowAddModal(false)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" style={{ background: 'var(--brass-600, #b8934a)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف</button>
+                <button type="submit" style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف</button>
               </div>
             </form>
           </div>
