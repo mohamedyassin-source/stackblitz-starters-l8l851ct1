@@ -172,7 +172,7 @@ export default function EmployeesPage() {
         .from('employees')
         .update(updateData)
         .eq(editData.emp.id ? 'id' : 'employee_id', empId)
-        .select(); // إضافة select للحصول على البيانات المحدثة
+        .select();
 
       if (error) throw error;
       
@@ -195,17 +195,14 @@ export default function EmployeesPage() {
       alert('تم حفظ التعديلات بنجاح ✅');
       setEditData(null);
       
-      // إعادة جلب البيانات مع تأخير بسيط لضمان تحديث قاعدة البيانات
+      // إعادة جلب البيانات
       await fetchEmployees();
       
     } catch (err: any) {
       console.error('Error saving employee:', err);
       alert('حدث خطأ أثناء الحفظ: ' + err.message);
-    } finally {
-      // إزالة مؤشر التحميل
-      if (editData) {
-        setEditData(prev => prev ? { ...prev, saving: false } : null);
-      }
+      // إزالة مؤشر التحميل في حالة الخطأ
+      setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
     }
   };
 
@@ -323,7 +320,6 @@ export default function EmployeesPage() {
                     <input type="checkbox" checked={selectedEmpIds.length === sortedAndFilteredEmployees.length && sortedAndFilteredEmployees.length > 0} onChange={e => setSelectedEmpIds(e.target.checked ? sortedAndFilteredEmployees.map(emp => emp.id || emp.employee_id) : [])} style={{ accentColor: 'var(--brass-600)' }} />
                   </th>
                   
-                  {/* رؤوس الأعمدة مع دعم ترتيب Asc/Desc */}
                   <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>
                     الكود {renderSortArrow('employee_code')}
                   </th>
