@@ -274,19 +274,19 @@ export default function ReportsPage() {
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
           <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>إجمالي عقود هذا التقرير</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy-950)' }}>{stats.total.toLocaleString()} سجل</div>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy-950)' }}>{stats.total.toLocaleString('en-US')} سجل</div>
         </div>
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
           <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>عقود منتهية بالكامل</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#dc2626' }}>{stats.expired.toLocaleString()} عقد</div>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#dc2626' }}>{stats.expired.toLocaleString('en-US')} عقد</div>
         </div>
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
           <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>طلبات تجديد قيد المعالجة</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#2563eb' }}>{stats.pending.toLocaleString()} طلب</div>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#2563eb' }}>{stats.pending.toLocaleString('en-US')} طلب</div>
         </div>
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
           <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>عقود متممة وموقعة</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#15803d' }}>{stats.signed.toLocaleString()} عقد</div>
+          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#15803d' }}>{stats.signed.toLocaleString('en-US')} عقد</div>
         </div>
       </div>
 
