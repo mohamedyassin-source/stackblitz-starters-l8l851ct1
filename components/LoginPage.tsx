@@ -12,7 +12,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 🌟 حالات تغيير كلمة المرور
+  // 🌟 حالات تغيير كلمة المرور الاختيارية / الإجبارية عند الافتراض
   const [requirePasswordChange, setRequirePasswordChange] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -41,28 +41,24 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       return;
     }
 
-    // 🎯 كلمة المرور الافتراضية المتوقعة (إما 123456 أو كود الموظف نفسه أو كلمة السر المسجلة)
+    // كلمة المرور المتوقعة الافتراضية
     const isDefaultPassword = password === '123456' || password === data.employee_code;
     const hasCustomPassword = data.password && data.password !== '';
 
-    // 1. لو الموظف معندوش باسورد مسجلة أو بيستخدم 123456 -> يحوله لتغيير الباسورد
-    if (!hasCustomPassword || isDefaultPassword || data.must_change_password) {
-      if (hasCustomPassword && data.password !== password && !isDefaultPassword) {
-        setErrorMsg('كلمة السر غير صحيحة.');
-        return;
-      }
+    // التحقق من كلمة المرور المسجلة
+    if (hasCustomPassword && data.password !== password && !isDefaultPassword) {
+      setErrorMsg('كلمة السر غير صحيحة.');
+      return;
+    }
+
+    // لو الموظف يدخل بكلمة افتراضية أو لم يحدد كلمة سر مخصصة، يُعرض عليه التغيير
+    if (!hasCustomPassword || isDefaultPassword) {
       setTempUserData(data);
       setRequirePasswordChange(true);
       return;
     }
 
-    // 2. التحقق العادي من الباسورد للمستخدمين القدامى
-    if (data.password !== password) {
-      setErrorMsg('كلمة السر غير صحيحة.');
-      return;
-    }
-
-    // 🌟 دخول طبيعي
+    // 🌟 دخول طبيعي بالكلمة الحالية
     proceedToLogin(data);
   };
 
@@ -85,13 +81,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
     setLoading(true);
 
-    // 🌟 تحديث كلمة المرور في قاعدة البيانات وإزالة شرط التغيير
+    // تحديث كلمة المرور فقط دون المساس بأعمدة غير موجودة
     const { error } = await supabase
       .from('employees')
-      .update({ 
-        password: newPassword,
-        must_change_password: false 
-      })
+      .update({ password: newPassword })
       .eq('employee_code', tempUserData.employee_code);
 
     setLoading(false);
@@ -103,6 +96,13 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
     alert('✅ تم تغيير كلمة السر بنجاح! جاري دخولك للنظام...');
     proceedToLogin({ ...tempUserData, password: newPassword });
+  };
+
+  // 🌟 التخطي والدخول الفوري بكلمة المرور الحالية
+  const handleSkipPasswordChange = () => {
+    if (tempUserData) {
+      proceedToLogin(tempUserData);
+    }
   };
 
   const proceedToLogin = (data: any) => {
@@ -127,10 +127,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {requirePasswordChange ? '🛡️' : '🏢'}
           </div>
           <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>
-            {requirePasswordChange ? 'تأمين الحساب' : 'مجموعة شركات المراسم الدولية'}
+            {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name}، يرجى تعيين كلمة سر جديدة` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
+            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name}، هل ترغب في تغيير كلمة السر أم التخطي؟` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
           </p>
         </div>
 
@@ -140,7 +140,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
           </div>
         )}
 
-        {/* 🌟 شاشة تغيير كلمة السر لأول مرة */}
+        {/* 🌟 شاشة تغيير كلمة السر / أو التخطي */}
         {requirePasswordChange ? (
           <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
@@ -165,13 +165,24 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
-            <button
-              type="submit"
-              disabled={loading}
-              style={{ marginTop: '10px', padding: '12px', borderRadius: '8px', border: 0, background: '#15803d', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
-            >
-              {loading ? 'جاري التحديث...' : 'حفظ والدخول للنظام 💾'}
-            </button>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+              <button
+                type="submit"
+                disabled={loading}
+                style={{ padding: '12px', borderRadius: '8px', border: 0, background: '#15803d', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+              >
+                {loading ? 'جاري التحديث...' : 'حفظ كلمة السر الجديدة والدخول 💾'}
+              </button>
+              
+              <button
+                type="button"
+                onClick={handleSkipPasswordChange}
+                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'transparent', color: '#64748b', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                التخطي والدخول بكلمة السر الحالية ↩️
+              </button>
+            </div>
           </form>
         ) : (
           /* 🌟 نموذج الدخول العادي */
