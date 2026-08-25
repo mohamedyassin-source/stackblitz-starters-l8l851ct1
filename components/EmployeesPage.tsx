@@ -18,11 +18,11 @@ export default function EmployeesPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
-  // حالات الترتيب (Sorting)
+  // حالات الترتيب
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // التحديد المجمع (Checkboxes)
+  // التحديد المجمع
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
 
   // النوافذ المنبثقة
@@ -37,7 +37,7 @@ export default function EmployeesPage() {
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  // حالة نموذج إنهاء الخدمة (Termination)
+  // حالة نموذج إنهاء الخدمة
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
   const [termReason, setTermReason] = useState('استقالة');
@@ -59,17 +59,17 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 🌟 1. استبعاد الموظفين المنتهية خدمتهم (Inactive/Terminated) نهائياً
+  // استبعاد الموظفين المنتهية خدمتهم نهائياً
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // القوائم للفلاتر (من الموظفين النشطين فقط)
+  // القوائم للفلاتر
   const deptsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployeesOnly]);
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // 🌟 2. تطبيق فلاتر البحث/الشركة/الإدارة
+  // تطبيق فلاتر البحث/الشركة/الإدارة
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -88,7 +88,7 @@ export default function EmployeesPage() {
     });
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType]);
 
-  // 🌟 3. إحصائيات الكروت الديناميكية + حساب النسب المئوية
+  // إحصائيات الكروت الديناميكية
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
@@ -97,18 +97,10 @@ export default function EmployeesPage() {
 
     const calcPct = (val: number) => (total > 0 ? ((val / total) * 100).toFixed(1) : '0');
 
-    return {
-      total,
-      perm,
-      permPct: calcPct(perm),
-      fixed,
-      fixedPct: calcPct(fixed),
-      aboveAge,
-      aboveAgePct: calcPct(aboveAge)
-    };
+    return { total, perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), aboveAge, aboveAgePct: calcPct(aboveAge) };
   }, [baseFilteredEmployees]);
 
-  // 🌟 4. القائمة النهائية للجدول بعد تطبيق كرت الفلترة المختار والترتيب
+  // القائمة النهائية للجدول
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -126,7 +118,7 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // 🌟 دالة مساعدة لتحويل تاريخ الإكسيل الرقمي إلى صيغة YYYY-MM-DD
+  // 🌟 دالة مساعدة لتحويل تاريخ الإكسيل الرقمي إلى صيغة صحيحة
   const formatExcelDate = (val: any) => {
     if (!val) return null;
     if (typeof val === 'number') {
@@ -140,7 +132,74 @@ export default function EmployeesPage() {
     return null;
   };
 
-  // 🌟 دالة رفع وتحديث البيانات يدوياً من شيت الإكسيل
+  // 🌟 دالة الإنقاذ السحرية (لاسترجاع العقود من جدول contracts إلى جدول employees)
+  const handleRescueData = async () => {
+    if (!confirm('هل أنت متأكد من بدء عملية استرجاع بيانات العقود؟ (قد تستغرق العملية دقيقة فلا تغلق الصفحة)')) return;
+
+    setUploading(true);
+    try {
+      // جلب جميع الموظفين
+      const { data: emps, error: eErr } = await supabase.from('employees').select('*');
+      if (eErr) throw eErr;
+
+      // جلب جميع العقود
+      const { data: contracts, error: cErr } = await supabase.from('contracts').select('*');
+      if (cErr) throw cErr;
+
+      if (!contracts || contracts.length === 0) {
+        alert('لم يتم العثور على أي عقود محفوظة في النظام لاسترجاعها!');
+        setUploading(false);
+        return;
+      }
+
+      const updatedEmps = [];
+
+      // مطابقة كل موظف بعقوده
+      for (const emp of (emps || [])) {
+        const empContracts = contracts.filter(c => 
+          String(c.employee_code) === String(emp.employee_code) || 
+          c.employee_id === emp.employee_id
+        );
+
+        if (empContracts.length > 0) {
+          // جلب أحدث عقد
+          empContracts.sort((a, b) => {
+            const dateA = new Date(a.contract_start_date || a.created_at).getTime();
+            const dateB = new Date(b.contract_start_date || b.created_at).getTime();
+            return dateB - dateA;
+          });
+          const latest = empContracts[0];
+
+          // إضافة الموظف لقائمة التحديث إذا كان العقد مختلفاً
+          if (emp.contract_type !== latest.contract_type || emp.contract_end_date !== latest.contract_end_date) {
+            updatedEmps.push({
+              ...emp,
+              contract_type: latest.contract_type || 'محدد المدة',
+              contract_end_date: latest.contract_end_date || null
+            });
+          }
+        }
+      }
+
+      if (updatedEmps.length > 0) {
+        // تحديث البيانات على دفعات للحماية من التوقف
+        for (let i = 0; i < updatedEmps.length; i += 500) {
+          const chunk = updatedEmps.slice(i, i + 500);
+          const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
+          if (error) throw error;
+        }
+      }
+
+      alert(`🎉 مبروك! تم إنقاذ واسترجاع عقود وتواريخ ${updatedEmps.length} موظف بنجاح.`);
+      await fetchEmployees();
+    } catch (err: any) {
+      alert('❌ حدث خطأ أثناء الإنقاذ: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // 🌟 دالة استيراد وتحديث الإكسيل (آمنة: تحافظ على العقود القديمة)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -157,14 +216,29 @@ export default function EmployeesPage() {
         return;
       }
 
+      // جلب الموظفين الحاليين للحفاظ على أنواع وعقودهم التي عدلتها يدوياً
+      const { data: existingEmps, error: fetchErr } = await supabase
+        .from('employees')
+        .select('employee_code, contract_type, contract_end_date, status');
+      if (fetchErr) throw fetchErr;
+
+      const existingMap = new Map((existingEmps || []).map(emp => [String(emp.employee_code).trim(), emp]));
+
       const formattedRows = excelRows.map((row: any) => {
         const code = String(
           row['EMPLOYEE_CODE2'] || row['EMPLOYEE_CODE'] || row['Employee_Code'] || 
           row['كود الموظف'] || row['كود'] || row['الكود'] || row['employee_code'] || row['EmployeeCode'] || ''
         ).trim();
 
-        const rawRegister = String(row['REGISTER'] || row['Register'] || row['نوع العقد'] || row['contract_type'] || '').trim();
-        const contractType = (rawRegister === 'Permanent' || rawRegister === 'دائم') ? 'دائم' : (rawRegister || 'محدد المدة');
+        const existingEmp = existingMap.get(code);
+
+        // إذا كان الموظف موجوداً، نحافظ على بيانات عقده، وإلا نعطيه "محدد المدة"
+        const rawRegister = String(row['REGISTER'] || row['Register'] || '').trim();
+        let defaultContractType = (rawRegister === 'Permanent' || rawRegister === 'دائم') ? 'دائم' : 'محدد المدة';
+        
+        const finalContractType = existingEmp ? existingEmp.contract_type : defaultContractType;
+        const finalContractEndDate = existingEmp ? existingEmp.contract_end_date : formatExcelDate(row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد']);
+        const finalStatus = existingEmp ? existingEmp.status : 'Active';
 
         return {
           employee_id: `EMP-${code}`,
@@ -187,9 +261,11 @@ export default function EmployeesPage() {
             row['JOB_TITLE'] || row['JobTitle'] || row['الوظيفة'] || row['المسمى الوظيفي'] || row['job_title'] || ''
           ).trim(),
           hiring_date: formatExcelDate(row['HIRING_DATE'] || row['HiringDate'] || row['تاريخ التعيين'] || row['hiring_date']),
-          contract_type: contractType,
-          contract_end_date: contractType === 'دائم' ? null : formatExcelDate(row['contract_end_date'] || row['CONTRACT_END_DATE'] || row['تاريخ نهاية العقد']),
-          status: 'Active',
+          
+          contract_type: finalContractType,
+          contract_end_date: finalContractType === 'دائم' ? null : finalContractEndDate,
+          status: finalStatus,
+          
           email: row['EMAIL'] || row['البريد'] || row['email'] || '',
           mobile: String(row['MOBILE'] || row['Mobile'] || row['الهاتف'] || row['الموبايل'] || '').trim()
         };
@@ -200,10 +276,14 @@ export default function EmployeesPage() {
         return;
       }
 
-      const { error } = await supabase.from('employees').upsert(formattedRows, { onConflict: 'employee_code' });
-      if (error) throw error;
+      // رفع البيانات على دفعات للحماية من توقف الشبكة
+      for (let i = 0; i < formattedRows.length; i += 1000) {
+        const chunk = formattedRows.slice(i, i + 1000);
+        const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
+        if (error) throw error;
+      }
 
-      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح!`);
+      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح (مع حماية العقود السابقة)!`);
       await fetchEmployees();
     } catch (err: any) {
       alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
@@ -458,6 +538,16 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          
+          {/* 🌟 زر الإنقاذ السحري (اضغط عليه لاسترجاع عقود الموظفين) */}
+          <button 
+            onClick={handleRescueData} 
+            disabled={uploading}
+            style={{ background: '#d97706', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: uploading ? 'not-allowed' : 'pointer' }}
+          >
+            {uploading ? 'جاري التنفيذ ⏳...' : 'استرجاع العقود 🚑'}
+          </button>
+
           <button 
             onClick={() => fileInputRef.current?.click()} 
             disabled={uploading}
