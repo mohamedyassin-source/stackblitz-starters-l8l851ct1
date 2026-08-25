@@ -37,7 +37,7 @@ export default function EmployeesPage() {
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  // حالة نموذج إنتهاء الخدمة (Termination)
+  // حالة نموذج إنهاء الخدمة (Termination)
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
   const [termReason, setTermReason] = useState('استقالة');
@@ -65,9 +65,9 @@ export default function EmployeesPage() {
   }, [employees]);
 
   // القوائم للفلاتر (من الموظفين النشطين فقط)
-  const deptsList = Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean)));
-  const compsList = Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean)));
-  const typesList = Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean)));
+  const deptsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployeesOnly]);
+  const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
+  const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
   // 🌟 2. تطبيق فلاتر البحث/الشركة/الإدارة أولاً لتتجاوب معها أرقام الكروت
   const baseFilteredEmployees = useMemo(() => {
@@ -115,7 +115,7 @@ export default function EmployeesPage() {
       if (activeCardFilter === 'PERM') return cType === 'دائم';
       if (activeCardFilter === 'FIXED') return cType === 'محدد المدة';
       if (activeCardFilter === 'ABOVE_AGE') return String(cType).includes('فوق السن');
-      return true; // ALL_ACTIVE
+      return true;
     });
 
     return filtered.sort((a, b) => {
@@ -183,7 +183,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // نتائج البحث لشاشة إنتهاء الخدمة
+  // نتائج البحث لشاشة إنهاء الخدمة
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
@@ -269,13 +269,13 @@ export default function EmployeesPage() {
 
       if (error) throw error;
 
-      alert(`✅ تم إنتهاء خدمة الموظف (${getField(selectedTermEmp, 'employee_name', 'ArabicName')}) بنجاح.`);
+      alert(`✅ تم إنهاء خدمة الموظف (${getField(selectedTermEmp, 'employee_name', 'ArabicName')}) بنجاح.`);
       setShowTermModal(false);
       setSelectedTermEmp(null);
       setTermSearch('');
       await fetchEmployees();
     } catch (err: any) {
-      alert('خطأ أثناء إنتهاء الخدمة: ' + err.message);
+      alert('خطأ أثناء إنهاء الخدمة: ' + err.message);
     } finally {
       setTermSaving(false);
     }
@@ -408,7 +408,7 @@ export default function EmployeesPage() {
         style={{ display: 'none' }} 
       />
 
-      {/* 🌟 1. رأس الصفحة بالأزرار المصغّرة الأنيقة */}
+      {/* رأس الصفحة بالأزرار المصغّرة */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين النشطين</h3>
@@ -416,7 +416,6 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* 🌟 أزرار مصغرة حُجم أرفع وأشيك */}
           <button 
             onClick={() => fileInputRef.current?.click()} 
             disabled={uploading}
@@ -445,10 +444,9 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* 🌟 2. الكروت التفاعلية الأربعة + إظهار النسبة المئوية تحت كل كرت من إجمالي النشطين */}
+      {/* الكروت التفاعلية الأربعة + النسبة المئوية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
         
-        {/* كرت الموظفين النشطين Active */}
         <div 
           className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ALL_ACTIVE' ? null : 'ALL_ACTIVE')}
@@ -466,7 +464,6 @@ export default function EmployeesPage() {
           <div style={{ background: '#dcfce7', color: '#16a34a', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🟢</div>
         </div>
 
-        {/* كرت عقود دائمة */}
         <div 
           className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')}
@@ -479,13 +476,11 @@ export default function EmployeesPage() {
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود دائمة</div>
             <div style={{ fontSize: '20px', fontWeight: '900', color: '#15803d' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
-            {/* 🌟 نسبة مئوية */}
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#15803d', marginTop: '2px' }}>{kpiStats.permPct}% من القوة الحالية</div>
           </div>
           <div style={{ background: '#dcfce7', color: '#15803d', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🛡️</div>
         </div>
 
-        {/* كرت عقود محددة المدة */}
         <div 
           className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')}
@@ -498,13 +493,11 @@ export default function EmployeesPage() {
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود محددة المدة</div>
             <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
-            {/* 🌟 نسبة مئوية */}
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>{kpiStats.fixedPct}% من القوة الحالية</div>
           </div>
           <div style={{ background: '#eff6ff', color: '#2563eb', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>📂</div>
         </div>
 
-        {/* كرت عقود فوق السن */}
         <div 
           className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')}
@@ -517,7 +510,6 @@ export default function EmployeesPage() {
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود فوق السن</div>
             <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
-            {/* 🌟 نسبة مئوية */}
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#d97706', marginTop: '2px' }}>{kpiStats.aboveAgePct}% من القوة الحالية</div>
           </div>
           <div style={{ background: '#fef3c7', color: '#d97706', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>💼</div>
@@ -545,7 +537,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* 🌟 3. شريط الفلاتر متكامل ديناميكياً مع الكروت */}
+      {/* شريط الفلاتر والبحث */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '220px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         
@@ -567,7 +559,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* 🌟 4. الجدول المفلتر نهائياً بدون أي أثر لـ Terminated */}
+      {/* الجدول المفلتر */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
@@ -676,12 +668,12 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* نافذة إنتهاء الخدمة Terminated Modal */}
+      {/* نافذة إنهاء الخدمة Terminated Modal */}
       {showTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '17px', color: '#dc2626', fontWeight: '800' }}>🚫 تسجيل إنتهاء خدمة موظف (Termination)</h3>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#dc2626', fontWeight: '800' }}>🚫 تسجيل إنهاء خدمة موظف (Termination)</h3>
               <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
@@ -718,14 +710,14 @@ export default function EmployeesPage() {
               )}
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنتهاء الخدمة:</label>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة:</label>
                 <select 
                   value={termReason}
                   onChange={e => setTermReason(e.target.value)}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
                 >
                   <option value="استقالة">استقالة</option>
-                  <option value="إنتهاء عقد"إنتهاء عقد</option>
+                  <option value="إنتهاء عقد">إنتهاء عقد</option>
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
                   <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
                   <option value="انقطاع عن العمل">انقطاع عن العمل</option>
@@ -734,7 +726,7 @@ export default function EmployeesPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إنتهاء الخدمة:</label>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إنهاء الخدمة:</label>
                 <input 
                   type="date"
                   required
@@ -747,7 +739,7 @@ export default function EmployeesPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
                 <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={termSaving} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: termSaving ? 'not-allowed' : 'pointer', opacity: termSaving ? 0.7 : 1 }}>
-                  {termSaving ? 'جاري الحفظ...' : 'تأكيد إنتهاء الخدمة 🚫'}
+                  {termSaving ? 'جاري الحفظ...' : 'تأكيد إنهاء الخدمة 🚫'}
                 </button>
               </div>
             </form>
