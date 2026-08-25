@@ -25,7 +25,7 @@ export default function EmployeesPage() {
 
   // حالة الموظف الجديد
   const [newEmp, setNewEmp] = useState({
-    employee_code: '', employee_name: '', english_name: '', national_id: '',
+    employee_code: '', employee_name: '', national_id: '',
     department: '', company: '', job_title: '', hiring_date: '',
     contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', phone: ''
   });
@@ -147,11 +147,10 @@ export default function EmployeesPage() {
     try {
       const empId = editData.emp.id || editData.emp.employee_id;
       
-      // تحضير بيانات التحديث
+      // تحضير بيانات التحديث - إزالة english_name
       const updateData = {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
-        english_name: getField(editData.emp, 'english_name', 'EnglishName'),
         national_id: getField(editData.emp, 'national_id', 'NationalID'),
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
@@ -215,7 +214,6 @@ export default function EmployeesPage() {
         employee_id: `EMP-${newEmp.employee_code}`,
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
-        english_name: newEmp.english_name,
         national_id: newEmp.national_id,
         department: newEmp.department,
         company: newEmp.company,
@@ -235,7 +233,7 @@ export default function EmployeesPage() {
       
       // إعادة تعيين نموذج الإضافة
       setNewEmp({
-        employee_code: '', employee_name: '', english_name: '', national_id: '',
+        employee_code: '', employee_name: '', national_id: '',
         department: '', company: '', job_title: '', hiring_date: '',
         contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', phone: ''
       });
@@ -390,7 +388,6 @@ export default function EmployeesPage() {
                     {[
                       { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
                       { label: 'الاسم العربي', key1: 'employee_name', key2: 'ArabicName' },
-                      { label: 'الاسم الإنجليزي', key1: 'english_name', key2: 'EnglishName' },
                       { label: 'الرقم القومي', key1: 'national_id', key2: 'NationalID' },
                       { label: 'الإدارة', key1: 'department', key2: 'Department' },
                       { label: 'الشركة', key1: 'company', key2: 'Company' },
