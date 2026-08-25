@@ -696,7 +696,7 @@ export default function DashboardPage() {
                           style={{
                             padding: '10px',
                             fontWeight: 'bold',
-                            color: '#b8934a',
+                            color: '#0d9488',
                             fontFamily: 'monospace',
                           }}
                         >
@@ -738,7 +738,7 @@ export default function DashboardPage() {
                               handleRowClick(emp.employee_code);
                             }}
                             style={{
-                              background: '#b8934a',
+                              background: '#0d9488',
                               color: '#fff',
                               border: 0,
                               padding: '5px 10px',
