@@ -664,7 +664,7 @@ export default function EmployeesPage() {
                   style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
                 >
                   <option value="استقالة">استقالة</option>
-                  <option value="إنهاء عقد">إنهاء عقد</option>
+                  <option value="إنتهاء عقد">إنتهاء عقد</option>
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
                   <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
                   <option value="انقطاع عن العمل">انقطاع عن العمل</option>
