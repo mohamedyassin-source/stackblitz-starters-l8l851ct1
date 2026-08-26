@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
-// 🌟 قاموس الأعمدة الذكي (تم إزالة register لأنه كان يفسد أنواع العقود)
+// 🌟 قاموس الأعمدة الذكي (مُحدث ليشمل جميع الاحتمالات والمسافات)
 const COLUMN_MAP: Record<string, string[]> = {
   employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
   employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
@@ -16,53 +16,49 @@ const COLUMN_MAP: Record<string, string[]> = {
   mobile: ['mobile', 'الموبايل', 'الهاتف'],
   hiring_date: ['hiring_date', 'تاريخ التعيين'],
   contract_end_date: ['contract_end_date', 'contract end date', 'تاريخ نهاية العقد', 'نهاية العقد'],
-  contract_type: ['contract_type', 'contract type', 'نوع العقد'],
+  contract_type: ['contract_type', 'contract type', 'register', 'نوع العقد'],
 };
 
-// 🌟 دالة تاريخ فولاذية: تفهم جميع صيغ الإكسيل بأمان تام
+// 🌟 دالة تاريخ فولاذية: تفهم جميع صيغ الإكسيل وتقص أي وقت مخفي
 const parseExcelDateStrict = (val: any): string | null => {
   if (val === undefined || val === null || val === '') return null;
 
   const toIso = (y: number, m: number, d: number) => {
-    if (!y || !m || !d) return null;
+    if (!y || !m || !d || isNaN(y) || isNaN(m) || isNaN(d)) return null;
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   };
 
-  // لو الإكسيل قرأه كتاريخ حقيقي
+  // لو كان كائن تاريخ حقيقي
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return null;
-    return toIso(val.getUTCFullYear(), val.getUTCMonth() + 1, val.getUTCDate());
+    return toIso(val.getFullYear(), val.getMonth() + 1, val.getDate());
   }
 
-  // رقم تسلسلي من إكسيل
+  // لو رقم تسلسلي من إكسيل (مثل 44565)
   if (typeof val === 'number') {
     const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
     const d = new Date(ms);
     return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
   }
 
-  // نصوص التواريخ
+  // لو نص (String)
   if (typeof val === 'string') {
     const s = val.trim();
     if (!s) return null;
 
-    // YYYY-MM-DD
-    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
-    if (m) {
-      const [y, mo, d] = [+m[1], +m[2], +m[3]];
-      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return toIso(y, mo, d);
-    }
+    // بحث عن صيغة YYYY-MM-DD (ويتجاهل أي وقت بعدها لأنه مفيش $ في النهاية)
+    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if (m) return toIso(+m[1], +m[2], +m[3]);
 
-    // DD-MM-YYYY (الشائعة في مصر)
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
-    if (m) {
-      const [d, mo, y] = [+m[1], +m[2], +m[3]];
-      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return toIso(y, mo, d);
-    }
+    // بحث عن صيغة DD-MM-YYYY
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    if (m) return toIso(+m[3], +m[2], +m[1]);
 
-    // محاولة أخيرة عن طريق الجافاسكريبت
+    // محاولة أخيرة عبر الجافاسكريبت
     const parsed = new Date(s);
-    if (!isNaN(parsed.getTime())) return toIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    if (!isNaN(parsed.getTime())) {
+      return toIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    }
   }
   return null;
 };
@@ -199,17 +195,16 @@ export default function EmployeesPage() {
     setUploading(true);
     try {
       const buffer = await file.arrayBuffer();
-      // تم تفعيل cellDates لسحب التواريخ بدقة ككائنات Date
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
+      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined, raw: true });
 
       if (excelRows.length === 0) {
         alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
         return;
       }
 
-      // سحب كل الموظفين (تجاوز حد الـ 1000)
+      // سحب كل الموظفين لتجاوز الـ 1000
       let allExistingEmps: any[] = [];
       let fromIdx = 0;
       const step = 1000;
@@ -225,17 +220,10 @@ export default function EmployeesPage() {
       const normalizeCode = (v: any) => String(v).trim().replace(/^0+(?=\d)/, '');
       const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
 
-      // بحث قوي عن الأعمدة حتى لو بها مسافات مخفية
       const getVal = (rowObj: any, keys: string[]) => {
         for (const k of keys) {
           const val = rowObj[k.toLowerCase()];
           if (val !== undefined && val !== null && String(val).trim() !== '') return val;
-          // بحث مرن
-          const matchingKey = Object.keys(rowObj).find(objKey => objKey.includes(k.toLowerCase()));
-          if (matchingKey) {
-            const val2 = rowObj[matchingKey];
-            if (val2 !== undefined && val2 !== null && String(val2).trim() !== '') return val2;
-          }
         }
         return undefined;
       };
@@ -273,7 +261,7 @@ export default function EmployeesPage() {
           if (v !== undefined) payload[field] = String(v).trim();
         }
 
-        // التواريخ
+        // --- تحديث تواريخ ---
         const valHiring = getVal(row, COLUMN_MAP.hiring_date);
         if (valHiring !== undefined) {
           const parsed = parseExcelDateStrict(valHiring);
@@ -288,26 +276,23 @@ export default function EmployeesPage() {
           else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
         }
 
-        // نوع العقد (يحافظ على القديم لو الإكسيل مفيهوش العمود)
+        // --- تحديث نوع العقد ---
         const valType = getVal(row, COLUMN_MAP.contract_type);
         if (valType !== undefined) {
           const strType = String(valType).trim();
-          if (strType.includes('دائم') || strType.toLowerCase().includes('perm')) {
+          if (strType.includes('دائم') || strType.toLowerCase().includes('permanent')) {
             payload.contract_type = 'دائم';
           } else if (strType.includes('فوق السن')) {
             payload.contract_type = 'محدد المدة - فوق السن';
-          } else if (strType.includes('محدد') || strType.toLowerCase().includes('fixed')) {
-            payload.contract_type = 'محدد المدة';
           } else {
-            payload.contract_type = strType;
+            payload.contract_type = strType; // إذا كانت محدد المدة ستسجل محدد المدة
           }
         }
 
-        // حالة النشاط
+        // --- حالات منطقية ---
         if (payload.department === 'تحويلات تحت الاعتماد') payload.status = 'Inactive';
         else if (!payload.status) payload.status = 'Active';
 
-        // حساب تلقائي للموظف الجديد فقط
         if (isNew) {
           if (!payload.contract_type) payload.contract_type = 'محدد المدة';
           if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
@@ -317,7 +302,7 @@ export default function EmployeesPage() {
           }
         }
 
-        // مسح تاريخ الانتهاء للعقود الدائمة
+        // تفريغ تاريخ النهاية للعقود الدائمة بقوة
         if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
           payload.contract_end_date = null;
         }
