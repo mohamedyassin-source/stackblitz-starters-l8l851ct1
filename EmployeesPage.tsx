@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
+// 🌟 قاموس الأعمدة الذكي (تم إزالة register لأنه كان يفسد أنواع العقود)
 const COLUMN_MAP: Record<string, string[]> = {
   employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
   employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
@@ -14,11 +15,11 @@ const COLUMN_MAP: Record<string, string[]> = {
   email: ['email', 'البريد'],
   mobile: ['mobile', 'الموبايل', 'الهاتف'],
   hiring_date: ['hiring_date', 'تاريخ التعيين'],
-  contract_end_date: ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد'],
-  contract_type: ['contract_type', 'register', 'نوع العقد'],
+  contract_end_date: ['contract_end_date', 'contract end date', 'تاريخ نهاية العقد', 'نهاية العقد'],
+  contract_type: ['contract_type', 'contract type', 'نوع العقد'],
 };
 
-// دالة تاريخ صارمة: ترجع null لو مقدرتش تفهم القيمة، وبتترك التاريخ القديم زي ما هو في الحالة دي
+// 🌟 دالة تاريخ فولاذية: تفهم جميع صيغ الإكسيل بأمان تام
 const parseExcelDateStrict = (val: any): string | null => {
   if (val === undefined || val === null || val === '') return null;
 
@@ -27,25 +28,41 @@ const parseExcelDateStrict = (val: any): string | null => {
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   };
 
-  // رقم تسلسلي من إكسيل (بدون أي تأثير تايم زون)
+  // لو الإكسيل قرأه كتاريخ حقيقي
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    return toIso(val.getUTCFullYear(), val.getUTCMonth() + 1, val.getUTCDate());
+  }
+
+  // رقم تسلسلي من إكسيل
   if (typeof val === 'number') {
     const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
     const d = new Date(ms);
     return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
   }
 
+  // نصوص التواريخ
   if (typeof val === 'string') {
     const s = val.trim();
     if (!s) return null;
 
-    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);       // YYYY-MM-DD
-    if (m) return toIso(+m[1], +m[2], +m[3]);
+    // YYYY-MM-DD
+    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+    if (m) {
+      const [y, mo, d] = [+m[1], +m[2], +m[3]];
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return toIso(y, mo, d);
+    }
 
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);            // DD-MM-YYYY
-    if (m) return toIso(+m[3], +m[2], +m[1]);
+    // DD-MM-YYYY (الشائعة في مصر)
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+    if (m) {
+      const [d, mo, y] = [+m[1], +m[2], +m[3]];
+      if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return toIso(y, mo, d);
+    }
 
+    // محاولة أخيرة عن طريق الجافاسكريبت
     const parsed = new Date(s);
-    if (!isNaN(parsed.getTime())) return toIso(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
+    if (!isNaN(parsed.getTime())) return toIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
   }
   return null;
 };
@@ -151,7 +168,6 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // دالة البحث الخاصة بإنهاء الخدمة التي تم مسحها بالغلط
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
@@ -183,16 +199,17 @@ export default function EmployeesPage() {
     setUploading(true);
     try {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
+      // تم تفعيل cellDates لسحب التواريخ بدقة ككائنات Date
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined, raw: true });
+      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
 
       if (excelRows.length === 0) {
         alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
         return;
       }
 
-      // 1) سحب كل الموظفين (تجاوز حد الـ 1000)
+      // سحب كل الموظفين (تجاوز حد الـ 1000)
       let allExistingEmps: any[] = [];
       let fromIdx = 0;
       const step = 1000;
@@ -205,14 +222,20 @@ export default function EmployeesPage() {
         fromIdx += step;
       }
 
-      // توحيد الكود عشان نتجنب مشكلة الأصفار البادئة أو الفرق بين رقم/نص
       const normalizeCode = (v: any) => String(v).trim().replace(/^0+(?=\d)/, '');
       const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
 
+      // بحث قوي عن الأعمدة حتى لو بها مسافات مخفية
       const getVal = (rowObj: any, keys: string[]) => {
         for (const k of keys) {
           const val = rowObj[k.toLowerCase()];
           if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+          // بحث مرن
+          const matchingKey = Object.keys(rowObj).find(objKey => objKey.includes(k.toLowerCase()));
+          if (matchingKey) {
+            const val2 = rowObj[matchingKey];
+            if (val2 !== undefined && val2 !== null && String(val2).trim() !== '') return val2;
+          }
         }
         return undefined;
       };
@@ -231,7 +254,6 @@ export default function EmployeesPage() {
         const existingEmp = existingMap.get(normalizeCode(code)) || {};
         const isNew = Object.keys(existingEmp).length === 0;
 
-        // partial update: نبدأ من بيانات الموظف الموجودة ونحدّث بس اللي جاي في الإكسيل
         const payload: any = { ...existingEmp };
         payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
         payload.employee_code = existingEmp.employee_code || code;
@@ -245,12 +267,13 @@ export default function EmployeesPage() {
           ['email', COLUMN_MAP.email],
           ['mobile', COLUMN_MAP.mobile],
         ];
+        
         for (const [field, keys] of textFields) {
           const v = getVal(row, keys);
           if (v !== undefined) payload[field] = String(v).trim();
         }
 
-        // تواريخ: تتحدث بس لو موجودة في الإكسيل ونجح تفسيرها، وإلا يفضل التاريخ القديم زي ما هو
+        // التواريخ
         const valHiring = getVal(row, COLUMN_MAP.hiring_date);
         if (valHiring !== undefined) {
           const parsed = parseExcelDateStrict(valHiring);
@@ -265,19 +288,26 @@ export default function EmployeesPage() {
           else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
         }
 
+        // نوع العقد (يحافظ على القديم لو الإكسيل مفيهوش العمود)
         const valType = getVal(row, COLUMN_MAP.contract_type);
         if (valType !== undefined) {
           const strType = String(valType).trim();
-          if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') payload.contract_type = 'دائم';
-          else if (strType.includes('فوق السن')) payload.contract_type = 'محدد المدة - فوق السن';
-          else payload.contract_type = strType;
+          if (strType.includes('دائم') || strType.toLowerCase().includes('perm')) {
+            payload.contract_type = 'دائم';
+          } else if (strType.includes('فوق السن')) {
+            payload.contract_type = 'محدد المدة - فوق السن';
+          } else if (strType.includes('محدد') || strType.toLowerCase().includes('fixed')) {
+            payload.contract_type = 'محدد المدة';
+          } else {
+            payload.contract_type = strType;
+          }
         }
 
-        // القسم الخاص -> Inactive، وإلا الافتراضي Active لو مفيش حالة متسجلة أصلاً
+        // حالة النشاط
         if (payload.department === 'تحويلات تحت الاعتماد') payload.status = 'Inactive';
         else if (!payload.status) payload.status = 'Active';
 
-        // الحساب التلقائي لتاريخ النهاية بيحصل بس لو الموظف جديد فعلاً
+        // حساب تلقائي للموظف الجديد فقط
         if (isNew) {
           if (!payload.contract_type) payload.contract_type = 'محدد المدة';
           if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
@@ -287,6 +317,7 @@ export default function EmployeesPage() {
           }
         }
 
+        // مسح تاريخ الانتهاء للعقود الدائمة
         if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
           payload.contract_end_date = null;
         }
