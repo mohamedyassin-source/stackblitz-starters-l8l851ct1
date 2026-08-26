@@ -120,14 +120,24 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     });
   }, [activeEmployees, renewals]);
 
+  // 🌟 حساب الإحصائيات مع النسب المئوية 🌟
   const cardStats = useMemo(() => {
+    const totalActive = activeEmployees.length;
     const totalFixed = processedContracts.filter(c => c.contractType === 'محدد المدة').length;
     const totalAboveAge = processedContracts.filter(c => String(c.contractType).includes('فوق السن')).length;
     const totalPerm = processedContracts.filter(c => c.contractType === 'دائم').length;
     const totalTurning60 = processedContracts.filter(c => c.isTurning60Soon && c.contractType !== 'محدد المدة - فوق السن').length;
 
-    return { totalFixed, totalAboveAge, totalPerm, totalTurning60 };
-  }, [processedContracts]);
+    const calcPct = (val: number) => totalActive > 0 ? ((val / totalActive) * 100).toFixed(1) : '0';
+
+    return { 
+      totalActive,
+      totalFixed, pctFixed: calcPct(totalFixed),
+      totalAboveAge, pctAboveAge: calcPct(totalAboveAge),
+      totalPerm, pctPerm: calcPct(totalPerm),
+      totalTurning60, pctTurning60: calcPct(totalTurning60)
+    };
+  }, [processedContracts, activeEmployees]);
 
   const filteredContracts = useMemo(() => {
     return processedContracts.filter(item => {
@@ -286,7 +296,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     }
   };
 
-  // 🌟 دالة الحفظ مع توفير الـ employee_id 🌟
   const handleSaveRenewalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp) return;
@@ -296,7 +305,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
       const yearPrefix = `RR-${new Date().getFullYear()}-`;
       const randomId = Math.floor(1000 + Math.random() * 9000);
 
-      // 🌟 تم إضافة employee_id لحل خطأ الـ Database
       const payload = {
         request_id: `${yearPrefix}${randomId}`,
         employee_id: selectedEmp.employee_id || selectedEmp.id || `EMP-${selectedEmp.code}`,
@@ -340,23 +348,77 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
+      {/* 🌟 الكروت التفاعلية بالتصميم الجديد والأيقونات والنسب המئوية 🌟 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
-        <div onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')} style={{ background: activeCardFilter === 'FIXED' ? '#eff6ff' : '#fff', border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', padding: '14px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
-          <div><div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>محدد المدة</div><div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb' }}>{cardStats.totalFixed.toLocaleString('en-US')}</div></div>
-          <div style={{ background: '#eff6ff', color: '#2563eb', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>📂</div>
+        
+        {/* كارت محدد المدة */}
+        <div onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')} style={{ background: activeCardFilter === 'FIXED' ? '#eff6ff' : '#fff', border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>عقود محددة المدة</span> <span style={{ opacity: 0.8 }}>📑</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <div style={{ fontSize: '24px', fontWeight: '900', color: '#2563eb' }}>{cardStats.totalFixed.toLocaleString('en-US')}</div>
+              <div style={{ fontSize: '10.5px', fontWeight: 'bold', color: '#1d4ed8', background: '#dbeafe', padding: '2px 8px', borderRadius: '6px' }}>
+                {cardStats.pctFixed}%
+              </div>
+            </div>
+            <div style={{ fontSize: '10px', color: '#3b82f6', fontWeight: 'bold', marginTop: '6px' }}>اضغط للتصفية 👁️</div>
+          </div>
+          <div style={{ position: 'absolute', left: '-10px', bottom: '-10px', fontSize: '60px', opacity: 0.05, transform: 'rotate(-10deg)', pointerEvents: 'none' }}>📂</div>
         </div>
-        <div onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')} style={{ background: activeCardFilter === 'ABOVE_AGE' ? '#fef3c7' : '#fff', border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', padding: '14px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
-          <div><div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>فوق السن</div><div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706' }}>{cardStats.totalAboveAge.toLocaleString('en-US')}</div></div>
-          <div style={{ background: '#fef3c7', color: '#d97706', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>💼</div>
+
+        {/* كارت فوق السن */}
+        <div onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')} style={{ background: activeCardFilter === 'ABOVE_AGE' ? '#fef3c7' : '#fff', border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>عقود فوق السن</span> <span style={{ opacity: 0.8 }}>🧓</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <div style={{ fontSize: '24px', fontWeight: '900', color: '#d97706' }}>{cardStats.totalAboveAge.toLocaleString('en-US')}</div>
+              <div style={{ fontSize: '10.5px', fontWeight: 'bold', color: '#b45309', background: '#fde68a', padding: '2px 8px', borderRadius: '6px' }}>
+                {cardStats.pctAboveAge}%
+              </div>
+            </div>
+            <div style={{ fontSize: '10px', color: '#d97706', fontWeight: 'bold', marginTop: '6px' }}>اضغط للتصفية 👁️</div>
+          </div>
+          <div style={{ position: 'absolute', left: '-10px', bottom: '-10px', fontSize: '60px', opacity: 0.05, transform: 'rotate(-10deg)', pointerEvents: 'none' }}>💼</div>
         </div>
-        <div onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')} style={{ background: activeCardFilter === 'PERM' ? '#f0fdf4' : '#fff', border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', padding: '14px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
-          <div><div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>عقود دائمة</div><div style={{ fontSize: '20px', fontWeight: '900', color: '#16a34a' }}>{cardStats.totalPerm.toLocaleString('en-US')}</div></div>
-          <div style={{ background: '#dcfce7', color: '#16a34a', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>🛡️</div>
+
+        {/* كارت عقود دائمة */}
+        <div onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')} style={{ background: activeCardFilter === 'PERM' ? '#f0fdf4' : '#fff', border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>عقود دائمة</span> <span style={{ opacity: 0.8 }}>🏛️</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <div style={{ fontSize: '24px', fontWeight: '900', color: '#16a34a' }}>{cardStats.totalPerm.toLocaleString('en-US')}</div>
+              <div style={{ fontSize: '10.5px', fontWeight: 'bold', color: '#15803d', background: '#bbf7d0', padding: '2px 8px', borderRadius: '6px' }}>
+                {cardStats.pctPerm}%
+              </div>
+            </div>
+            <div style={{ fontSize: '10px', color: '#16a34a', fontWeight: 'bold', marginTop: '6px' }}>اضغط للتصفية 👁️</div>
+          </div>
+          <div style={{ position: 'absolute', left: '-10px', bottom: '-10px', fontSize: '60px', opacity: 0.05, transform: 'rotate(-10deg)', pointerEvents: 'none' }}>🛡️</div>
         </div>
-        <div onClick={() => setActiveCardFilter(activeCardFilter === 'TURNING_60' ? null : 'TURNING_60')} style={{ background: activeCardFilter === 'TURNING_60' ? '#fff7ed' : '#fff', border: activeCardFilter === 'TURNING_60' ? '2px solid #ea580c' : '1px solid #e2e8f0', padding: '14px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' }}>
-          <div><div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '2px' }}>سن الـ 60 قريباً</div><div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>{cardStats.totalTurning60.toLocaleString('en-US')}</div></div>
-          <div style={{ background: '#ffedd5', color: '#ea580c', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>🎂</div>
+
+        {/* كارت سن الـ 60 قريباً */}
+        <div onClick={() => setActiveCardFilter(activeCardFilter === 'TURNING_60' ? null : 'TURNING_60')} style={{ background: activeCardFilter === 'TURNING_60' ? '#fff7ed' : '#fff', border: activeCardFilter === 'TURNING_60' ? '2px solid #ea580c' : '1px solid #e2e8f0', padding: '16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s', position: 'relative', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', zIndex: 2 }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>سن الـ 60 قريباً (60 يوم)</span> <span style={{ opacity: 0.8 }}>⏳</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+              <div style={{ fontSize: '24px', fontWeight: '900', color: '#ea580c' }}>{cardStats.totalTurning60.toLocaleString('en-US')}</div>
+              <div style={{ fontSize: '10.5px', fontWeight: 'bold', color: '#c2410c', background: '#fed7aa', padding: '2px 8px', borderRadius: '6px' }}>
+                {cardStats.pctTurning60}%
+              </div>
+            </div>
+            <div style={{ fontSize: '10px', color: '#ea580c', fontWeight: 'bold', marginTop: '6px' }}>عرض القائمة 👁️</div>
+          </div>
+          <div style={{ position: 'absolute', left: '-10px', bottom: '-10px', fontSize: '60px', opacity: 0.05, transform: 'rotate(-10deg)', pointerEvents: 'none' }}>🎂</div>
         </div>
+
       </div>
 
       <div className="db-card" style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -430,7 +492,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         )}
       </div>
 
-      {/* 🌟 نافذة طلب التجديد المحدثة (تحديد مدة مرنة وتواريخ يدوية) 🌟 */}
       {showRenewalModal && selectedEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -488,7 +549,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
-      {/* نوافذ تعديل العقد المباشر وإنشاء عقد جديد وإنهاء تعاقد */}
+      {/* نوافذ التعديل والإنهاء */}
       {editContractData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -561,6 +622,46 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
                 <button type="button" onClick={() => setShowNewContractModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={newContractSaving} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: newContractSaving ? 'not-allowed' : 'pointer' }}>حفظ العقد الجديد 🚀</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showTermModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div className="db-card" style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>🚫 إنهاء تعاقد موظف</h3>
+              <button onClick={() => setShowTermModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>البحث عن الموظف المراد إنهاء عقده:</label>
+                <input type="text" placeholder="اكتب كود الموظف أو اسمه..." value={termSearch} onChange={e => { setTermSearch(e.target.value); setSelectedTermEmp(null); }} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                {termSearchResults.length > 0 && !selectedTermEmp && (
+                  <div style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', marginTop: '4px', maxHeight: '150px', overflowY: 'auto' }}>
+                    {termSearchResults.map((emp, i) => (
+                      <div key={i} onClick={() => { setSelectedTermEmp(emp); setTermSearch(`${getField(emp, 'employee_code', 'EmployeeCode')} - ${getField(emp, 'employee_name', 'ArabicName')}`); }} style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: '11px' }}>
+                        <strong style={{ color: '#0d9488' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء التعاقد:</label>
+                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
+                  <option value="إنهاء عقد">إنهاء عقد</option><option value="استقالة">استقالة</option><option value="إنهاء خدمات">إنهاء خدمات</option><option value="بلوغ سن">بلوغ سن (تقاعد)</option><option value="انقطاع عن العمل">انقطاع عن العمل</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إنهاء التعاقد:</label>
+                <input type="date" required value={termDate} onChange={e => setTermDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer' }}>تأكيد إنهاء التعاقد 🚫</button>
               </div>
             </form>
           </div>
