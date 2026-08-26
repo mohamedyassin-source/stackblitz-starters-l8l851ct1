@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
-// 🌟 قاموس الأعمدة الذكي (مُحدث ليشمل جميع الاحتمالات والمسافات)
 const COLUMN_MAP: Record<string, string[]> = {
   employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
   employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
@@ -16,10 +15,10 @@ const COLUMN_MAP: Record<string, string[]> = {
   mobile: ['mobile', 'الموبايل', 'الهاتف'],
   hiring_date: ['hiring_date', 'تاريخ التعيين'],
   contract_end_date: ['contract_end_date', 'contract end date', 'تاريخ نهاية العقد', 'نهاية العقد'],
-  contract_type: ['contract_type', 'contract type', 'register', 'نوع العقد'],
+  contract_type: ['contract_type', 'register', 'نوع العقد'],
 };
 
-// 🌟 دالة تاريخ فولاذية: تفهم جميع صيغ الإكسيل وتقص أي وقت مخفي
+// دالة تاريخ صارمة: ترجع null لو مقدرتش تفهم القيمة، وبتترك التاريخ القديم زي ما هو في الحالة دي
 const parseExcelDateStrict = (val: any): string | null => {
   if (val === undefined || val === null || val === '') return null;
 
@@ -28,37 +27,29 @@ const parseExcelDateStrict = (val: any): string | null => {
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   };
 
-  // لو كان كائن تاريخ حقيقي
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return null;
     return toIso(val.getFullYear(), val.getMonth() + 1, val.getDate());
   }
 
-  // لو رقم تسلسلي من إكسيل (مثل 44565)
   if (typeof val === 'number') {
     const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
     const d = new Date(ms);
     return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
   }
 
-  // لو نص (String)
   if (typeof val === 'string') {
     const s = val.trim();
     if (!s) return null;
 
-    // بحث عن صيغة YYYY-MM-DD (ويتجاهل أي وقت بعدها لأنه مفيش $ في النهاية)
-    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);       
     if (m) return toIso(+m[1], +m[2], +m[3]);
 
-    // بحث عن صيغة DD-MM-YYYY
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);            
     if (m) return toIso(+m[3], +m[2], +m[1]);
 
-    // محاولة أخيرة عبر الجافاسكريبت
     const parsed = new Date(s);
-    if (!isNaN(parsed.getTime())) {
-      return toIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
-    }
+    if (!isNaN(parsed.getTime())) return toIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
   }
   return null;
 };
@@ -204,7 +195,6 @@ export default function EmployeesPage() {
         return;
       }
 
-      // سحب كل الموظفين لتجاوز الـ 1000
       let allExistingEmps: any[] = [];
       let fromIdx = 0;
       const step = 1000;
@@ -221,17 +211,9 @@ export default function EmployeesPage() {
       const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
 
       const getVal = (rowObj: any, keys: string[]) => {
-        // البحث المباشر بالمفاتيح
         for (const k of keys) {
-          // البحث في الكائن مباشرة
-          if (rowObj[k] !== undefined && rowObj[k] !== null && String(rowObj[k]).trim() !== '') {
-            return rowObj[k];
-          }
-          // البحث بصيغة lowercase
-          const lowerKey = k.toLowerCase();
-          if (rowObj[lowerKey] !== undefined && rowObj[lowerKey] !== null && String(rowObj[lowerKey]).trim() !== '') {
-            return rowObj[lowerKey];
-          }
+          const val = rowObj[k.toLowerCase()];
+          if (val !== undefined && val !== null && String(val).trim() !== '') return val;
         }
         return undefined;
       };
@@ -241,10 +223,7 @@ export default function EmployeesPage() {
 
       const formattedRows = excelRows.map((rawRow: any, idx: number) => {
         const row: any = {};
-        // تحويل جميع المفاتيح إلى lowercase
-        for (const k of Object.keys(rawRow)) {
-          row[k.trim().toLowerCase()] = rawRow[k];
-        }
+        for (const k of Object.keys(rawRow)) row[k.trim().toLowerCase()] = rawRow[k];
 
         const codeVal = getVal(row, COLUMN_MAP.employee_code);
         if (!codeVal) { skippedRows.push(idx + 2); return null; }
@@ -266,43 +245,33 @@ export default function EmployeesPage() {
           ['email', COLUMN_MAP.email],
           ['mobile', COLUMN_MAP.mobile],
         ];
-        
         for (const [field, keys] of textFields) {
           const v = getVal(row, keys);
-          if (v !== undefined && v !== null) {
-            payload[field] = String(v).trim();
-          }
+          if (v !== undefined) payload[field] = String(v).trim();
         }
 
-        // --- تحديث تواريخ ---
         const valHiring = getVal(row, COLUMN_MAP.hiring_date);
-        if (valHiring !== undefined && valHiring !== null) {
+        if (valHiring !== undefined) {
           const parsed = parseExcelDateStrict(valHiring);
           if (parsed) payload.hiring_date = parsed;
           else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ تعيين غير مفهوم "${valHiring}"`);
         }
 
         const valEnd = getVal(row, COLUMN_MAP.contract_end_date);
-        if (valEnd !== undefined && valEnd !== null) {
+        if (valEnd !== undefined) {
           const parsed = parseExcelDateStrict(valEnd);
           if (parsed) payload.contract_end_date = parsed;
           else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
         }
 
-        // --- تحديث نوع العقد ---
         const valType = getVal(row, COLUMN_MAP.contract_type);
-        if (valType !== undefined && valType !== null) {
+        if (valType !== undefined) {
           const strType = String(valType).trim();
-          if (strType.includes('دائم') || strType.toLowerCase().includes('permanent')) {
-            payload.contract_type = 'دائم';
-          } else if (strType.includes('فوق السن')) {
-            payload.contract_type = 'محدد المدة - فوق السن';
-          } else {
-            payload.contract_type = strType; // إذا كانت محدد المدة ستسجل محدد المدة
-          }
+          if (strType.includes('دائم') || strType.toLowerCase().includes('perm')) payload.contract_type = 'دائم';
+          else if (strType.includes('فوق السن')) payload.contract_type = 'محدد المدة - فوق السن';
+          else payload.contract_type = strType;
         }
 
-        // --- حالات منطقية ---
         if (payload.department === 'تحويلات تحت الاعتماد') payload.status = 'Inactive';
         else if (!payload.status) payload.status = 'Active';
 
@@ -315,7 +284,6 @@ export default function EmployeesPage() {
           }
         }
 
-        // تفريغ تاريخ النهاية للعقود الدائمة بقوة
         if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
           payload.contract_end_date = null;
         }
@@ -356,26 +324,17 @@ export default function EmployeesPage() {
     const code = getField(emp, 'employee_code', 'EmployeeCode', 'employee_id');
     setEditData({ emp: { ...emp }, contract: {}, renewal: {}, loading: true });
 
-    try {
-      const [contractsRes, renewalsRes] = await Promise.all([
-        supabase.from('contracts').select('*').or(`employee_id.eq.${code},employee_code.eq.${code}`).limit(1),
-        supabase.from('renewal_requests').select('*').or(`employee_id.eq.${code},employee_code.eq.${code}`).limit(1)
-      ]);
+    const [contractsRes, renewalsRes] = await Promise.all([
+      supabase.from('contracts').select('*').or(`employee_id.eq.${code},employee_code.eq.${code}`).limit(1),
+      supabase.from('renewal_requests').select('*').or(`employee_id.eq.${code},employee_code.eq.${code}`).limit(1)
+    ]);
 
-      setEditData({
-        emp: { ...emp },
-        contract: contractsRes.data?.[0] || {},
-        renewal: renewalsRes.data?.[0] || {},
-        loading: false
-      });
-    } catch (err) {
-      setEditData({
-        emp: { ...emp },
-        contract: {},
-        renewal: {},
-        loading: false
-      });
-    }
+    setEditData({
+      emp: { ...emp },
+      contract: contractsRes.data?.[0] || {},
+      renewal: renewalsRes.data?.[0] || {},
+      loading: false
+    });
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -385,6 +344,13 @@ export default function EmployeesPage() {
 
     try {
       const empId = editData.emp.id || editData.emp.employee_id;
+      
+      const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
+      const finalHiring = rawHiring ? rawHiring : null;
+
+      const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
+      const finalEnd = rawEnd ? rawEnd : null;
+
       const updateData = {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -392,18 +358,13 @@ export default function EmployeesPage() {
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
-        hiring_date: getField(editData.emp, 'hiring_date', 'HiringDate'),
+        hiring_date: finalHiring,
         contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
-        contract_end_date: getField(editData.emp, 'contract_end_date', 'ContractEndDate'),
+        contract_end_date: finalEnd,
         status: getField(editData.emp, 'status', 'Status'),
         email: getField(editData.emp, 'email', 'Email'),
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
-
-      // إذا كان العقد دائم، تفريغ تاريخ النهاية
-      if (updateData.contract_type === 'دائم') {
-        updateData.contract_end_date = null;
-      }
 
       const { error } = await supabase
         .from('employees')
@@ -501,9 +462,9 @@ export default function EmployeesPage() {
         department: newEmp.department,
         company: newEmp.company,
         job_title: newEmp.job_title,
-        hiring_date: newEmp.hiring_date,
+        hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         contract_type: newEmp.contract_type,
-        contract_end_date: newEmp.contract_type === 'دائم' ? null : newEmp.contract_end_date,
+        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
         status: newEmp.status,
         email: newEmp.email,
         mobile: newEmp.mobile
@@ -792,11 +753,9 @@ export default function EmployeesPage() {
                         {getContractStatusBadge(cType, endDate)}
                       </td>
 
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                          <button onClick={() => setProfileEmp(emp)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
-                          <button onClick={() => handleOpenEdit(emp)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
-                        </div>
+                      <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                        <button onClick={() => setProfileEmp(emp)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
+                        <button onClick={() => handleOpenEdit(emp)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
                       </td>
                     </tr>
                   );
@@ -991,9 +950,7 @@ export default function EmployeesPage() {
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
                       <select className="db-input" value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
-                        <option value="دائم">دائم</option>
-                        <option value="محدد المدة">محدد المدة</option>
-                        <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                        <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
                       </select>
                     </div>
                     <div>
@@ -1003,8 +960,7 @@ export default function EmployeesPage() {
                     <div>
                       <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>حالة الموظف (Status)</label>
                       <select className="db-input" value={getField(editData.emp, 'status', 'Status')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
-                        <option value="Active">Active (نشط)</option>
-                        <option value="Inactive">Inactive (منتهي الخدمة)</option>
+                        <option value="Active">Active (نشط)</option><option value="Inactive">Inactive (منتهي الخدمة)</option>
                       </select>
                     </div>
                   </div>
@@ -1042,9 +998,7 @@ export default function EmployeesPage() {
                 <div>
                   <label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
                   <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }}>
-                    <option value="دائم">دائم</option>
-                    <option value="محدد المدة">محدد المدة</option>
-                    <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                    <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
                   </select>
                 </div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
