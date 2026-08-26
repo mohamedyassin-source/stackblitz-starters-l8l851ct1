@@ -4,6 +4,52 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
+const COLUMN_MAP: Record<string, string[]> = {
+  employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
+  employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
+  national_id: ['national_id', 'id_no', 'الرقم القومي'],
+  department: ['department', 'الإدارة', 'القسم'],
+  company: ['comany_name', 'company_name', 'company', 'الشركة'],
+  job_title: ['job_title', 'الوظيفة', 'المسمى الوظيفي'],
+  email: ['email', 'البريد'],
+  mobile: ['mobile', 'الموبايل', 'الهاتف'],
+  hiring_date: ['hiring_date', 'تاريخ التعيين'],
+  contract_end_date: ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد'],
+  contract_type: ['contract_type', 'register', 'نوع العقد'],
+};
+
+// دالة تاريخ صارمة: ترجع null لو مقدرتش تفهم القيمة، وبتترك التاريخ القديم زي ما هو في الحالة دي
+const parseExcelDateStrict = (val: any): string | null => {
+  if (val === undefined || val === null || val === '') return null;
+
+  const toIso = (y: number, m: number, d: number) => {
+    if (!y || !m || !d) return null;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  };
+
+  // رقم تسلسلي من إكسيل (بدون أي تأثير تايم زون)
+  if (typeof val === 'number') {
+    const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
+    const d = new Date(ms);
+    return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+
+  if (typeof val === 'string') {
+    const s = val.trim();
+    if (!s) return null;
+
+    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);       // YYYY-MM-DD
+    if (m) return toIso(+m[1], +m[2], +m[3]);
+
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);            // DD-MM-YYYY
+    if (m) return toIso(+m[3], +m[2], +m[1]);
+
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) return toIso(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
+  }
+  return null;
+};
+
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
@@ -105,39 +151,6 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // دالة قوية لتحويل التواريخ بشكل آمن
-  const formatExcelDate = (val: any) => {
-    if (!val) return null;
-    const toIso = (d: Date) => {
-      const yyyy = d.getUTCFullYear();
-      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(d.getUTCDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
-    };
-
-    if (typeof val === 'number') {
-      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-      if (!isNaN(date.getTime())) return toIso(date);
-    }
-    if (typeof val === 'string') {
-      const trimmed = val.trim();
-      let date = new Date(trimmed);
-      if (!isNaN(date.getTime())) return toIso(date);
-      
-      const parts = trimmed.split(/[-/]/);
-      if (parts.length === 3) {
-        if (parts[0].length === 4) {
-          date = new Date(`${parts[0]}-${parts[1]}-${parts[2]}`);
-        } else {
-          date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); 
-        }
-        if (!isNaN(date.getTime())) return toIso(date);
-      }
-    }
-    return null;
-  };
-
-  // 🌟 دالة الرفع الشاملة الذكية (تجاوز حاجز 1000 موظف + التحديث الدقيق)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -147,14 +160,14 @@ export default function EmployeesPage() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
+      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined, raw: true });
 
       if (excelRows.length === 0) {
         alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
         return;
       }
 
-      // 🌟 الحل السحري: سحب كل الموظفين لتجاوز حد الـ 1000 في سوبابيز 🌟
+      // 1) سحب كل الموظفين (تجاوز حد الـ 1000)
       let allExistingEmps: any[] = [];
       let fromIdx = 0;
       const step = 1000;
@@ -167,7 +180,9 @@ export default function EmployeesPage() {
         fromIdx += step;
       }
 
-      const existingMap = new Map(allExistingEmps.map(emp => [String(emp.employee_code).trim(), emp]));
+      // توحيد الكود عشان نتجنب مشكلة الأصفار البادئة أو الفرق بين رقم/نص
+      const normalizeCode = (v: any) => String(v).trim().replace(/^0+(?=\d)/, '');
+      const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
 
       const getVal = (rowObj: any, keys: string[]) => {
         for (const k of keys) {
@@ -177,89 +192,77 @@ export default function EmployeesPage() {
         return undefined;
       };
 
-      const formattedRows = excelRows.map((rawRow: any) => {
-        // تحويل كافة رؤوس الأعمدة من الإكسيل لـ حروف صغيرة للمطابقة
-        const row: any = {};
-        for (const k of Object.keys(rawRow)) {
-          row[k.trim().toLowerCase()] = rawRow[k];
-        }
+      const skippedRows: number[] = [];
+      const dateWarnings: string[] = [];
 
-        const codeVal = getVal(row, ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود']);
-        if (!codeVal) return null;
-        
+      const formattedRows = excelRows.map((rawRow: any, idx: number) => {
+        const row: any = {};
+        for (const k of Object.keys(rawRow)) row[k.trim().toLowerCase()] = rawRow[k];
+
+        const codeVal = getVal(row, COLUMN_MAP.employee_code);
+        if (!codeVal) { skippedRows.push(idx + 2); return null; }
+
         const code = String(codeVal).trim();
-        const existingEmp = existingMap.get(code) || {}; 
+        const existingEmp = existingMap.get(normalizeCode(code)) || {};
         const isNew = Object.keys(existingEmp).length === 0;
 
-        // 1. الأساس هو الداتا الموجودة (لعدم فقدان البيانات اللي مش في الإكسيل)
+        // partial update: نبدأ من بيانات الموظف الموجودة ونحدّث بس اللي جاي في الإكسيل
         const payload: any = { ...existingEmp };
         payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
-        payload.employee_code = code;
+        payload.employee_code = existingEmp.employee_code || code;
 
-        // 2. التحديث الديناميكي (ياخد من الإكسيل لو متاح)
-        const valName = getVal(row, ['employee_name', 'اسم الموظف', 'الاسم']);
-        if (valName !== undefined) payload.employee_name = String(valName).trim();
+        const textFields: [string, string[]][] = [
+          ['employee_name', COLUMN_MAP.employee_name],
+          ['national_id', COLUMN_MAP.national_id],
+          ['department', COLUMN_MAP.department],
+          ['company', COLUMN_MAP.company],
+          ['job_title', COLUMN_MAP.job_title],
+          ['email', COLUMN_MAP.email],
+          ['mobile', COLUMN_MAP.mobile],
+        ];
+        for (const [field, keys] of textFields) {
+          const v = getVal(row, keys);
+          if (v !== undefined) payload[field] = String(v).trim();
+        }
 
-        const valNid = getVal(row, ['national_id', 'id_no', 'الرقم القومي']);
-        if (valNid !== undefined) payload.national_id = String(valNid).trim();
+        // تواريخ: تتحدث بس لو موجودة في الإكسيل ونجح تفسيرها، وإلا يفضل التاريخ القديم زي ما هو
+        const valHiring = getVal(row, COLUMN_MAP.hiring_date);
+        if (valHiring !== undefined) {
+          const parsed = parseExcelDateStrict(valHiring);
+          if (parsed) payload.hiring_date = parsed;
+          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ تعيين غير مفهوم "${valHiring}"`);
+        }
 
-        const valDept = getVal(row, ['department', 'الإدارة', 'القسم']);
-        if (valDept !== undefined) payload.department = String(valDept).trim();
+        const valEnd = getVal(row, COLUMN_MAP.contract_end_date);
+        if (valEnd !== undefined) {
+          const parsed = parseExcelDateStrict(valEnd);
+          if (parsed) payload.contract_end_date = parsed;
+          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
+        }
 
-        const valCompany = getVal(row, ['comany_name', 'company_name', 'company', 'الشركة']);
-        if (valCompany !== undefined) payload.company = String(valCompany).trim();
-
-        const valJob = getVal(row, ['job_title', 'الوظيفة', 'المسمى الوظيفي']);
-        if (valJob !== undefined) payload.job_title = String(valJob).trim();
-
-        const valEmail = getVal(row, ['email', 'البريد']);
-        if (valEmail !== undefined) payload.email = String(valEmail).trim();
-
-        const valMobile = getVal(row, ['mobile', 'الموبايل', 'الهاتف']);
-        if (valMobile !== undefined) payload.mobile = String(valMobile).trim();
-
-        const valHiring = getVal(row, ['hiring_date', 'تاريخ التعيين']);
-        if (valHiring !== undefined) payload.hiring_date = formatExcelDate(valHiring);
-
-        const valEnd = getVal(row, ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد']);
-        if (valEnd !== undefined) payload.contract_end_date = formatExcelDate(valEnd);
-
-        const valType = getVal(row, ['contract_type', 'register', 'نوع العقد']);
+        const valType = getVal(row, COLUMN_MAP.contract_type);
         if (valType !== undefined) {
           const strType = String(valType).trim();
-          if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') {
-            payload.contract_type = 'دائم';
-          } else if (strType.includes('فوق السن')) {
-            payload.contract_type = 'محدد المدة - فوق السن';
-          } else {
-            payload.contract_type = strType;
-          }
+          if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') payload.contract_type = 'دائم';
+          else if (strType.includes('فوق السن')) payload.contract_type = 'محدد المدة - فوق السن';
+          else payload.contract_type = strType;
         }
 
-        // 3. قواعد العمل (Business Logic)
-        if (payload.department === 'تحويلات تحت الاعتماد') {
-          payload.status = 'Inactive';
-        } else if (!payload.status) {
-          payload.status = 'Active';
-        }
+        // القسم الخاص -> Inactive، وإلا الافتراضي Active لو مفيش حالة متسجلة أصلاً
+        if (payload.department === 'تحويلات تحت الاعتماد') payload.status = 'Inactive';
+        else if (!payload.status) payload.status = 'Active';
 
+        // الحساب التلقائي لتاريخ النهاية بيحصل بس لو الموظف جديد فعلاً
         if (isNew) {
           if (!payload.contract_type) payload.contract_type = 'محدد المدة';
-          
           if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
-            const hDate = new Date(payload.hiring_date);
-            if (!isNaN(hDate.getTime())) {
-              hDate.setUTCFullYear(hDate.getUTCFullYear() + 1);
-              hDate.setUTCDate(hDate.getUTCDate() - 1);
-              const yyyy = hDate.getUTCFullYear();
-              const mm = String(hDate.getUTCMonth() + 1).padStart(2, '0');
-              const dd = String(hDate.getUTCDate()).padStart(2, '0');
-              payload.contract_end_date = `${yyyy}-${mm}-${dd}`;
-            }
+            const [y, m, d] = payload.hiring_date.split('-').map(Number);
+            const end = new Date(Date.UTC(y + 1, m - 1, d - 1));
+            payload.contract_end_date = `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`;
           }
         }
 
-        if (payload.contract_type === 'دائم') {
+        if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
           payload.contract_end_date = null;
         }
 
@@ -271,15 +274,21 @@ export default function EmployeesPage() {
         return;
       }
 
-      // رفع البيانات على دفعات
+      let updatedCount = 0;
+      const batchErrors: string[] = [];
       for (let i = 0; i < formattedRows.length; i += 1000) {
         const chunk = formattedRows.slice(i, i + 1000);
-        // تم تصحيح onConflict للاعتماد على المفتاح الأساسي للجدول
         const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
-        if (error) throw error;
+        if (error) batchErrors.push(`الدفعة ${Math.floor(i / 1000) + 1}: ${error.message}`);
+        else updatedCount += chunk.length;
       }
 
-      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح!`);
+      let summary = `✅ تم تحديث ${updatedCount} من ${formattedRows.length} موظف.`;
+      if (skippedRows.length) summary += `\n⚠️ ${skippedRows.length} صف اتجاهل (بدون كود): صفوف ${skippedRows.slice(0, 15).join(', ')}${skippedRows.length > 15 ? '...' : ''}`;
+      if (dateWarnings.length) summary += `\n⚠️ ${dateWarnings.length} تاريخ اتجاهل (احتفظنا بالقديم):\n${dateWarnings.slice(0, 8).join('\n')}${dateWarnings.length > 8 ? '\n...' : ''}`;
+      if (batchErrors.length) summary += `\n❌ أخطاء:\n${batchErrors.join('\n')}`;
+
+      alert(summary);
       await fetchEmployees();
     } catch (err: any) {
       alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
@@ -288,25 +297,6 @@ export default function EmployeesPage() {
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
-
-  const handleSort = (columnKey: string) => {
-    if (sortColumn === columnKey) {
-      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortColumn(columnKey);
-      setSortDirection('asc');
-    }
-  };
-
-  const termSearchResults = useMemo(() => {
-    if (!termSearch.trim()) return [];
-    const term = termSearch.toLowerCase().trim();
-    return activeEmployeesOnly.filter(e => {
-      const code = String(getField(e, 'employee_code', 'EmployeeCode')).toLowerCase();
-      const name = String(getField(e, 'employee_name', 'ArabicName')).toLowerCase();
-      return code.includes(term) || name.includes(term);
-    }).slice(0, 5);
-  }, [activeEmployeesOnly, termSearch]);
 
   const handleOpenEdit = async (emp: any) => {
     const code = getField(emp, 'employee_code', 'EmployeeCode', 'employee_id');
@@ -507,11 +497,6 @@ export default function EmployeesPage() {
       return <span style={{ background: '#fef3c7', color: '#d97706', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>متبقي {days} يوم ⏳</span>;
     }
     return <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>ساري ({days} يوم)</span>;
-  };
-
-  const renderSortArrow = (colKey: string) => {
-    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
-    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
   };
 
   return (
@@ -890,76 +875,6 @@ export default function EmployeesPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {editData && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>تعديل بيانات الموظف (شامل)</h3>
-              <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            {editData.loading ? (
-              <div style={{ padding: '40px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب البيانات المرتبطة...</div>
-            ) : (
-              <form onSubmit={handleSaveEdit}>
-                <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
-                  <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--brass-600, #0d9488)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات السجل الأساسي (Employees)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                    {[
-                      { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
-                      { label: 'الاسم العربي', key1: 'employee_name', key2: 'ArabicName' },
-                      { label: 'الرقم القومي', key1: 'national_id', key2: 'NationalID' },
-                      { label: 'الإدارة', key1: 'department', key2: 'Department' },
-                      { label: 'الشركة', key1: 'company', key2: 'Company' },
-                      { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
-                      { label: 'الموبايل', key1: 'mobile', key2: 'Mobile' },
-                    ].map(field => (
-                      <div key={field.label}>
-                        <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
-                        <input type="text" className="db-input" value={getField(editData.emp, field.key1, field.key2)} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, [field.key1]: e.target.value, [field.key2]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
-                  <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#2563eb', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ التعيين</label>
-                      <input type="date" className="db-input" value={getField(editData.emp, 'hiring_date', 'HiringDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, hiring_date: e.target.value, HiringDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
-                      <select className="db-input" value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
-                        <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ نهاية العقد</label>
-                      <input type="date" className="db-input" value={getField(editData.emp, 'contract_end_date', 'ContractEndDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_end_date: e.target.value, ContractEndDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>حالة الموظف (Status)</label>
-                      <select className="db-input" value={getField(editData.emp, 'status', 'Status')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
-                        <option value="Active">Active (نشط)</option><option value="Inactive">Inactive (منتهي الخدمة)</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                  <button type="button" onClick={() => setEditData(null)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                  <button type="submit" disabled={editData.saving} style={{ background: editData.saving ? 'var(--muted, #64748b)' : 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: editData.saving ? 'not-allowed' : 'pointer', opacity: editData.saving ? 0.7 : 1 }}>
-                    {editData.saving ? 'جاري الحفظ...' : 'حفظ كافة التعديلات'}
-                  </button>
-                </div>
-              </form>
-            )}
           </div>
         </div>
       )}
