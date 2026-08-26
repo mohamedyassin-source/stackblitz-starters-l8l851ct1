@@ -21,7 +21,7 @@ export default function AuditPage() {
         id: `${req.id}-create`,
         date: baseDate,
         time: '09:15 ص', // وقت افتراضي تقريبي
-        user: 'مدير الموارد البشرية',
+        user: {req.employee_code},
         action: 'CREATE',
         actionText: 'إنشاء طلب تجديد',
         target: `${req.employee_name} (${req.employee_code})`,
@@ -52,7 +52,7 @@ export default function AuditPage() {
           id: `${req.id}-reject`,
           date: baseDate,
           time: '12:45 م',
-          user: 'المدير العام',
+          user: {req.employee_code},
           action: 'REJECT',
           actionText: 'رفض طلب التجديد',
           target: `${req.employee_name} (${req.employee_code})`,
