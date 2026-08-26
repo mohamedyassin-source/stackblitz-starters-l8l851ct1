@@ -4,6 +4,49 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import Stamp from './Stamp';
 
+// 🌟 نقلنا الدوال المساعدة خارج الـ Component عشان نمنع تحذيرات useMemo
+const getField = (obj: any, ...keys: string[]) => {
+  if (!obj) return '';
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+  }
+  return '';
+};
+
+const getDaysRemaining = (endDateStr: string) => {
+  if (!endDateStr) return null;
+  const end = new Date(endDateStr);
+  if (isNaN(end.getTime())) return null;
+  const today = new Date();
+  return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
+};
+
+const getDaysUntil60 = (nationalId: string) => {
+  if (!nationalId || String(nationalId).trim().length !== 14) return null;
+  const idStr = String(nationalId).trim();
+  const centuryDigit = idStr.charAt(0);
+  const yearDigits = idStr.substring(1, 3);
+  const monthDigits = idStr.substring(3, 5);
+  const dayDigits = idStr.substring(5, 7);
+
+  const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+  const birthDate = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+  if (isNaN(birthDate.getTime())) return null;
+
+  const age60Date = new Date(birthDate);
+  age60Date.setFullYear(age60Date.getFullYear() + 60);
+  const today = new Date();
+  return Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
+};
+
+const getEmployeeAge = (emp: any) => {
+  const rawAge = getField(emp, 'age', 'Age');
+  if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
+    return Number(rawAge);
+  }
+  return null;
+};
+
 export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   const { employees, renewals, loading, refresh } = useAppData();
 
@@ -36,40 +79,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     if (jumpSearch) setSearchTerm(jumpSearch);
   }, [jumpSearch]);
 
-  const getField = (obj: any, ...keys: string[]) => {
-    if (!obj) return '';
-    for (const key of keys) {
-      if (obj[key] !== undefined && obj[key] !== null) return obj[key];
-    }
-    return '';
-  };
-
-  const getDaysRemaining = (endDateStr: string) => {
-    if (!endDateStr) return null;
-    const end = new Date(endDateStr);
-    if (isNaN(end.getTime())) return null;
-    const today = new Date();
-    return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
-  };
-
-  const getDaysUntil60 = (nationalId: string) => {
-    if (!nationalId || String(nationalId).trim().length !== 14) return null;
-    const idStr = String(nationalId).trim();
-    const centuryDigit = idStr.charAt(0);
-    const yearDigits = idStr.substring(1, 3);
-    const monthDigits = idStr.substring(3, 5);
-    const dayDigits = idStr.substring(5, 7);
-
-    const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
-    const birthDate = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
-    if (isNaN(birthDate.getTime())) return null;
-
-    const age60Date = new Date(birthDate);
-    age60Date.setFullYear(age60Date.getFullYear() + 60);
-    const today = new Date();
-    return Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
-  };
-
   const activeEmployees = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
@@ -88,6 +97,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
       const contractType = getField(emp, 'contract_type', 'ContractType');
       const daysLeft = getDaysRemaining(endDate);
       const daysUntil60 = getDaysUntil60(natId);
+      const age = getEmployeeAge(emp);
 
       return {
         ...emp,
@@ -100,6 +110,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         startDate,
         endDate,
         daysLeft,
+        age,
         daysUntil60,
         isTurning60Soon: daysUntil60 !== null && daysUntil60 >= 0 && daysUntil60 <= 60,
       };
@@ -252,6 +263,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   return (
     <div style={{ direction: 'rtl', animation: 'fadeIn 0.3s ease-in-out' }}>
       
+      {/* رأس الصفحة مع الأزرار العلوية */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>إدارة العقود الحالية</h3>
@@ -275,9 +287,8 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
+      {/* الكروت الإحصائية الأربعة التفاعلية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
-        
-        {/* كارت محدد المدة */}
         <div
           onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')}
           style={{
@@ -300,7 +311,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
           <div style={{ background: '#eff6ff', color: '#2563eb', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>📂</div>
         </div>
 
-        {/* كارت فوق السن */}
         <div
           onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')}
           style={{
@@ -323,7 +333,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
           <div style={{ background: '#fef3c7', color: '#d97706', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>💼</div>
         </div>
 
-        {/* كارت عقود دائمة */}
         <div
           onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')}
           style={{
@@ -346,7 +355,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
           <div style={{ background: '#dcfce7', color: '#16a34a', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>🛡️</div>
         </div>
 
-        {/* كارت سن الـ 60 خلال 60 يوم */}
         <div
           onClick={() => setActiveCardFilter(activeCardFilter === 'TURNING_60' ? null : 'TURNING_60')}
           style={{
@@ -355,7 +363,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
             padding: '14px 16px',
             borderRadius: '12px',
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -368,9 +376,9 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
           </div>
           <div style={{ background: '#ffedd5', color: '#ea580c', width: '38px', height: '38px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '18px' }}>🎂</div>
         </div>
-
       </div>
 
+      {/* الفلاتر والبحث */}
       <div className="db-card" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text"
@@ -413,6 +421,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
+      {/* الجدول الرئيسي للعقود مع أيقونة التعديل ✏️ */}
       <div className="db-card" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري جلب سريان العقود... ⏳</div>
@@ -471,6 +480,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         )}
       </div>
 
+      {/* ✏️ نافذة تعديل العقد (أيقونة القلم) */}
       {editContractData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -529,6 +539,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
+      {/* ✍️ نافذة إنشاء عقد جديد */}
       {showNewContractModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -619,6 +630,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
+      {/* 🚫 نافذة إنهاء التعاقد */}
       {showTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
