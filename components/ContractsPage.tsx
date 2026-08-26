@@ -55,6 +55,10 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
+  // 🌟 حالات الفرز (Sorting States)
+  const [sortColumn, setSortColumn] = useState<string>('daysLeft'); // الترتيب الافتراضي حسب المتبقي
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   const [showNewContractModal, setShowNewContractModal] = useState(false);
   const [showTermModal, setShowTermModal] = useState(false);
   const [editContractData, setEditData] = useState<any>(null);
@@ -120,7 +124,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     });
   }, [activeEmployees, renewals]);
 
-  // 🌟 حساب الإحصائيات مع النسب المئوية 🌟
   const cardStats = useMemo(() => {
     const totalActive = activeEmployees.length;
     const totalFixed = processedContracts.filter(c => c.contractType === 'محدد المدة').length;
@@ -155,6 +158,47 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
       return matchesSearch && matchesComp && matchesDept && matchesType;
     });
   }, [processedContracts, activeCardFilter, searchTerm, selectedCompany, selectedDept, selectedType]);
+
+  // 🌟 تطبيق الفرز (Sorting Logic) على المصفوفة المفلترة 🌟
+  const sortedContracts = useMemo(() => {
+    const sorted = [...filteredContracts];
+    return sorted.sort((a, b) => {
+      let valA = a[sortColumn as keyof typeof a];
+      let valB = b[sortColumn as keyof typeof b];
+
+      // المعالجة الخاصة للأرقام (الأيام المتبقية) لوضع null في الآخر دائمًا
+      if (sortColumn === 'daysLeft') {
+        const numA = valA !== null && valA !== undefined ? Number(valA) : Infinity;
+        const numB = valB !== null && valB !== undefined ? Number(valB) : Infinity;
+        return sortDirection === 'asc' ? numA - numB : numB - numA;
+      }
+
+      // المعالجة النصية الأبجدية لباقي الأعمدة
+      valA = String(valA || '');
+      valB = String(valB || '');
+      
+      const res = valA.localeCompare(valB, 'ar', { numeric: true });
+      return sortDirection === 'asc' ? res : -res;
+    });
+  }, [filteredContracts, sortColumn, sortDirection]);
+
+  // 🌟 دالة تغيير عمود واتجاه الفرز
+  const handleSort = (columnKey: string) => {
+    if (sortColumn === columnKey) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(columnKey);
+      setSortDirection('asc');
+    }
+  };
+
+  // 🌟 دالة رسم سهم الفرز
+  const renderSortArrow = (colKey: string) => {
+    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px', fontSize: '10px' }}>↕</span>;
+    return sortDirection === 'asc' 
+      ? <span style={{ color: '#0d9488', marginRight: '4px', fontSize: '10px' }}>▲</span> 
+      : <span style={{ color: '#0d9488', marginRight: '4px', fontSize: '10px' }}>▼</span>;
+  };
 
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
@@ -348,7 +392,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
-      {/* 🌟 الكروت التفاعلية بالتصميم الجديد والأيقونات والنسب המئوية 🌟 */}
+      {/* الكروت التفاعلية بالتصميم الجديد والأيقونات والنسب המئوية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
         
         {/* كارت محدد المدة */}
@@ -437,55 +481,60 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
               <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
                 <tr style={{ borderBottom: '1px solid #cbd5e1' }}>
-                  <th style={{ padding: '12px', color: '#64748b' }}>الكود</th>
-                  <th style={{ padding: '12px', color: '#64748b' }}>اسم الموظف</th>
-                  <th style={{ padding: '12px', color: '#64748b' }}>الإدارة</th>
-                  <th style={{ padding: '12px', color: '#64748b' }}>بداية العقد</th>
-                  <th style={{ padding: '12px', color: '#64748b' }}>نهاية العقد</th>
-                  <th style={{ padding: '12px', color: '#64748b' }}>الأيام المتبقية</th>
-                  <th style={{ padding: '12px', color: '#64748b' }}>نوع العقد</th>
+                  {/* 🌟 عناوين الأعمدة التفاعلية (Sorting Headers) 🌟 */}
+                  <th onClick={() => handleSort('code')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('code')}</th>
+                  <th onClick={() => handleSort('name')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>اسم الموظف {renderSortArrow('name')}</th>
+                  <th onClick={() => handleSort('department')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
+                  <th onClick={() => handleSort('startDate')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>بداية العقد {renderSortArrow('startDate')}</th>
+                  <th onClick={() => handleSort('endDate')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('endDate')}</th>
+                  <th onClick={() => handleSort('daysLeft')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الأيام المتبقية {renderSortArrow('daysLeft')}</th>
+                  <th onClick={() => handleSort('contractType')} style={{ padding: '12px', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contractType')}</th>
                   <th style={{ padding: '12px', color: '#64748b', textAlign: 'center' }}>إجراء التجديد</th>
                   <th style={{ padding: '12px', color: '#64748b', textAlign: 'center' }}>تعديل العقد</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredContracts.map((emp, i) => {
-                  const isPerm = emp.contractType === 'دائم';
+                {sortedContracts.length === 0 ? (
+                  <tr><td colSpan={9} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>لا توجد عقود تطابق بحثك.</td></tr>
+                ) : (
+                  sortedContracts.map((emp, i) => {
+                    const isPerm = emp.contractType === 'دائم';
 
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{emp.code}</td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.name}</td>
-                      <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.startDate || '—'}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.endDate || '—'}</td>
-                      <td style={{ padding: '10px' }}>
-                        {emp.daysLeft !== null ? (
-                          <span style={{ fontWeight: 'bold', color: emp.daysLeft < 0 ? '#dc2626' : emp.daysLeft <= 60 ? '#d97706' : '#15803d' }}>
-                            {emp.daysLeft < 0 ? `منتهي (${Math.abs(emp.daysLeft)} يوم)` : `${emp.daysLeft} يوم`}
-                          </span>
-                        ) : (
-                          isPerm ? <Stamp color="green">دائم 🛡️</Stamp> : '—'
-                        )}
-                      </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contractType || '—'}</td>
+                    return (
+                      <tr key={i} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{emp.code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.name}</td>
+                        <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.startDate || '—'}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.endDate || '—'}</td>
+                        <td style={{ padding: '10px' }}>
+                          {emp.daysLeft !== null ? (
+                            <span style={{ fontWeight: 'bold', color: emp.daysLeft < 0 ? '#dc2626' : emp.daysLeft <= 60 ? '#d97706' : '#15803d' }}>
+                              {emp.daysLeft < 0 ? `منتهي (${Math.abs(emp.daysLeft)} يوم)` : `${emp.daysLeft} يوم`}
+                            </span>
+                          ) : (
+                            isPerm ? <Stamp color="green">دائم 🛡️</Stamp> : '—'
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contractType || '—'}</td>
 
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        {emp.hasPendingRenewal ? (
-                          <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>قيد التجديد ⏳</span>
-                        ) : (
-                          <button onClick={() => handleOpenRenewalModal(emp)} style={{ background: isPerm ? '#d97706' : '#0d9488', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-                            {isPerm ? 'تحويل لفوق السن 🔄' : 'إنشاء طلب تجديد ✍️'}
-                          </button>
-                        )}
-                      </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {emp.hasPendingRenewal ? (
+                            <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>قيد التجديد ⏳</span>
+                          ) : (
+                            <button onClick={() => handleOpenRenewalModal(emp)} style={{ background: isPerm ? '#d97706' : '#0d9488', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              {isPerm ? 'تحويل لفوق السن 🔄' : 'إنشاء طلب تجديد ✍️'}
+                            </button>
+                          )}
+                        </td>
 
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <button onClick={() => handleOpenEditContract(emp)} style={{ background: '#f1f5f9', color: '#0f172a', border: '1px solid #cbd5e1', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="تعديل تاريخ بداية ونهاية العقد مباشرة">✏️ تعديل</button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => handleOpenEditContract(emp)} style={{ background: '#f1f5f9', color: '#0f172a', border: '1px solid #cbd5e1', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }} title="تعديل تاريخ بداية ونهاية العقد مباشرة">✏️ تعديل</button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
