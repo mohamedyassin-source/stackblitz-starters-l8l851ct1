@@ -14,7 +14,7 @@ const ReportsPage = dynamic(() => import('@/components/ReportsPage'), { ssr: fal
 const AlertsPage = dynamic(() => import('@/components/AlertsPage'), { ssr: false });
 const AuditPage = dynamic(() => import('@/components/AuditPage'), { ssr: false });
 const SettingsPage = dynamic(() => import('@/components/SettingsPage'), { ssr: false });
-const DataSyncPage = dynamic(() => import('@/components/DataSyncPage'), { ssr: false }); // 👈 استدعاء شاشة تحديث البيانات
+const DataSyncPage = dynamic(() => import('@/components/DataSyncPage'), { ssr: false });
 
 const SIDEBAR_GROUPS = [
   { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
@@ -22,7 +22,6 @@ const SIDEBAR_GROUPS = [
     title: 'شؤون العاملين', 
     items: [
       { id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] },
-      { id: 'data_sync', icon: '🔄', label: 'تحديث البيانات المجمع', roles: ['Admin', 'HR'] }, // 👈 الرابط الجديد في القائمة الجانبية
     ] 
   },
   { 
@@ -46,7 +45,7 @@ const SIDEBAR_GROUPS = [
 const PAGE_TITLES: Record<string, string> = {
   dashboard: 'لوحة التحكم',
   employees_data: 'بيانات الموظفين',
-  data_sync: 'تحديث واستيراد البيانات المجمع', // 👈 عنوان الصفحة المضاف
+  data_sync: 'تحديث واستيراد البيانات المجمع',
   contracts: 'العقود الحالية',
   renewals: 'طلبات التجديد',
   signatures: 'توقيع العقود',
@@ -78,7 +77,6 @@ export default function Home() {
     document.body.classList.toggle('dark', dark);
     setCheckingAuth(false);
 
-    // استقبال أوامر التنقّل الصادرة من أي صفحة
     const unsubscribe = onAppNavigate(({ tab }) => {
       setActiveTab(tab);
       setSidebarOpen(false);
@@ -122,12 +120,11 @@ export default function Home() {
     <DataProvider>
     <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
 
-      {/* overlay للموبايل عند فتح القائمة */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* ========================== الشريط الجانبي الثابت ========================== */}
+      {/* الشريط الجانبي */}
       <aside
         className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
           sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
@@ -141,7 +138,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* عناصر القائمة الجانبية */}
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           {SIDEBAR_GROUPS.map((group, index) => {
             const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
@@ -170,18 +166,31 @@ export default function Home() {
           })}
         </nav>
 
-        {/* الجزء السفلي مثبت دائماً بعيداً عن الاسكرول */}
-        <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0">
+        {/* الجزء السفلي: زر التحديث المجمع + الإعدادات + الخروج */}
+        <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0 flex flex-col gap-2">
+          {['Admin', 'HR'].includes(currentUser.role) && (
+            <button
+              onClick={() => { setActiveTab('data_sync'); setSidebarOpen(false); }}
+              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors flex items-center gap-2.5 ${
+                activeTab === 'data_sync' ? 'bg-brass-600 border-brass-500 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
+              }`}
+            >
+              <span>🔄</span>
+              <span>تحديث البيانات المجمع</span>
+            </button>
+          )}
+
           {currentUser.role === 'Admin' && (
             <button
               onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
-              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold mb-2 border transition-colors ${
+              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors ${
                 activeTab === 'settings' ? 'bg-navy-700 border-navy-700 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
               }`}
             >
               ⚙️ الإعدادات والصلاحيات
             </button>
           )}
+
           <button
             onClick={handleLogout}
             className="w-full px-3.5 py-2.5 rounded-lg text-[12.5px] font-bold bg-red-950/60 text-red-300 border border-red-900 hover:bg-red-950 transition-colors"
@@ -191,7 +200,7 @@ export default function Home() {
         </div>
       </aside>
 
-      {/* ========================== منطقة المحتوى الرئيسية ========================== */}
+      {/* منطقة المحتوى الرئيسية */}
       <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
         <header
           className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
@@ -235,7 +244,7 @@ export default function Home() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === 'dashboard' && <DashboardPage />}
           {activeTab === 'employees_data' && <EmployeesPage />}
-          {activeTab === 'data_sync' && <DataSyncPage />} {/* 👈 إضافة العرض لصفحة التحديث */}
+          {activeTab === 'data_sync' && <DataSyncPage />}
           {activeTab === 'contracts' && <ContractsPage />}
           {activeTab === 'renewals' && <RenewalsPage />}
           {activeTab === 'signatures' && <SignaturesPage />}
