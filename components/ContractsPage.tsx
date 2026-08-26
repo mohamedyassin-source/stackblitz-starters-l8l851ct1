@@ -1,33 +1,34 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState, useMemo } from 'react';
 import { useAppData } from '@/lib/DataContext';
-import Stamp from './Stamp';
 
-export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
-  const { employees, renewals, loading, refresh } = useAppData();
+const MONTHS_LIST = [
+  { value: '1', label: 'يناير (01)' },
+  { value: '2', label: 'فبراير (02)' },
+  { value: '3', label: 'مارس (03)' },
+  { value: '4', label: 'أبريل (04)' },
+  { value: '5', label: 'مايو (05)' },
+  { value: '6', label: 'يونيو (06)' },
+  { value: '7', label: 'يوليو (07)' },
+  { value: '8', label: 'أغسطس (08)' },
+  { value: '9', label: 'سبتمبر (09)' },
+  { value: '10', label: 'أكتوبر (10)' },
+  { value: '11', label: 'نوفمبر (11)' },
+  { value: '12', label: 'ديسمبر (12)' },
+];
 
-  // الفلاتر والبحث
-  const [searchTerm, setSearchTerm] = useState(jumpSearch || '');
+export default function ReportsPage() {
+  const { employees = [], renewals = [], loading } = useAppData();
+
+  const [activeTab, setActiveTab] = useState<'monthly_expiry' | 'above_age' | 'approval_status' | 'full_roster'>('monthly_expiry');
+
+  const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
-  const [selectedType, setSelectedType] = useState('');
-  const [selectedExpiryRange, setSelectedExpiryRange] = useState('');
+  const [selectedContractType, setSelectedType] = useState('');
 
-  // نافذة إنشاء/تجديد العقد
-  const [showRenewalModal, setShowRenewalModal] = useState(false);
-  const [selectedEmp, setSelectedEmp] = useState<any>(null);
-
-  // بيانات نموذج التجديد
-  const [renewalType, setRenewalType] = useState('محدد المدة');
-  const [renewalMonths, setRenewalMonths] = useState(12);
-  const [newStartDate, setNewStartDate] = useState('');
-  const [newEndDate, setNewEndDate] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (jumpSearch) setSearchTerm(jumpSearch);
-  }, [jumpSearch]);
+  const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
+  const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
   const getField = (obj: any, ...keys: string[]) => {
     if (!obj) return '';
@@ -37,386 +38,318 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     return '';
   };
 
-  const getDaysRemaining = (endDateStr: string) => {
-    if (!endDateStr) return null;
-    const end = new Date(endDateStr);
-    if (isNaN(end.getTime())) return null;
-    const today = new Date();
-    return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
-  };
-
-  const getEmployeeAge = (emp: any) => {
-    const rawAge = getField(emp, 'age', 'Age');
-    if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
-      return Number(rawAge);
-    }
-    return null;
-  };
-
-  const companiesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
-  const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
-  const typesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
-
-  // تصفية الموظفين النشطين
-  const activeEmployees = useMemo(() => {
-    return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
+  const companiesList = useMemo(() => {
+    return Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean)));
   }, [employees]);
 
-  // دمج بيانات العقود مع آخر طلب تجديد
-  const contractsData = useMemo(() => {
-    return activeEmployees.map(emp => {
-      const code = getField(emp, 'employee_code', 'EmployeeCode');
-      const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
-      const daysLeft = getDaysRemaining(endDate);
-      const age = getEmployeeAge(emp);
+  const deptsList = useMemo(() => {
+    return Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean)));
+  }, [employees]);
 
-      const empRens = renewals.filter(r => r.employee_code === code).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-      const latestRenewal = empRens[0];
+  const contractTypesList = useMemo(() => {
+    return Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean)));
+  }, [employees]);
+
+  // تجهيز البيانات بأمان بدون أخطاء
+  const processedData = useMemo(() => {
+    if (!employees || !Array.isArray(employees)) return [];
+
+    const activeEmps = employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
+
+    return activeEmps.map(emp => {
+      const code = String(getField(emp, 'employee_code', 'EmployeeCode'));
+      const name = String(getField(emp, 'employee_name', 'ArabicName'));
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const natId = String(getField(emp, 'national_id', 'NationalID')).trim();
+      const rawAge = getField(emp, 'age', 'Age');
+      const ageNum = rawAge !== '' && !isNaN(Number(rawAge)) ? Number(rawAge) : null;
+
+      // حساب أيام المتبقي
+      let daysLeft: number | null = null;
+      if (endDateStr) {
+        const end = new Date(endDateStr);
+        if (!isNaN(end.getTime())) {
+          const today = new Date();
+          daysLeft = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
+        }
+      }
+
+      // حساب تاريخ سن الـ 60 من الرقم القومي
+      let age60Month: string | null = null;
+      let age60Year: string | null = null;
+      let age60DateStr: string | null = null;
+
+      if (natId.length === 14) {
+        const century = natId.charAt(0) === '3' ? '20' : '19';
+        const yy = natId.substring(1, 3);
+        const mm = natId.substring(3, 5);
+        const dd = natId.substring(5, 7);
+        const bDate = new Date(`${century}${yy}-${mm}-${dd}`);
+
+        if (!isNaN(bDate.getTime())) {
+          const age60Date = new Date(bDate);
+          age60Date.setFullYear(age60Date.getFullYear() + 60);
+          age60Month = String(age60Date.getMonth() + 1);
+          age60Year = String(age60Date.getFullYear());
+          age60DateStr = age60Date.toISOString().split('T')[0];
+        }
+      }
+
+      const empRens = (renewals || []).filter(r => String(r.employee_code) === code);
+      const latestRenewal = empRens[empRens.length - 1];
 
       return {
-        ...emp,
         code,
-        name: getField(emp, 'employee_name', 'ArabicName'),
+        name,
         jobTitle: getField(emp, 'job_title', 'JobTitle'),
         department: getField(emp, 'department', 'Department'),
         company: getField(emp, 'company', 'Company'),
         contractType: getField(emp, 'contract_type', 'ContractType'),
-        startDate: getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate'),
-        endDate,
+        endDate: endDateStr,
         daysLeft,
-        age,
-        hasPendingRenewal: latestRenewal && (latestRenewal.status === 'Pending' || latestRenewal.status === 'قيد الانتظار'),
-        latestRenewalStatus: latestRenewal?.status || 'لا يوجد طلب',
+        age: ageNum,
+        age60Month,
+        age60Year,
+        age60DateStr,
+        renewalStatus: latestRenewal?.status || 'لا يوجد طلب',
+        signatureStatus: latestRenewal?.signature_status || '—',
       };
     });
-  }, [activeEmployees, renewals]);
+  }, [employees, renewals]);
 
-  // تطبيق الفلاتر
-  const filteredContracts = useMemo(() => {
-    return contractsData.filter(item => {
+  // التصفية المركبة النظيفة
+  const filteredReportData = useMemo(() => {
+    return processedData.filter(item => {
+      let actionReason = 'استحقاق دوري';
+      
+      if (activeTab === 'monthly_expiry') {
+        let isContractExpiring = false;
+        let isTurning60 = false;
+
+        // 1. الموظفون محدد العقود الذين ينتهي عقدهم في الشهر والسنوات المحددة
+        if (item.contractType !== 'دائم' && item.endDate) {
+          const d = new Date(item.endDate);
+          if (!isNaN(d.getTime())) {
+            const m = String(d.getMonth() + 1);
+            const y = String(d.getFullYear());
+            if ((!selectedMonth || m === selectedMonth) && (!selectedYear || y === selectedYear)) {
+              isContractExpiring = true;
+              actionReason = '📑 انتهاء عقد محدد المدة';
+            }
+          }
+        }
+
+        // 2. الموظفون أصحاب العقود الدائمة الذين يبلغون سن 60 في هذا الشهر
+        if (item.contractType === 'دائم' && item.age60Month && item.age60Year) {
+          if ((!selectedMonth || item.age60Month === selectedMonth) && (!selectedYear || item.age60Year === selectedYear)) {
+            isTurning60 = true;
+            actionReason = '🎂 بلوغ سن الـ 60 (عقد دائم)';
+          }
+        }
+
+        if (!isContractExpiring && !isTurning60) return false;
+        (item as any).reasonText = actionReason;
+      } else if (activeTab === 'above_age') {
+        const is60 = item.age !== null && item.age >= 60;
+        const isAboveType = String(item.contractType).includes('فوق السن');
+        if (!is60 && !isAboveType) return false;
+      } else if (activeTab === 'approval_status') {
+        if (item.renewalStatus === 'لا يوجد طلب') return false;
+      }
+
+      // البحث والشركات والإدارات
       const term = searchTerm.toLowerCase().trim();
       const matchesSearch = !term || item.code.toLowerCase().includes(term) || item.name.toLowerCase().includes(term);
       const matchesComp = !selectedCompany || item.company === selectedCompany;
       const matchesDept = !selectedDept || item.department === selectedDept;
-      const matchesType = !selectedType || item.contractType === selectedType;
+      const matchesType = !selectedContractType || item.contractType === selectedContractType;
 
-      let matchesExpiry = true;
-      if (selectedExpiryRange === 'expired') matchesExpiry = item.daysLeft !== null && item.daysLeft < 0;
-      else if (selectedExpiryRange === 'expiring_60') matchesExpiry = item.daysLeft !== null && item.daysLeft >= 0 && item.daysLeft <= 60;
-      else if (selectedExpiryRange === 'above_60') matchesExpiry = (item.age !== null && item.age >= 60) || String(item.contractType).includes('فوق السن');
-
-      return matchesSearch && matchesComp && matchesDept && matchesType && matchesExpiry;
+      return matchesSearch && matchesComp && matchesDept && matchesType;
     });
-  }, [contractsData, searchTerm, selectedCompany, selectedDept, selectedType, selectedExpiryRange]);
+  }, [processedData, activeTab, selectedMonth, selectedYear, searchTerm, selectedCompany, selectedDept, selectedContractType]);
 
-  // فتح نافذة الإنشاء/التجديد
-  const handleOpenRenewalModal = (emp: any) => {
-    setSelectedEmp(emp);
-    const isAbove60 = (emp.age !== null && emp.age >= 60) || emp.contractType === 'دائم';
-    const defaultType = isAbove60 && (emp.age >= 60 || emp.contractType === 'دائم') ? 'محدد المدة - فوق السن' : 'محدد المدة';
-    setRenewalType(defaultType);
-    setRenewalMonths(12);
+  const handlePrint = () => window.print();
 
-    // حساب تاريخ البداية الافتراضي (اليوم التالي لنهاية العقد أو تاريخ اليوم)
-    let start = new Date();
-    if (emp.endDate) {
-      const currentEnd = new Date(emp.endDate);
-      if (!isNaN(currentEnd.getTime())) {
-        start = new Date(currentEnd);
-        start.setDate(start.getDate() + 1);
-      }
-    }
+  const handleExportExcel = async () => {
+    if (filteredReportData.length === 0) return alert('لا توجد بيانات للتصدير.');
 
-    const startStr = start.toISOString().split('T')[0];
-    setNewStartDate(startStr);
+    const rows = filteredReportData.map(item => ({
+      'كود الموظف': item.code,
+      'اسم الموظف': item.name,
+      'الإدارة': item.department || '—',
+      'الوظيفة': item.jobTitle || '—',
+      'السن': item.age ? `${item.age} سنة` : '—',
+      'نوع العقد': item.contractType || '—',
+      'سبب التقرير': (item as any).reasonText || '—',
+      'تاريخ الانتهاء/الـ60': (item as any).reasonText?.includes('60') ? (item.age60DateStr || '—') : (item.endDate || '—'),
+      'حالة التجديد': item.renewalStatus,
+    }));
 
-    // حساب تاريخ النهاية الافتراضي (البداية + أشهر التجديد - 1 يوم)
-    const end = new Date(start);
-    end.setMonth(end.getMonth() + 12);
-    end.setDate(end.getDate() - 1);
-    setNewEndDate(end.toISOString().split('T')[0]);
-
-    setShowRenewalModal(true);
-  };
-
-  // إعادة حساب تاريخ النهاية تلقائياً عند تغيير البداية أو عدد الشهور
-  const handleMonthsOrDateChange = (months: number, startStr: string) => {
-    setRenewalMonths(months);
-    setNewStartDate(startStr);
-
-    if (startStr) {
-      const start = new Date(startStr);
-      if (!isNaN(start.getTime())) {
-        const end = new Date(start);
-        end.setMonth(end.getMonth() + Number(months));
-        end.setDate(end.getDate() - 1);
-        setNewEndDate(end.toISOString().split('T')[0]);
-      }
-    }
-  };
-
-  // 🌟 حفظ طلب التجديد بأسماء الأعمدة المطابقة لقاعدة البيانات 100%
-  const handleSaveRenewalRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedEmp) return;
-
-    setSaving(true);
-    try {
-      const yearPrefix = `RR-${new Date().getFullYear()}-`;
-      const randomId = Math.floor(1000 + Math.random() * 9000);
-
-      const payload = {
-        request_id: `${yearPrefix}${randomId}`,
-        employee_code: String(selectedEmp.code),
-        employee_name: String(selectedEmp.name),
-        company: selectedEmp.company || '',
-        department: selectedEmp.department || '',
-        job_title: selectedEmp.jobTitle || '',
-        contract_type: renewalType,
-        renewal_months: Number(renewalMonths),
-
-        // 👈 الأسماء المعتمدة بجدول renewal_requests في سوبابيز لمنع خطأ Schema Cache
-        new_start_date: newStartDate,
-        new_contract_end_date: newEndDate,
-
-        status: 'Pending',
-        signature_status: 'في انتظار توقيع الموظف',
-        request_date: new Date().toISOString().split('T')[0],
-      };
-
-      const { error } = await supabase
-        .from('renewal_requests')
-        .insert([payload]);
-
-      if (error) throw error;
-
-      alert(`✅ تم إنشاء طلب التجديد للموظف (${selectedEmp.name}) بنجاح.`);
-      setShowRenewalModal(false);
-      setSelectedEmp(null);
-      await refresh();
-    } catch (err: any) {
-      alert('حدث خطأ أثناء حفظ طلب التجديد: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
+    const XLSX = await import('xlsx');
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'تقرير');
+    XLSX.writeFile(wb, `تقرير_${activeTab}.xlsx`);
   };
 
   return (
-    <div style={{ direction: 'rtl', animation: 'fadeIn 0.3s ease-in-out' }}>
-      
-      {/* رأس الصفحة */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+    <div style={{ direction: 'rtl', paddingBottom: '40px' }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .print-area, .print-area * { visibility: visible; }
+          .print-area { position: absolute; left: 0; top: 0; width: 100%; direction: rtl; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
+      {/* الرأس */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>إدارة العقود الحالية والتجديدات</h3>
-          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>متابعة سريان العقود وإنشاء طلبات التجديد والتحويل التعاقدي</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '800' }}>مركز التقارير الرقمية</h3>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>استخراج وتحليل وتصدير بيانات الاستحقاقات التعاقدية</p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={handleExportExcel} style={{ background: '#059669', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+            📥 تصدير Excel
+          </button>
+          <button onClick={handlePrint} style={{ background: '#0f172a', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+            🖨️ طباعة
+          </button>
         </div>
       </div>
 
-      {/* الفلاتر والبحث */}
-      <div className="db-card" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          placeholder="بحث بالاسم أو الكود..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '200px' }}
-        />
+      {/* التبويبات */}
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
+        {[
+          { id: 'monthly_expiry', title: '🎯 استحقاقات الشهر المركب', desc: 'انتهاء عقود + بلوغ الـ 60' },
+          { id: 'above_age', title: '💼 فوق السن (60+)', desc: 'المحالين للتقاعد وعقود فوق السن' },
+          { id: 'approval_status', title: '⏳ موقف الاعتماد والتوقيع', desc: 'طلبات التجديد الجارية والمكتملة' },
+          { id: 'full_roster', title: '📂 السجل الشامل', desc: 'جميع الموظفين النشطين' },
+        ].map(tab => (
+          <div
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
+            style={{
+              background: activeTab === tab.id ? '#f0fdf4' : '#fff',
+              border: activeTab === tab.id ? '2px solid #0d9488' : '1px solid #e2e8f0',
+              borderRadius: '10px',
+              padding: '12px',
+              cursor: 'pointer'
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: 'bold', color: activeTab === tab.id ? '#0d9488' : '#0f172a' }}>{tab.title}</div>
+            <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>{tab.desc}</div>
+          </div>
+        ))}
+      </div>
 
-        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
+      {/* الفلاتر */}
+      <div className="no-print" style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '12px', borderRadius: '10px', marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {activeTab === 'monthly_expiry' && (
+          <div style={{ display: 'flex', gap: '6px', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px', border: '1px solid #bfdbfe', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ الشهر/السنة:</span>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #93c5fd', fontSize: '11px', fontWeight: 'bold' }}>
+              <option value="">كل الأشهر</option>
+              {MONTHS_LIST.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #93c5fd', fontSize: '11px', fontWeight: 'bold' }}>
+              <option value="">كل السنوات</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+            </select>
+          </div>
+        )}
+
+        <input type="text" placeholder="بحث باسم أو كود الموظف..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', width: '180px' }} />
+
+        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
           <option value="">🏢 كل الشركات</option>
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
+        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px' }}>
           <option value="">💼 كل الإدارات</option>
           {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
         </select>
 
-        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
-          <option value="">📄 أنواع العقود</option>
-          {typesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
-        </select>
+        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); setSelectedType(''); setSelectedMonth(String(new Date().getMonth() + 1)); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
 
-        <select value={selectedExpiryRange} onChange={e => setSelectedExpiryRange(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', fontWeight: 'bold' }}>
-          <option value="">حالة انتهـاء العقد (الكل)</option>
-          <option value="expiring_60">⏳ ينتهي قريباً (خلال 60 يوم)</option>
-          <option value="expired">🚨 منتهي المدة بالفعل</option>
-          <option value="above_60">💼 عمالة فوق الـ 60 سنة</option>
-        </select>
-
-        <button
-          onClick={() => {
-            setSearchTerm('');
-            setSelectedCompany('');
-            setSelectedDept('');
-            setSelectedType('');
-            setSelectedExpiryRange('');
-          }}
-          style={{ background: '#f1f5f9', border: '1px solid var(--line, #e2e8f0)', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-        >
-          إعادة ضبط
-        </button>
-
-        <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
-          إجمالي العقود المعروضة: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{filteredContracts.length.toLocaleString('en-US')}</span> عقد
+        <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+          عدد السجلات: <strong style={{ color: '#0f172a' }}>{filteredReportData.length}</strong>
         </div>
       </div>
 
-      {/* الجدول الرئيسي لعقود الموظفين */}
-      <div className="db-card" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
+      {/* المعاينة والجدول */}
+      <div className="print-area" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '20px' }}>
+        <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>مجموعة شركات المراسم الدولية</h2>
+            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+              {activeTab === 'monthly_expiry' && `كشف استحقاقات العمل لشهر (${MONTHS_LIST.find(m => m.value === selectedMonth)?.label || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
+              {activeTab === 'above_age' && 'تقرير حصر عمالة فوق السن والتقاعد (60+)'}
+              {activeTab === 'approval_status' && 'تقرير حالة اعتمادات وتوقيعات التجديد'}
+              {activeTab === 'full_roster' && 'السجل العام الموحد لكافة الموظفين'}
+            </p>
+          </div>
+          <div style={{ fontSize: '10px', color: '#64748b' }}>تاريخ التقرير: <strong>{new Date().toLocaleDateString('ar-EG')}</strong></div>
+        </div>
+
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري معالجة بيانات العقود... ⏳</div>
+          <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل التقرير...</div>
         ) : (
-          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
-              <thead style={{ position: 'sticky', top: 0, background: 'var(--paper-card, #fff)', zIndex: 10 }}>
-                <tr style={{ borderBottom: '1px solid var(--line, #cbd5e1)' }}>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>الكود</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>الاسم</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>الإدارة</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>السن</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>نوع العقد الحالي</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>بداية العقد</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>نهاية العقد</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)' }}>الأيام المتبقية</th>
-                  <th style={{ padding: '12px', color: 'var(--muted, #64748b)', textAlign: 'center' }}>إجراء التجديد</th>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+              <thead>
+                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                  <th style={{ padding: '8px' }}>#</th>
+                  <th style={{ padding: '8px' }}>الكود</th>
+                  <th style={{ padding: '8px' }}>الموظف</th>
+                  <th style={{ padding: '8px' }}>الإدارة</th>
+                  <th style={{ padding: '8px' }}>الوظيفة</th>
+                  <th style={{ padding: '8px' }}>السن</th>
+                  <th style={{ padding: '8px' }}>نوع العقد الحالي</th>
+                  <th style={{ padding: '8px' }}>سبب الإدراجبالتقرير</th>
+                  <th style={{ padding: '8px' }}>تاريخ الاستحقاق</th>
+                  <th style={{ padding: '8px' }}>حالة التجديد</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredContracts.map((emp, i) => {
-                  const isPerm = emp.contractType === 'دائم';
-                  const isAbove60 = emp.age !== null && emp.age >= 60;
+                {filteredReportData.length === 0 ? (
+                  <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد بيانات مطابقة للتقرير. 🎉</td></tr>
+                ) : (
+                  filteredReportData.map((item, idx) => {
+                    const is60Reason = (item as any).reasonText?.includes('60');
 
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--line, #f1f5f9)' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{emp.code}</td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.name}</td>
-                      <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: isAbove60 ? '#d97706' : '#334155' }}>
-                        {emp.age ? `${emp.age} سنة` : '—'}
-                      </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contractType || '—'}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.startDate || '—'}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.endDate || '—'}</td>
-                      <td style={{ padding: '10px' }}>
-                        {emp.daysLeft !== null ? (
-                          <span style={{ fontWeight: 'bold', color: emp.daysLeft < 0 ? '#dc2626' : emp.daysLeft <= 60 ? '#d97706' : '#15803d' }}>
-                            {emp.daysLeft < 0 ? `منتهي (${Math.abs(emp.daysLeft)} يوم)` : `${emp.daysLeft} يوم`}
-                          </span>
-                        ) : (
-                          isPerm ? <Stamp color="green">دائم 🛡️</Stamp> : '—'
-                        )}
-                      </td>
-
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        {emp.hasPendingRenewal ? (
-                          <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 10px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>
-                            قيد التجديد ⏳
-                          </span>
-                        ) : (
-                          <button
-                            onClick={() => handleOpenRenewalModal(emp)}
-                            style={{
-                              background: isPerm ? '#d97706' : '#0d9488',
-                              color: '#fff',
-                              border: 0,
-                              padding: '6px 12px',
-                              borderRadius: '6px',
-                              fontSize: '11px',
-                              fontWeight: 'bold',
-                              cursor: 'pointer'
-                            }}
-                          >
-                            {isPerm ? 'تحويل لعقد فوق السن 🔄' : 'إنشاء طلب تجديد ✍️'}
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: is60Reason ? '#fffbeb' : 'transparent' }}>
+                        <td style={{ padding: '8px', color: '#64748b' }}>{idx + 1}</td>
+                        <td style={{ padding: '8px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{item.code}</td>
+                        <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{item.name}</td>
+                        <td style={{ padding: '8px', color: '#64748b' }}>{item.department || '—'}</td>
+                        <td style={{ padding: '8px', color: '#64748b' }}>{item.jobTitle || '—'}</td>
+                        <td style={{ padding: '8px', fontWeight: 'bold', color: item.age && item.age >= 60 ? '#d97706' : '#334155' }}>
+                          {item.age ? `${item.age} سنة` : '—'}
+                        </td>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.contractType || '—'}</td>
+                        <td style={{ padding: '8px', fontWeight: 'bold', color: is60Reason ? '#d97706' : '#2563eb' }}>
+                          {(item as any).reasonText || 'استحقاق'}
+                        </td>
+                        <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          {is60Reason ? (item.age60DateStr || '—') : (item.endDate || '—')}
+                        </td>
+                        <td style={{ padding: '8px', fontWeight: 'bold' }}>{item.renewalStatus}</td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
         )}
       </div>
-
-      {/* ✍️ نافذة إنشاء طلب التجديد والتحويل التعاقدي */}
-      {showRenewalModal && selectedEmp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>
-                ✍️ إنشاء طلب تجديد / تحويل عقد
-              </h3>
-              <button onClick={() => setShowRenewalModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            <form onSubmit={handleSaveRenewalRequest} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
-                <div><strong>الموظف:</strong> {selectedEmp.name} (<span style={{ color: '#0d9488' }}>{selectedEmp.code}</span>)</div>
-                <div><strong>الإدارة:</strong> {selectedEmp.department || '—'} | <strong>السن الحالي:</strong> {selectedEmp.age ? `${selectedEmp.age} سنة` : '—'}</div>
-                <div><strong>نوع العقد الحالي:</strong> {selectedEmp.contractType || '—'}</div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>نوع العقد الجديد:</label>
-                <select
-                  value={renewalType}
-                  onChange={e => setRenewalType(e.target.value)}
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
-                >
-                  <option value="محدد المدة">محدد المدة (سنوي)</option>
-                  <option value="محدد المدة - فوق السن">محدد المدة - فوق السن (تقاعد/60+)</option>
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>مدة التجديد بالشهور:</label>
-                <select
-                  value={renewalMonths}
-                  onChange={e => handleMonthsOrDateChange(Number(e.target.value), newStartDate)}
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
-                >
-                  <option value={6}>6 أشهر</option>
-                  <option value={12}>12 شهر (سنة كاملة)</option>
-                  <option value={24}>24 شهر (سنتان)</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ بداية العقد الجديد:</label>
-                  <input
-                    type="date"
-                    required
-                    value={newStartDate}
-                    onChange={e => handleMonthsOrDateChange(renewalMonths, e.target.value)}
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ نهاية العقد الجديد:</label>
-                  <input
-                    type="date"
-                    required
-                    value={newEndDate}
-                    onChange={e => setNewEndDate(e.target.value)}
-                    style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '14px' }}>
-                <button type="button" onClick={() => setShowRenewalModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={saving} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
-                  {saving ? 'جاري إرسال الطلب...' : 'تأكيد وإرسال طلب التجديد 🚀'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
