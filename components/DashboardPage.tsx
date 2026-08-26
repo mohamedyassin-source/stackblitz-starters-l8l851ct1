@@ -123,22 +123,29 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    // 🌟 📈 الفلترة الصارمة: قراءة التجديدات المعتمدة بجدول (renewals) التي تتم في عام 2026 فقط
-    const targetYear = 2026;
+    // 🌟 🎯 اللوجيك الدقيق: قراءة طلبات التجديد المعتمدة فقط من new_contract_end_date + 1 يوم
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
     filteredRens.forEach((req) => {
-      // الاعتماد فقط على تاريخ بداية العقد الجديد أو تاريخ الطلب المسجل في 2026
-      const dateStr = req.new_start_date || req.contract_start_date || req.request_date;
+      // 1. التثبت من أن الطلب معتمد صراحة (Approved)
+      const isApproved = req.status === 'Approved' || req.status === 'معتمد' || req.renewal_status === 'Approved' || req.renewal_status === 'معتمد';
 
-      if (dateStr) {
-        const d = new Date(dateStr);
-        // التاكد 100% ان السنة هي 2026 وأن الشهر حقيقي
-        if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
-          const monthIdx = d.getMonth();
-          if (monthIdx >= 0 && monthIdx < 12) {
-            renewalsByMonth[monthIdx].count++;
+      if (isApproved) {
+        // 2. قراءة العمود new_contract_end_date
+        const endDateStr = req.new_contract_end_date || req.contract_end_date;
+
+        if (endDateStr) {
+          const endDate = new Date(endDateStr);
+          if (!isNaN(endDate.getTime())) {
+            // 3. إضافة يوم واحد (+1 Day)
+            const startDateAfterEnd = new Date(endDate);
+            startDateAfterEnd.setDate(startDateAfterEnd.getDate() + 1);
+
+            const monthIdx = startDateAfterEnd.getMonth(); // 0 لـ 11
+            if (monthIdx >= 0 && monthIdx < 12) {
+              renewalsByMonth[monthIdx].count++;
+            }
           }
         }
       }
@@ -156,7 +163,6 @@ export default function DashboardPage() {
       topDepts,
       urgentAlerts,
       renewalsByMonth,
-      targetYear,
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -227,10 +233,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 الشارت النهائي: إحصائية التجديدات الفعلية المنفذة في 2026 فقط */}
+        {/* 📈 الشارت المطور لقراءة الطلبات المعتمدة (Approved) بناءً على new_contract_end_date + 1 يوم */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 العقود والتجديدات المنفذة لعام {dashboardData.targetYear}
+            📈 التجديدات المعتمدة (بناءً على نهاية العقد الجديد + 1 يوم)
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.renewalsByMonth.map((month, idx) => {
