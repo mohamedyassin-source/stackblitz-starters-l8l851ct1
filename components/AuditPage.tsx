@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useAppData } from '@/lib/DataContext';
 
 export default function AuditPage() {
@@ -8,21 +8,38 @@ export default function AuditPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAction, setSelectedAction] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [activeSessionUser, setActiveSessionUser] = useState<any>(null);
 
-  // 🌟 بناء سجل العمليات بذكاء من تاريخ الطلبات
+  // 🌟 سحب بيانات المستخدم الحقيقي صاحب الجلسة الحالية من الـ Session
+  useEffect(() => {
+    const savedUser = localStorage.getItem('session_user');
+    if (savedUser) {
+      try {
+        setActiveSessionUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Error parsing session user', e);
+      }
+    }
+  }, []);
+
+  // 🌟 بناء سجل العمليات وتحديد اسم الفاعل من بيانات الجلسة والموظف
   const logs = useMemo(() => {
     const generatedLogs: any[] = [];
+    const currentUserName = activeSessionUser?.name || activeSessionUser?.username || 'مسؤول النظام';
 
     renewals.forEach(req => {
       const baseDate = req.request_date || new Date().toISOString().split('T')[0];
-      const actorName = req.created_by || req.user_name || req.employee_code || 'مسؤول النظام';
       
+      // اسم الفاعل الحقيقي المخزن في الطلب أو مستخدم الجلسة
+      const creatorName = req.created_by_name || req.created_by || currentUserName;
+      const approverName = req.approved_by_name || req.approved_by || currentUserName;
+
       // 1. حركة إنشاء الطلب
       generatedLogs.push({
         id: `${req.id || req.request_id}-create`,
         date: baseDate,
         time: '09:15 ص',
-        user: actorName,
+        user: creatorName, // 👈 اسم الفاعل الحقيقي
         action: 'CREATE',
         actionText: 'إنشاء طلب تجديد',
         target: `${req.employee_name || 'موظف'} (${req.employee_code})`,
@@ -37,7 +54,7 @@ export default function AuditPage() {
           id: `${req.id || req.request_id}-approve`,
           date: baseDate,
           time: '11:30 ص',
-          user: 'المدير العام / HR',
+          user: approverName, // 👈 اسم صاحب قرار الاعتماد
           action: 'APPROVE',
           actionText: 'اعتماد تجديد العقد',
           target: `${req.employee_name} (${req.employee_code})`,
@@ -53,7 +70,7 @@ export default function AuditPage() {
           id: `${req.id || req.request_id}-reject`,
           date: baseDate,
           time: '12:45 م',
-          user: actorName,
+          user: approverName, // 👈 اسم صاحب قرار الرفض
           action: 'REJECT',
           actionText: 'رفض طلب التجديد',
           target: `${req.employee_name} (${req.employee_code})`,
@@ -69,7 +86,7 @@ export default function AuditPage() {
           id: `${req.id || req.request_id}-sign`,
           date: baseDate,
           time: '02:20 م',
-          user: 'توقيع الموظف الإلكتروني',
+          user: `${req.employee_name} (الموظف)`, // 👈 اسم الموظف الفعلي صاحب التوقيع
           action: 'SIGN',
           actionText: 'توقيع العقد إلكترونياً',
           target: `${req.employee_name} (${req.employee_code})`,
@@ -84,7 +101,7 @@ export default function AuditPage() {
     generatedLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || String(b.id).localeCompare(String(a.id)));
 
     return generatedLogs;
-  }, [renewals]);
+  }, [renewals, activeSessionUser]);
 
   // تطبيق الفلاتر
   const filteredLogs = useMemo(() => {
@@ -176,7 +193,7 @@ export default function AuditPage() {
             <thead>
               <tr>
                 <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '120px' }}>التاريخ والوقت</th>
-                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '140px' }}>المُستخدم (الفاعل)</th>
+                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '160px' }}>المُستخدم (الفاعل)</th>
                 <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '160px' }}>نوع العملية</th>
                 <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '200px' }}>المُستهدف (الموظف)</th>
                 <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>تفاصيل إضافية</th>
@@ -193,7 +210,7 @@ export default function AuditPage() {
                       <div style={{ fontSize: '9.5px', color: 'var(--muted)', marginTop: '2px' }}>{log.time}</div>
                     </td>
                     
-                    <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--navy-950)' }}>
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--navy-950, #0f172a)' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                         <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px' }}>👤</span>
                         {log.user}
