@@ -56,7 +56,7 @@ export default function DashboardPage() {
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    // 🌟 تصفية واستبعاد الموظفين غير النشطين أو المحولين تحت الاعتماد ليتطابق مع شاشة الموظفين
+    // تصفية الموظفين النشطين لاستبعاد غير النشطين أو المحولين
     const activeEmployeesOnly = allEmployees.filter(emp => {
       const status = emp.status || 'Active';
       const dept = emp.department || '';
@@ -124,27 +124,23 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    const targetYear = new Date().getFullYear();
+    // 🌟 📊 الخيار الثاني المطور: حساب خريطة التجديد الاستحقاقية التراكمية لقوة العمل الكاملة (+1 شهر)
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
-    filteredRens.forEach((req) => {
-      const renewalDateStr = req.request_date || req.contract_start_date || req.new_start_date || req.contract_end_date || req.created_at;
-      if (renewalDateStr) {
-        const d = new Date(renewalDateStr);
-        if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
-          const monthIdx = d.getMonth();
-          if (monthIdx >= 0 && monthIdx < 12) renewalsByMonth[monthIdx].count++;
-        }
-      }
-    });
-
     filteredEmps.forEach((emp) => {
-      if (emp.hiring_date) {
-        const d = new Date(emp.hiring_date);
-        if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
-          const monthIdx = d.getMonth();
-          if (monthIdx >= 0 && monthIdx < 12) renewalsByMonth[monthIdx].count++;
+      // الاعتماد على تاريخ نهاية العقد للموظفين أصحاب العقود المحددة وفوق السن
+      if (emp.contract_type !== 'دائم' && emp.contract_end_date) {
+        const endDate = new Date(emp.contract_end_date);
+        if (!isNaN(endDate.getTime())) {
+          // 👈 إضافة شهر واحد لـ تاريخ نهاية العقد للحساب الاستحقاقي
+          const renewalDueDate = new Date(endDate);
+          renewalDueDate.setMonth(renewalDueDate.getMonth() + 1);
+
+          const monthIdx = renewalDueDate.getMonth(); // إرجاع الشهر من 0 لـ 11
+          if (monthIdx >= 0 && monthIdx < 12) {
+            renewalsByMonth[monthIdx].count++;
+          }
         }
       }
     });
@@ -161,7 +157,6 @@ export default function DashboardPage() {
       topDepts,
       urgentAlerts,
       renewalsByMonth,
-      targetYear,
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -232,8 +227,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* 📈 الرسم البياني التراكمي المطور بقراءة end_date + 1 month لقوة العمل الحالية */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
-          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>📈 معدل حركات العقود والتجديدات لعام {dashboardData.targetYear}</h4>
+          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
+            📈 توزيع استحقاقات التجديد التراكمية لقوة العمل (الشهر التالي للنهاية)
+          </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.renewalsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
