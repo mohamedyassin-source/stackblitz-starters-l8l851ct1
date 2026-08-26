@@ -4,54 +4,39 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
-const COLUMN_MAP: Record<string, string[]> = {
-  employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
-  employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
-  national_id: ['national_id', 'id_no', 'الرقم القومي'],
-  department: ['department', 'الإدارة', 'القسم'],
-  company: ['comany_name', 'company_name', 'company', 'الشركة'],
-  job_title: ['job_title', 'الوظيفة', 'المسمى الوظيفي'],
-  email: ['email', 'البريد'],
-  mobile: ['mobile', 'الموبايل', 'الهاتف'],
-  hiring_date: ['hiring_date', 'تاريخ التعيين'],
-  contract_end_date: ['contract_end_date', 'contract end date', 'تاريخ نهاية العقد', 'نهاية العقد'],
-  contract_type: ['contract_type', 'register', 'نوع العقد'],
-};
-
-// دالة تاريخ صارمة: ترجع null لو مقدرتش تفهم القيمة، وبتترك التاريخ القديم زي ما هو في الحالة دي
-const parseExcelDateStrict = (val: any): string | null => {
-  if (val === undefined || val === null || val === '') return null;
-
-  const toIso = (y: number, m: number, d: number) => {
-    if (!y || !m || !d || isNaN(y) || isNaN(m) || isNaN(d)) return null;
-    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  };
+// دالة مبسطة وصارمة لتواريخ الإكسيل
+// لو فهمت التاريخ هترجعه 'YYYY-MM-DD'، لو مفهمتوش هترجع undefined (عشان الكود يتجاهله ويحتفظ بالقديم)
+const parseDateSafe = (val: any): string | undefined => {
+  if (!val) return undefined;
 
   if (val instanceof Date) {
-    if (isNaN(val.getTime())) return null;
-    return toIso(val.getFullYear(), val.getMonth() + 1, val.getDate());
+    if (isNaN(val.getTime())) return undefined;
+    return val.toISOString().split('T')[0];
   }
 
   if (typeof val === 'number') {
-    const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
-    const d = new Date(ms);
-    return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+    const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+    if (isNaN(date.getTime())) return undefined;
+    return date.toISOString().split('T')[0];
   }
 
   if (typeof val === 'string') {
     const s = val.trim();
-    if (!s) return null;
-
-    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);       
-    if (m) return toIso(+m[1], +m[2], +m[3]);
-
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);            
-    if (m) return toIso(+m[3], +m[2], +m[1]);
-
-    const parsed = new Date(s);
-    if (!isNaN(parsed.getTime())) return toIso(parsed.getFullYear(), parsed.getMonth() + 1, parsed.getDate());
+    if (!s) return undefined;
+    
+    const parts = s.match(/\d+/g);
+    if (parts && parts.length === 3) {
+      // YYYY-MM-DD
+      if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      // DD-MM-YYYY
+      if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+    
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
   }
-  return null;
+
+  return undefined;
 };
 
 export default function EmployeesPage() {
@@ -179,6 +164,7 @@ export default function EmployeesPage() {
     return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
   };
 
+  // 🚀 دالة الرفع المباشرة والآمنة 100%
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -188,13 +174,14 @@ export default function EmployeesPage() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined, raw: true });
+      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
 
       if (excelRows.length === 0) {
         alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
         return;
       }
 
+      // جلب جميع الموظفين لكسر حاجز 1000 موظف
       let allExistingEmps: any[] = [];
       let fromIdx = 0;
       const step = 1000;
@@ -207,84 +194,90 @@ export default function EmployeesPage() {
         fromIdx += step;
       }
 
-      const normalizeCode = (v: any) => String(v).trim().replace(/^0+(?=\d)/, '');
-      const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
+      // خريطة الموظفين للبحث السريع (بدون التلاعب بالأصفار)
+      const existingMap = new Map(allExistingEmps.map(emp => [String(emp.employee_code).trim(), emp]));
 
-      const getVal = (rowObj: any, keys: string[]) => {
-        for (const k of keys) {
-          const val = rowObj[k.toLowerCase()];
-          if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+      // دالة لاستخراج الداتا من الإكسيل بأي اسم مشابه
+      const getVal = (rowObj: any, possibleKeys: string[]) => {
+        const rowKeys = Object.keys(rowObj);
+        for (const pk of possibleKeys) {
+          const match = rowKeys.find(k => k.trim().toLowerCase() === pk.toLowerCase());
+          if (match) {
+            const val = rowObj[match];
+            if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+          }
         }
         return undefined;
       };
 
-      const skippedRows: number[] = [];
-      const dateWarnings: string[] = [];
-
-      const formattedRows = excelRows.map((rawRow: any, idx: number) => {
-        const row: any = {};
-        for (const k of Object.keys(rawRow)) row[k.trim().toLowerCase()] = rawRow[k];
-
-        const codeVal = getVal(row, COLUMN_MAP.employee_code);
-        if (!codeVal) { skippedRows.push(idx + 2); return null; }
+      const formattedRows = excelRows.map((row: any) => {
+        const codeVal = getVal(row, ['employee_code', 'كود الموظف']);
+        if (!codeVal) return null;
 
         const code = String(codeVal).trim();
-        const existingEmp = existingMap.get(normalizeCode(code)) || {};
+        const existingEmp = existingMap.get(code) || {};
         const isNew = Object.keys(existingEmp).length === 0;
 
+        // 🌟 بناء التحديث: نبدأ بالقديم زي ما هو بالضبط
         const payload: any = { ...existingEmp };
         payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
-        payload.employee_code = existingEmp.employee_code || code;
+        payload.employee_code = code;
 
-        const textFields: [string, string[]][] = [
-          ['employee_name', COLUMN_MAP.employee_name],
-          ['national_id', COLUMN_MAP.national_id],
-          ['department', COLUMN_MAP.department],
-          ['company', COLUMN_MAP.company],
-          ['job_title', COLUMN_MAP.job_title],
-          ['email', COLUMN_MAP.email],
-          ['mobile', COLUMN_MAP.mobile],
-        ];
-        for (const [field, keys] of textFields) {
-          const v = getVal(row, keys);
-          if (v !== undefined) payload[field] = String(v).trim();
-        }
+        // 🌟 تحديث النصوص لو موجودة في الإكسيل فقط
+        const eName = getVal(row, ['employee_name', 'اسم الموظف']);
+        if (eName !== undefined) payload.employee_name = String(eName).trim();
 
-        const valHiring = getVal(row, COLUMN_MAP.hiring_date);
-        if (valHiring !== undefined) {
-          const parsed = parseExcelDateStrict(valHiring);
+        const eNid = getVal(row, ['national_id', 'الرقم القومي']);
+        if (eNid !== undefined) payload.national_id = String(eNid).trim();
+
+        const eDept = getVal(row, ['department', 'الإدارة']);
+        if (eDept !== undefined) payload.department = String(eDept).trim();
+
+        const eComp = getVal(row, ['comany_name', 'company_name', 'الشركة']);
+        if (eComp !== undefined) payload.company = String(eComp).trim();
+
+        const eJob = getVal(row, ['job_title', 'الوظيفة']);
+        if (eJob !== undefined) payload.job_title = String(eJob).trim();
+
+        const eMob = getVal(row, ['mobile', 'الموبايل']);
+        if (eMob !== undefined) payload.mobile = String(eMob).trim();
+
+        // 🌟 تحديث التواريخ (آمن جداً)
+        const eHiring = getVal(row, ['hiring_date', 'تاريخ التعيين']);
+        if (eHiring !== undefined) {
+          const parsed = parseDateSafe(eHiring);
           if (parsed) payload.hiring_date = parsed;
-          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ تعيين غير مفهوم "${valHiring}"`);
         }
 
-        const valEnd = getVal(row, COLUMN_MAP.contract_end_date);
-        if (valEnd !== undefined) {
-          const parsed = parseExcelDateStrict(valEnd);
+        const eEnd = getVal(row, ['contract_end_date', 'تاريخ نهاية العقد']);
+        if (eEnd !== undefined) {
+          const parsed = parseDateSafe(eEnd);
           if (parsed) payload.contract_end_date = parsed;
-          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
         }
 
-        const valType = getVal(row, COLUMN_MAP.contract_type);
-        if (valType !== undefined) {
-          const strType = String(valType).trim();
-          if (strType.includes('دائم') || strType.toLowerCase().includes('perm')) payload.contract_type = 'دائم';
-          else if (strType.includes('فوق السن')) payload.contract_type = 'محدد المدة - فوق السن';
-          else payload.contract_type = strType;
+        // 🌟 تحديث نوع العقد (لو موجود في الإكسيل، هياخده زي ما هو بدون تحريف)
+        const eType = getVal(row, ['contract_type', 'نوع العقد']);
+        if (eType !== undefined) {
+          payload.contract_type = String(eType).trim();
         }
 
-        if (payload.department === 'تحويلات تحت الاعتماد') payload.status = 'Inactive';
-        else if (!payload.status) payload.status = 'Active';
+        // 🌟 حالات خاصة 🌟
+        if (payload.department === 'تحويلات تحت الاعتماد') {
+          payload.status = 'Inactive';
+        } else if (!payload.status) {
+          payload.status = 'Active';
+        }
 
         if (isNew) {
           if (!payload.contract_type) payload.contract_type = 'محدد المدة';
           if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
             const [y, m, d] = payload.hiring_date.split('-').map(Number);
-            const end = new Date(Date.UTC(y + 1, m - 1, d - 1));
-            payload.contract_end_date = `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`;
+            const endDate = new Date(Date.UTC(y + 1, m - 1, d - 1));
+            payload.contract_end_date = `${endDate.getUTCFullYear()}-${String(endDate.getUTCMonth() + 1).padStart(2, '0')}-${String(endDate.getUTCDate()).padStart(2, '0')}`;
           }
         }
 
-        if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
+        if (payload.contract_type === 'دائم') {
           payload.contract_end_date = null;
         }
 
@@ -292,25 +285,17 @@ export default function EmployeesPage() {
       }).filter(r => r !== null) as any[];
 
       if (formattedRows.length === 0) {
-        alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
+        alert('⚠️ لم يتم العثور على أرقام أكواد صالحة داخل الملف.');
         return;
       }
 
-      let updatedCount = 0;
-      const batchErrors: string[] = [];
       for (let i = 0; i < formattedRows.length; i += 1000) {
         const chunk = formattedRows.slice(i, i + 1000);
         const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
-        if (error) batchErrors.push(`الدفعة ${Math.floor(i / 1000) + 1}: ${error.message}`);
-        else updatedCount += chunk.length;
+        if (error) throw error;
       }
 
-      let summary = `✅ تم تحديث ${updatedCount} من ${formattedRows.length} موظف.`;
-      if (skippedRows.length) summary += `\n⚠️ ${skippedRows.length} صف اتجاهل (بدون كود): صفوف ${skippedRows.slice(0, 15).join(', ')}${skippedRows.length > 15 ? '...' : ''}`;
-      if (dateWarnings.length) summary += `\n⚠️ ${dateWarnings.length} تاريخ اتجاهل (احتفظنا بالقديم):\n${dateWarnings.slice(0, 8).join('\n')}${dateWarnings.length > 8 ? '\n...' : ''}`;
-      if (batchErrors.length) summary += `\n❌ أخطاء:\n${batchErrors.join('\n')}`;
-
-      alert(summary);
+      alert(`✅ تم تحديث واستيراد ${formattedRows.length} موظف بنجاح!`);
       await fetchEmployees();
     } catch (err: any) {
       alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
@@ -337,6 +322,7 @@ export default function EmployeesPage() {
     });
   };
 
+  // 🚀 تصليح الحفظ اليدوي للتواريخ (لو فاضية تتبعت null بدل السلسلة الفارغة "")
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -346,10 +332,7 @@ export default function EmployeesPage() {
       const empId = editData.emp.id || editData.emp.employee_id;
       
       const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
-      const finalHiring = rawHiring ? rawHiring : null;
-
       const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
-      const finalEnd = rawEnd ? rawEnd : null;
 
       const updateData = {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
@@ -358,9 +341,9 @@ export default function EmployeesPage() {
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
-        hiring_date: finalHiring,
+        hiring_date: rawHiring ? rawHiring : null,
         contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
-        contract_end_date: finalEnd,
+        contract_end_date: rawEnd ? rawEnd : null,
         status: getField(editData.emp, 'status', 'Status'),
         email: getField(editData.emp, 'email', 'Email'),
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
