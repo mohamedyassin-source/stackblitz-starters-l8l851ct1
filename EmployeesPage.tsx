@@ -1,66 +1,11 @@
 'use client';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
-// ============================================================
-// خريطة تطابق أعمدة الإكسيل (عربي / إنجليزي) مع أعمدة قاعدة البيانات
-// ============================================================
-const COLUMN_MAP: Record<string, string[]> = {
-  employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
-  employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
-  national_id: ['national_id', 'id_no', 'الرقم القومي'],
-  department: ['department', 'الإدارة', 'القسم'],
-  company: ['comany_name', 'company_name', 'company', 'الشركة'],
-  job_title: ['job_title', 'الوظيفة', 'المسمى الوظيفي'],
-  email: ['email', 'البريد'],
-  mobile: ['mobile', 'الموبايل', 'الهاتف'],
-  hiring_date: ['hiring_date', 'تاريخ التعيين'],
-  contract_end_date: ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد'],
-  contract_type: ['contract_type', 'register', 'نوع العقد'],
-};
-
-// دالة تاريخ صارمة: بترجع null لو مقدرتش تفهم القيمة (بدل ما تمسح تاريخ صحيح موجود)
-const parseExcelDateStrict = (val: any): string | null => {
-  if (val === undefined || val === null || val === '') return null;
-
-  const toIso = (y: number, m: number, d: number) => {
-    if (!y || !m || !d) return null;
-    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  };
-
-  // رقم تسلسلي من إكسيل (بدون أي تأثير تايم زون)
-  if (typeof val === 'number') {
-    const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
-    const d = new Date(ms);
-    return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
-  }
-
-  if (typeof val === 'string') {
-    const s = val.trim();
-    if (!s) return null;
-
-    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/); // YYYY-MM-DD
-    if (m) return toIso(+m[1], +m[2], +m[3]);
-
-    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/); // DD-MM-YYYY
-    if (m) return toIso(+m[3], +m[2], +m[1]);
-
-    const parsed = new Date(s);
-    if (!isNaN(parsed.getTime())) return toIso(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
-  }
-  return null;
-};
-
-// توحيد كود الموظف عشان نتجنب مشكلة الأصفار البادئة/الفرق بين رقم ونص
-const normalizeCode = (v: any) => String(v).trim().replace(/^0+(?=\d)/, '');
-
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
 
   const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
@@ -156,173 +101,6 @@ export default function EmployeesPage() {
       return sortDirection === 'asc' ? res : -res;
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
-
-  // ============================================================
-  // 🌟 دالة الرفع الشاملة الذكية (تحديث جزئي حقيقي + تجاوز حاجز 1000 موظف)
-  // ============================================================
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploading(true);
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined, raw: true });
-
-      if (excelRows.length === 0) {
-        alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
-        return;
-      }
-
-      // 🌟 سحب كل الموظفين (تجاوز حد الـ 1000 صف في سوبابيز) 🌟
-      let allExistingEmps: any[] = [];
-      let fromIdx = 0;
-      const step = 1000;
-      while (true) {
-        const { data, error } = await supabase.from('employees').select('*').range(fromIdx, fromIdx + step - 1);
-        if (error) throw error;
-        if (!data || data.length === 0) break;
-        allExistingEmps.push(...data);
-        if (data.length < step) break;
-        fromIdx += step;
-      }
-
-      const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
-
-      const getVal = (rowObj: any, keys: string[]) => {
-        for (const k of keys) {
-          const val = rowObj[k.toLowerCase()];
-          if (val !== undefined && val !== null && String(val).trim() !== '') return val;
-        }
-        return undefined;
-      };
-
-      const skippedRows: number[] = [];
-      const dateWarnings: string[] = [];
-
-      const formattedRows = excelRows.map((rawRow: any, idx: number) => {
-        // تحويل كافة رؤوس الأعمدة من الإكسيل لحروف صغيرة للمطابقة
-        const row: any = {};
-        for (const k of Object.keys(rawRow)) {
-          row[k.trim().toLowerCase()] = rawRow[k];
-        }
-
-        const codeVal = getVal(row, COLUMN_MAP.employee_code);
-        if (!codeVal) { skippedRows.push(idx + 2); return null; }
-
-        const code = String(codeVal).trim();
-        const existingEmp = existingMap.get(normalizeCode(code)) || {};
-        const isNew = Object.keys(existingEmp).length === 0;
-
-        // 1. الأساس هو الداتا الموجودة (تحديث جزئي حقيقي — لا نفقد أي بيانات غير موجودة في الإكسيل)
-        const payload: any = { ...existingEmp };
-        payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
-        payload.employee_code = existingEmp.employee_code || code;
-
-        // 2. التحديث الديناميكي (ياخد من الإكسيل بس لو العمود موجود فعلاً وله قيمة)
-        const textFields: [string, string[]][] = [
-          ['employee_name', COLUMN_MAP.employee_name],
-          ['national_id', COLUMN_MAP.national_id],
-          ['department', COLUMN_MAP.department],
-          ['company', COLUMN_MAP.company],
-          ['job_title', COLUMN_MAP.job_title],
-          ['email', COLUMN_MAP.email],
-          ['mobile', COLUMN_MAP.mobile],
-        ];
-        for (const [field, keys] of textFields) {
-          const v = getVal(row, keys);
-          if (v !== undefined) payload[field] = String(v).trim();
-        }
-
-        // التواريخ: تتحدث بس لو موجودة في الإكسيل ونجح تفسيرها، وإلا يفضل التاريخ القديم كما هو
-        const valHiring = getVal(row, COLUMN_MAP.hiring_date);
-        if (valHiring !== undefined) {
-          const parsed = parseExcelDateStrict(valHiring);
-          if (parsed) payload.hiring_date = parsed;
-          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ تعيين غير مفهوم "${valHiring}"`);
-        }
-
-        const valEnd = getVal(row, COLUMN_MAP.contract_end_date);
-        if (valEnd !== undefined) {
-          const parsed = parseExcelDateStrict(valEnd);
-          if (parsed) payload.contract_end_date = parsed;
-          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
-        }
-
-        const valType = getVal(row, COLUMN_MAP.contract_type);
-        if (valType !== undefined) {
-          const strType = String(valType).trim();
-          if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') {
-            payload.contract_type = 'دائم';
-          } else if (strType.includes('فوق السن')) {
-            payload.contract_type = 'محدد المدة - فوق السن';
-          } else {
-            payload.contract_type = strType;
-          }
-        }
-
-        // 3. قواعد العمل (Business Logic)
-        if (payload.department === 'تحويلات تحت الاعتماد') {
-          payload.status = 'Inactive';
-        } else if (!payload.status) {
-          payload.status = 'Active';
-        }
-
-        // 4. الحساب التلقائي لتاريخ النهاية بيحصل بس لو الموظف جديد فعلاً (مش موجود في القاعدة قبل كده)
-        if (isNew) {
-          if (!payload.contract_type) payload.contract_type = 'محدد المدة';
-
-          if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
-            const [y, m, d] = payload.hiring_date.split('-').map(Number);
-            const end = new Date(Date.UTC(y + 1, m - 1, d - 1));
-            payload.contract_end_date = `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`;
-          }
-        }
-
-        if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
-          payload.contract_end_date = null;
-        }
-
-        return payload;
-      }).filter(r => r !== null) as any[];
-
-      if (formattedRows.length === 0) {
-        alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
-        return;
-      }
-
-      // رفع البيانات على دفعات
-      let updatedCount = 0;
-      const batchErrors: string[] = [];
-      for (let i = 0; i < formattedRows.length; i += 1000) {
-        const chunk = formattedRows.slice(i, i + 1000);
-        const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
-        if (error) batchErrors.push(`الدفعة ${Math.floor(i / 1000) + 1}: ${error.message}`);
-        else updatedCount += chunk.length;
-      }
-
-      let summary = `✅ تم تحديث ${updatedCount} من ${formattedRows.length} موظف.`;
-      if (skippedRows.length) {
-        summary += `\n⚠️ ${skippedRows.length} صف اتجاهل (بدون كود موظف): صفوف ${skippedRows.slice(0, 15).join(', ')}${skippedRows.length > 15 ? ' ...' : ''}`;
-      }
-      if (dateWarnings.length) {
-        summary += `\n⚠️ ${dateWarnings.length} تاريخ اتجاهل (احتفظنا بالتاريخ القديم):\n${dateWarnings.slice(0, 8).join('\n')}${dateWarnings.length > 8 ? '\n...' : ''}`;
-      }
-      if (batchErrors.length) {
-        summary += `\n❌ أخطاء أثناء الحفظ:\n${batchErrors.join('\n')}`;
-      }
-
-      alert(summary);
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   const handleSort = (columnKey: string) => {
     if (sortColumn === columnKey) {
@@ -525,9 +303,10 @@ export default function EmployeesPage() {
     XLSX.writeFile(wb, `بيانات_الموظفين_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  const getContractStatusBadge = (contractType: string, endDateStr: string) => {
+  // عرض تاريخ نهاية العقد الفعلي، مع لون يدل على الحالة (منتهي / قريب / ساري / دائم)
+  const getContractEndDisplay = (contractType: string, endDateStr: string) => {
     if (contractType === 'دائم') {
-      return <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
+      return <span style={{ color: '#15803d', fontWeight: 'bold' }}>دائم — بدون نهاية 🛡️</span>;
     }
     if (!endDateStr) return <span style={{ color: '#64748b' }}>—</span>;
 
@@ -535,13 +314,12 @@ export default function EmployeesPage() {
     const today = new Date();
     const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
-    if (days < 0) {
-      return <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>منتهي ({Math.abs(days)} يوم) 🚨</span>;
-    }
-    if (days <= 60) {
-      return <span style={{ background: '#fef3c7', color: '#d97706', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>متبقي {days} يوم ⏳</span>;
-    }
-    return <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>ساري ({days} يوم)</span>;
+    let color = '#2563eb'; // ساري
+    let icon = '';
+    if (days < 0) { color = '#dc2626'; icon = ' 🚨'; }       // منتهي
+    else if (days <= 60) { color = '#d97706'; icon = ' ⏳'; } // قريب من الانتهاء
+
+    return <span style={{ color, fontWeight: 'bold' }}>{endDateStr}{icon}</span>;
   };
 
   const renderSortArrow = (colKey: string) => {
@@ -551,14 +329,6 @@ export default function EmployeesPage() {
 
   return (
     <div style={{ animation: 'fadeIn 0.4s ease-in-out' }}>
-      
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileUpload} 
-        accept=".xlsx, .xls" 
-        style={{ display: 'none' }} 
-      />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
@@ -567,14 +337,6 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-          
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
-            disabled={uploading}
-            style={{ background: '#0284c7', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.7 : 1 }}
-          >
-            {uploading ? 'جاري التحديث...' : 'تحديث من إكسيل رايت 📊'}
-          </button>
 
           <button 
             onClick={() => handleExportToExcel(false)}
@@ -771,7 +533,7 @@ export default function EmployeesPage() {
                       <td style={{ padding: '10px', fontFamily: 'monospace', color: 'var(--ink, #0f172a)' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{cType || '—'}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-                        {getContractStatusBadge(cType, endDate)}
+                        {getContractEndDisplay(cType, endDate)}
                       </td>
 
                       <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
