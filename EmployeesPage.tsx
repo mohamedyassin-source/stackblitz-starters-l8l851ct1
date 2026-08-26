@@ -151,6 +151,31 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
+  // دالة البحث الخاصة بإنهاء الخدمة التي تم مسحها بالغلط
+  const termSearchResults = useMemo(() => {
+    if (!termSearch.trim()) return [];
+    const term = termSearch.toLowerCase().trim();
+    return activeEmployeesOnly.filter(e => {
+      const code = String(getField(e, 'employee_code', 'EmployeeCode')).toLowerCase();
+      const name = String(getField(e, 'employee_name', 'ArabicName')).toLowerCase();
+      return code.includes(term) || name.includes(term);
+    }).slice(0, 5);
+  }, [activeEmployeesOnly, termSearch]);
+
+  const handleSort = (columnKey: string) => {
+    if (sortColumn === columnKey) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(columnKey);
+      setSortDirection('asc');
+    }
+  };
+
+  const renderSortArrow = (colKey: string) => {
+    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
+    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -875,6 +900,76 @@ export default function EmployeesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {editData && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>تعديل بيانات الموظف (شامل)</h3>
+              <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+
+            {editData.loading ? (
+              <div style={{ padding: '40px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب البيانات المرتبطة...</div>
+            ) : (
+              <form onSubmit={handleSaveEdit}>
+                <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
+                  <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--brass-600, #0d9488)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات السجل الأساسي (Employees)</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    {[
+                      { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
+                      { label: 'الاسم العربي', key1: 'employee_name', key2: 'ArabicName' },
+                      { label: 'الرقم القومي', key1: 'national_id', key2: 'NationalID' },
+                      { label: 'الإدارة', key1: 'department', key2: 'Department' },
+                      { label: 'الشركة', key1: 'company', key2: 'Company' },
+                      { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
+                      { label: 'الموبايل', key1: 'mobile', key2: 'Mobile' },
+                    ].map(field => (
+                      <div key={field.label}>
+                        <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
+                        <input type="text" className="db-input" value={getField(editData.emp, field.key1, field.key2)} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, [field.key1]: e.target.value, [field.key2]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
+                  <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#2563eb', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ التعيين</label>
+                      <input type="date" className="db-input" value={getField(editData.emp, 'hiring_date', 'HiringDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, hiring_date: e.target.value, HiringDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
+                      <select className="db-input" value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
+                        <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ نهاية العقد</label>
+                      <input type="date" className="db-input" value={getField(editData.emp, 'contract_end_date', 'ContractEndDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_end_date: e.target.value, ContractEndDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>حالة الموظف (Status)</label>
+                      <select className="db-input" value={getField(editData.emp, 'status', 'Status')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
+                        <option value="Active">Active (نشط)</option><option value="Inactive">Inactive (منتهي الخدمة)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                  <button type="button" onClick={() => setEditData(null)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                  <button type="submit" disabled={editData.saving} style={{ background: editData.saving ? 'var(--muted, #64748b)' : 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: editData.saving ? 'not-allowed' : 'pointer', opacity: editData.saving ? 0.7 : 1 }}>
+                    {editData.saving ? 'جاري الحفظ...' : 'حفظ كافة التعديلات'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
