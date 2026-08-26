@@ -123,21 +123,23 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    // 🌟 📈 الرسم البياني الفعلي: القراءة المباشرة من طلبات التجديد المعالجة والمعتمدة لعام 2026 فقط
+    // 🌟 📈 الرسم البياني المطلوب: القراءة المباشرة من جدول العقود (العقود محددة المدة فقط بناءً على contract_start_date لسنة 2026)
     const targetYear = 2026;
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
-    filteredRens.forEach((req) => {
-      // قراءة تاريخ الحركة المباشرة
-      const actionDateStr = req.request_date || req.contract_start_date || req.created_at;
-      
-      if (actionDateStr) {
-        const d = new Date(actionDateStr);
-        if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
-          const monthIdx = d.getMonth();
-          if (monthIdx >= 0 && monthIdx < 12) {
-            renewalsByMonth[monthIdx].count++;
+    filteredEmps.forEach((emp) => {
+      // 👈 استبعاد العقود الدائمة كلياً وقراءة العقود محددة المدة فقط
+      if (emp.contract_type !== 'دائم') {
+        const startDateStr = emp.contract_start_date || emp.hiring_date;
+        
+        if (startDateStr) {
+          const d = new Date(startDateStr);
+          if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
+            const monthIdx = d.getMonth();
+            if (monthIdx >= 0 && monthIdx < 12) {
+              renewalsByMonth[monthIdx].count++;
+            }
           }
         }
       }
@@ -226,10 +228,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 رسم بياني يمثل إنجاز التجديدات الفعلي لعام 2026 */}
+        {/* 📈 رسم بياني يقرأ بداية العقود محددة المدة لسنة 2026 فقط من جدول العقود */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 معدل التجديدات والعقود التي تم إنجازها لعام {dashboardData.targetYear}
+            📈 بداية العقود محددة المدة لعام {dashboardData.targetYear} (من جدول العقود)
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.renewalsByMonth.map((month, idx) => {
