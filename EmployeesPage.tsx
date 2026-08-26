@@ -118,17 +118,24 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // 🌟 دالة مساعدة لتحويل التواريخ بشكل قوي
+  // 🌟 دالة قوية لتحويل التواريخ بشكل آمن (UTC) لمنع نقص أو زيادة يوم
   const formatExcelDate = (val: any) => {
     if (!val) return null;
+    const toIso = (d: Date) => {
+      const yyyy = d.getUTCFullYear();
+      const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(d.getUTCDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
     if (typeof val === 'number') {
       const date = new Date(Math.round((val - 25569) * 86400 * 1000));
-      if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+      if (!isNaN(date.getTime())) return toIso(date);
     }
     if (typeof val === 'string') {
       const trimmed = val.trim();
       let date = new Date(trimmed);
-      if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+      if (!isNaN(date.getTime())) return toIso(date);
       
       const parts = trimmed.split(/[-/]/);
       if (parts.length === 3) {
@@ -137,13 +144,13 @@ export default function EmployeesPage() {
         } else {
           date = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); 
         }
-        if (!isNaN(date.getTime())) return date.toISOString().split('T')[0];
+        if (!isNaN(date.getTime())) return toIso(date);
       }
     }
     return null;
   };
 
-  // 🌟 دالة الرفع الشاملة والجزئية والديناميكية
+  // 🌟 دالة الرفع الشاملة والذكية (التحديث الجزئي الديناميكي)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -153,7 +160,6 @@ export default function EmployeesPage() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      
       const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined });
 
       if (excelRows.length === 0) {
@@ -161,88 +167,108 @@ export default function EmployeesPage() {
         return;
       }
 
-      // جلب الموظفين الحاليين للدمج
+      // سحب الموظفين من قاعدة البيانات لعمل الدمج (Merge) مع الجديد
       const { data: existingEmps, error: fetchErr } = await supabase.from('employees').select('*');
       if (fetchErr) throw fetchErr;
 
       const existingMap = new Map((existingEmps || []).map(emp => [String(emp.employee_code).trim(), emp]));
 
-      const formattedRows = excelRows.map((row: any) => {
-        // استخراج كود الموظف
-        const code = String(row['employee_code'] || row['EMPLOYEE_CODE2'] || row['EMPLOYEE_CODE'] || row['كود الموظف'] || '').trim();
-        if (!code) return null;
+      // دالة استخراج القيم بتجاهل حالة الأحرف والمسافات
+      const getVal = (rowObj: any, keys: string[]) => {
+        for (const k of keys) {
+          const val = rowObj[k.toLowerCase()];
+          if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+        }
+        return undefined;
+      };
 
-        const existingEmp = existingMap.get(code) || {}; // الداتا القديمة للموظف لو موجود
+      const formattedRows = excelRows.map((rawRow: any) => {
+        // تحويل كافة مفاتيح صف الإكسيل لـ حروف صغيرة للمطابقة الدقيقة
+        const row: any = {};
+        for (const k of Object.keys(rawRow)) {
+          row[k.trim().toLowerCase()] = rawRow[k];
+        }
+
+        const codeVal = getVal(row, ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود']);
+        if (!codeVal) return null;
+        
+        const code = String(codeVal).trim();
+        const existingEmp = existingMap.get(code) || {}; 
         const isNew = Object.keys(existingEmp).length === 0;
 
-        // الأساس هو البيانات الموجودة في قاعدة البيانات (حتى لا يتم مسح أي شيء غير موجود في الإكسيل)
+        // 1. نبدأ بنسخ البيانات القديمة من القاعدة للحفاظ عليها
         const payload: any = { ...existingEmp };
-
-        // ضمان الكود والـ ID
         payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
         payload.employee_code = code;
 
-        // القراءة الديناميكية: المرور على كل العواميد الموجودة في الإكسيل وتحديث ما يقابلها في Supabase
-        for (const key of Object.keys(row)) {
-          const val = row[key];
-          if (val === undefined || val === null || String(val).trim() === '') continue;
+        // 2. تحديث الحقول فقط في حالة وجودها داخل شيت الإكسيل המرفوع
+        const valName = getVal(row, ['employee_name', 'اسم الموظف', 'الاسم']);
+        if (valName !== undefined) payload.employee_name = String(valName).trim();
 
-          const strVal = String(val).trim();
-          const lowerKey = key.toLowerCase();
+        const valNid = getVal(row, ['national_id', 'id_no', 'الرقم القومي']);
+        if (valNid !== undefined) payload.national_id = String(valNid).trim();
 
-          if (lowerKey === 'employee_name' || key === 'اسم الموظف') payload.employee_name = strVal;
-          if (lowerKey === 'national_id' || key === 'الرقم القومي') payload.national_id = strVal;
-          if (lowerKey === 'department' || key === 'الإدارة') payload.department = strVal;
-          if (lowerKey === 'comany_name' || lowerKey === 'company' || key === 'الشركة') payload.company = strVal;
-          if (lowerKey === 'job_title' || key === 'الوظيفة') payload.job_title = strVal;
-          if (lowerKey === 'email' || key === 'البريد') payload.email = strVal;
-          if (lowerKey === 'mobile' || key === 'الموبايل') payload.mobile = strVal;
+        const valDept = getVal(row, ['department', 'الإدارة', 'القسم']);
+        if (valDept !== undefined) payload.department = String(valDept).trim();
 
-          // معالجة التواريخ
-          if (lowerKey === 'hiring_date' || key === 'تاريخ التعيين') {
-            payload.hiring_date = formatExcelDate(val);
-          }
-          if (lowerKey === 'contract_end_date' || key === 'تاريخ نهاية العقد') {
-            payload.contract_end_date = formatExcelDate(val);
-          }
+        const valCompany = getVal(row, ['comany_name', 'company_name', 'company', 'الشركة']);
+        if (valCompany !== undefined) payload.company = String(valCompany).trim();
 
-          // معالجة نوع العقد
-          if (lowerKey === 'contract_type' || lowerKey === 'register' || key === 'نوع العقد') {
-            if (strVal.includes('دائم') || strVal.toLowerCase() === 'permanent') {
-              payload.contract_type = 'دائم';
-            } else if (strVal.includes('فوق السن')) {
-              payload.contract_type = 'محدد المدة - فوق السن';
-            } else {
-              payload.contract_type = strVal;
-            }
+        const valJob = getVal(row, ['job_title', 'الوظيفة', 'المسمى الوظيفي']);
+        if (valJob !== undefined) payload.job_title = String(valJob).trim();
+
+        const valEmail = getVal(row, ['email', 'البريد']);
+        if (valEmail !== undefined) payload.email = String(valEmail).trim();
+
+        const valMobile = getVal(row, ['mobile', 'الموبايل', 'الهاتف']);
+        if (valMobile !== undefined) payload.mobile = String(valMobile).trim();
+
+        const valHiring = getVal(row, ['hiring_date', 'تاريخ التعيين']);
+        if (valHiring !== undefined) payload.hiring_date = formatExcelDate(valHiring);
+
+        const valEnd = getVal(row, ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد']);
+        if (valEnd !== undefined) payload.contract_end_date = formatExcelDate(valEnd);
+
+        const valType = getVal(row, ['contract_type', 'نوع العقد']);
+        if (valType !== undefined) {
+          const strType = String(valType).trim();
+          if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') {
+            payload.contract_type = 'دائم';
+          } else if (strType.includes('فوق السن')) {
+            payload.contract_type = 'محدد المدة - فوق السن';
+          } else {
+            payload.contract_type = strType;
           }
         }
 
-        // --- تطبيق قواعد الأعمال (Business Logic) ---
+        // 3. قواعد العمل (Business Logic)
 
-        // 1. تحويل الموظف لـ Inactive لو إدارته تحويلات تحت الاعتماد
+        // إنهاء خدمة موظفي "تحويلات تحت الاعتماد"
         if (payload.department === 'تحويلات تحت الاعتماد') {
           payload.status = 'Inactive';
         } else if (!payload.status) {
           payload.status = 'Active';
         }
 
-        // 2. معالجة الموظف الجديد والعقود
+        // إعدادات الموظف الجديد والعقود
         if (isNew) {
-          // الموظف الجديد: العقد محدد المدة، والنهاية بعد سنة من التعيين أوتوماتيكياً
           if (!payload.contract_type) payload.contract_type = 'محدد المدة';
           
+          // حساب تاريخ نهاية العقد التلقائي (سنة كاملة من التعيين)
           if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
-            const hDate = new Date(payload.hiring_date);
+            const hDate = new Date(payload.hiring_date); // Parses as UTC
             if (!isNaN(hDate.getTime())) {
-              hDate.setFullYear(hDate.getFullYear() + 1);
-              hDate.setDate(hDate.getDate() - 1); // ناقص يوم
-              payload.contract_end_date = hDate.toISOString().split('T')[0];
+              hDate.setUTCFullYear(hDate.getUTCFullYear() + 1);
+              hDate.setUTCDate(hDate.getUTCDate() - 1);
+              const yyyy = hDate.getUTCFullYear();
+              const mm = String(hDate.getUTCMonth() + 1).padStart(2, '0');
+              const dd = String(hDate.getUTCDate()).padStart(2, '0');
+              payload.contract_end_date = `${yyyy}-${mm}-${dd}`;
             }
           }
         }
 
-        // إذا كان العقد دائم، نلغي تاريخ الانتهاء
+        // مسح تاريخ الانتهاء للعقود الدائمة (تنظيف إضافي)
         if (payload.contract_type === 'دائم') {
           payload.contract_end_date = null;
         }
@@ -255,7 +281,7 @@ export default function EmployeesPage() {
         return;
       }
 
-      // الرفع على دفعات
+      // رفع البيانات وتحديثها على دفعات لتجنب توقف الشبكة
       for (let i = 0; i < formattedRows.length; i += 1000) {
         const chunk = formattedRows.slice(i, i + 1000);
         const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
