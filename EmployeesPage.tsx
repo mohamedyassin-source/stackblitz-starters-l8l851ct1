@@ -5,7 +5,6 @@ import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
 // دالة مبسطة وصارمة لتواريخ الإكسيل
-// لو فهمت التاريخ هترجعه 'YYYY-MM-DD'، لو مفهمتوش هترجع undefined (عشان الكود يتجاهله ويحتفظ بالقديم)
 const parseDateSafe = (val: any): string | undefined => {
   if (!val) return undefined;
 
@@ -26,9 +25,7 @@ const parseDateSafe = (val: any): string | undefined => {
     
     const parts = s.match(/\d+/g);
     if (parts && parts.length === 3) {
-      // YYYY-MM-DD
       if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-      // DD-MM-YYYY
       if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
     }
     
@@ -38,6 +35,9 @@ const parseDateSafe = (val: any): string | undefined => {
 
   return undefined;
 };
+
+// مسح الأصفار من على الشمال لتوحيد الأكواد
+const normalizeCode = (val: any) => String(val).trim().replace(/^0+/, '');
 
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
@@ -164,7 +164,7 @@ export default function EmployeesPage() {
     return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
   };
 
-  // 🚀 دالة الرفع المباشرة والآمنة 100%
+  // 🚀 دالة الرفع المباشرة והآمنة 100%
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -194,14 +194,16 @@ export default function EmployeesPage() {
         fromIdx += step;
       }
 
-      // خريطة الموظفين للبحث السريع (بدون التلاعب بالأصفار)
-      const existingMap = new Map(allExistingEmps.map(emp => [String(emp.employee_code).trim(), emp]));
+      console.log(`تم سحب ${allExistingEmps.length} موظف من قاعدة البيانات للمطابقة`);
 
-      // دالة لاستخراج الداتا من الإكسيل بأي اسم مشابه
-      const getVal = (rowObj: any, possibleKeys: string[]) => {
+      // خريطة الموظفين للبحث السريع (مع توحيد الأكواد وإزالة الأصفار)
+      const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
+
+      // دالة لاستخراج الداتا من الإكسيل بالبحث عن (جزء) من اسم العمود
+      const getVal = (rowObj: any, searchTerms: string[]) => {
         const rowKeys = Object.keys(rowObj);
-        for (const pk of possibleKeys) {
-          const match = rowKeys.find(k => k.trim().toLowerCase() === pk.toLowerCase());
+        for (const term of searchTerms) {
+          const match = rowKeys.find(k => k.toLowerCase().includes(term.toLowerCase()));
           if (match) {
             const val = rowObj[match];
             if (val !== undefined && val !== null && String(val).trim() !== '') return val;
@@ -211,54 +213,65 @@ export default function EmployeesPage() {
       };
 
       const formattedRows = excelRows.map((row: any) => {
-        const codeVal = getVal(row, ['employee_code', 'كود الموظف']);
+        const codeVal = getVal(row, ['employee_code', 'كود']);
         if (!codeVal) return null;
 
-        const code = String(codeVal).trim();
+        const originalCode = String(codeVal).trim();
+        const code = normalizeCode(originalCode); // بدون أصفار للمطابقة
+        
         const existingEmp = existingMap.get(code) || {};
         const isNew = Object.keys(existingEmp).length === 0;
 
         // 🌟 بناء التحديث: نبدأ بالقديم زي ما هو بالضبط
         const payload: any = { ...existingEmp };
-        payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
-        payload.employee_code = code;
+        payload.employee_id = existingEmp.employee_id || `EMP-${originalCode}`;
+        payload.employee_code = existingEmp.employee_code || originalCode;
 
         // 🌟 تحديث النصوص لو موجودة في الإكسيل فقط
-        const eName = getVal(row, ['employee_name', 'اسم الموظف']);
+        const eName = getVal(row, ['employee_name', 'اسم']);
         if (eName !== undefined) payload.employee_name = String(eName).trim();
 
-        const eNid = getVal(row, ['national_id', 'الرقم القومي']);
+        const eNid = getVal(row, ['national_id', 'قومي']);
         if (eNid !== undefined) payload.national_id = String(eNid).trim();
 
-        const eDept = getVal(row, ['department', 'الإدارة']);
+        const eDept = getVal(row, ['department', 'إدارة', 'ادارة', 'قسم']);
         if (eDept !== undefined) payload.department = String(eDept).trim();
 
-        const eComp = getVal(row, ['comany_name', 'company_name', 'الشركة']);
+        const eComp = getVal(row, ['company', 'شركة', 'comany']);
         if (eComp !== undefined) payload.company = String(eComp).trim();
 
-        const eJob = getVal(row, ['job_title', 'الوظيفة']);
+        const eJob = getVal(row, ['job', 'وظيفة', 'مسمى']);
         if (eJob !== undefined) payload.job_title = String(eJob).trim();
 
-        const eMob = getVal(row, ['mobile', 'الموبايل']);
+        const eMob = getVal(row, ['mobile', 'موبايل', 'هاتف']);
         if (eMob !== undefined) payload.mobile = String(eMob).trim();
 
-        // 🌟 تحديث التواريخ (آمن جداً)
-        const eHiring = getVal(row, ['hiring_date', 'تاريخ التعيين']);
+        // 🌟 تحديث التواريخ 
+        const eHiring = getVal(row, ['hiring', 'تعيين']);
         if (eHiring !== undefined) {
           const parsed = parseDateSafe(eHiring);
           if (parsed) payload.hiring_date = parsed;
         }
 
-        const eEnd = getVal(row, ['contract_end_date', 'تاريخ نهاية العقد']);
+        const eEnd = getVal(row, ['end_date', 'نهاية', 'نهاي', 'انتهاء']);
         if (eEnd !== undefined) {
           const parsed = parseDateSafe(eEnd);
           if (parsed) payload.contract_end_date = parsed;
         }
 
-        // 🌟 تحديث نوع العقد (لو موجود في الإكسيل، هياخده زي ما هو بدون تحريف)
-        const eType = getVal(row, ['contract_type', 'نوع العقد']);
+        // 🌟 تحديث نوع العقد 
+        const eType = getVal(row, ['contract_type', 'نوع العقد', 'عقد']);
         if (eType !== undefined) {
-          payload.contract_type = String(eType).trim();
+          const strType = String(eType).trim();
+          if (strType.includes('دائم') || strType.toLowerCase().includes('perm')) {
+            payload.contract_type = 'دائم';
+          } else if (strType.includes('فوق הסن') || strType.includes('فوق السن')) {
+            payload.contract_type = 'محدد المدة - فوق السن';
+          } else if (strType.includes('محدد') || strType.toLowerCase().includes('fixed')) {
+             payload.contract_type = 'محدد المدة';
+          } else {
+             payload.contract_type = strType;
+          }
         }
 
         // 🌟 حالات خاصة 🌟
@@ -277,6 +290,7 @@ export default function EmployeesPage() {
           }
         }
 
+        // مسح تاريخ الانتهاء للعقود الدائمة بقوة
         if (payload.contract_type === 'دائم') {
           payload.contract_end_date = null;
         }
@@ -322,7 +336,6 @@ export default function EmployeesPage() {
     });
   };
 
-  // 🚀 تصليح الحفظ اليدوي للتواريخ (لو فاضية تتبعت null بدل السلسلة الفارغة "")
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
