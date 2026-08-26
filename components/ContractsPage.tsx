@@ -286,6 +286,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     }
   };
 
+  // 🌟 دالة الحفظ مع توفير الـ employee_id 🌟
   const handleSaveRenewalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmp) return;
@@ -295,9 +296,10 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
       const yearPrefix = `RR-${new Date().getFullYear()}-`;
       const randomId = Math.floor(1000 + Math.random() * 9000);
 
-      // 🌟 تم إزالة start_date كلياً لمنع أخطاء الـ Schema، والاعتماد فقط على end_date الجديد!
+      // 🌟 تم إضافة employee_id لحل خطأ الـ Database
       const payload = {
         request_id: `${yearPrefix}${randomId}`,
+        employee_id: selectedEmp.employee_id || selectedEmp.id || `EMP-${selectedEmp.code}`,
         employee_code: String(selectedEmp.code),
         employee_name: String(selectedEmp.name),
         company: selectedEmp.company || '',
@@ -428,7 +430,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         )}
       </div>
 
-      {/* 🌟 نافذة طلب التجديد المحدثة (مدة مرنة + تواريخ يدوية) 🌟 */}
+      {/* 🌟 نافذة طلب التجديد المحدثة (تحديد مدة مرنة وتواريخ يدوية) 🌟 */}
       {showRenewalModal && selectedEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -452,7 +454,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
                 </select>
               </div>
 
-              {/* 🌟 مدد التجديد الجديدة 🌟 */}
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>مدة التجديد (بالشهور):</label>
                 <select value={renewalMonths} onChange={e => handleMonthsOrDateChange(Number(e.target.value), newStartDate)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
@@ -465,14 +466,13 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
                 </select>
               </div>
 
-              {/* 🌟 إمكانية تحديد التواريخ يدوياً وتعديلها براحتك 🌟 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#fffbeb', padding: '10px', borderRadius: '8px', border: '1px dashed #fde68a' }}>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#d97706', fontWeight: 'bold', marginBottom: '6px' }}>بداية العقد (متاح للتعديل يدوياً):</label>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#d97706', fontWeight: 'bold', marginBottom: '6px' }}>بداية العقد (متاح يدوياً):</label>
                   <input type="date" required value={newStartDate} onChange={e => handleMonthsOrDateChange(renewalMonths, e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', color: '#d97706', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ النهاية (متاح للتعديل يدوياً):</label>
+                  <label style={{ display: 'block', fontSize: '11px', color: '#d97706', fontWeight: 'bold', marginBottom: '6px' }}>نهاية العقد (متاح يدوياً):</label>
                   <input type="date" required value={newEndDate} onChange={e => setNewEndDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
               </div>
