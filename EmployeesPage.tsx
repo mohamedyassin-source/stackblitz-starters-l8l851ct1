@@ -1,46 +1,94 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
+// ============================================================
+// خريطة تطابق أعمدة الإكسيل (عربي / إنجليزي) مع أعمدة قاعدة البيانات
+// ============================================================
+const COLUMN_MAP: Record<string, string[]> = {
+  employee_code: ['employee_code', 'employee_code2', 'كود الموظف', 'كود', 'الكود'],
+  employee_name: ['employee_name', 'اسم الموظف', 'الاسم'],
+  national_id: ['national_id', 'id_no', 'الرقم القومي'],
+  department: ['department', 'الإدارة', 'القسم'],
+  company: ['comany_name', 'company_name', 'company', 'الشركة'],
+  job_title: ['job_title', 'الوظيفة', 'المسمى الوظيفي'],
+  email: ['email', 'البريد'],
+  mobile: ['mobile', 'الموبايل', 'الهاتف'],
+  hiring_date: ['hiring_date', 'تاريخ التعيين'],
+  contract_end_date: ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد'],
+  contract_type: ['contract_type', 'register', 'نوع العقد'],
+};
+
+// دالة تاريخ صارمة: بترجع null لو مقدرتش تفهم القيمة (بدل ما تمسح تاريخ صحيح موجود)
+const parseExcelDateStrict = (val: any): string | null => {
+  if (val === undefined || val === null || val === '') return null;
+
+  const toIso = (y: number, m: number, d: number) => {
+    if (!y || !m || !d) return null;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  };
+
+  // رقم تسلسلي من إكسيل (بدون أي تأثير تايم زون)
+  if (typeof val === 'number') {
+    const ms = Date.UTC(1899, 11, 30) + Math.round(val) * 86400000;
+    const d = new Date(ms);
+    return toIso(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate());
+  }
+
+  if (typeof val === 'string') {
+    const s = val.trim();
+    if (!s) return null;
+
+    let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/); // YYYY-MM-DD
+    if (m) return toIso(+m[1], +m[2], +m[3]);
+
+    m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/); // DD-MM-YYYY
+    if (m) return toIso(+m[3], +m[2], +m[1]);
+
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) return toIso(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, parsed.getUTCDate());
+  }
+  return null;
+};
+
+// توحيد كود الموظف عشان نتجنب مشكلة الأصفار البادئة/الفرق بين رقم ونص
+const normalizeCode = (v: any) => String(v).trim().replace(/^0+(?=\d)/, '');
+
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
-  // حالات الفلاتر والبحث في الجدول الرئيسي
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
   const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
-  // حالات الترتيب
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // التحديد المجمع
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
 
-  // النوافذ المنبثقة
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTermModal, setShowTermModal] = useState(false);
   const [showBulkTransferModal, setShowBulkTransferModal] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [profileEmp, setProfileEmp] = useState<any>(null);
 
-  // حالة نموذج النقل المجمع
   const [bulkDept, setBulkDept] = useState('');
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  // حالة نموذج إنهاء الخدمة (Termination) مع البحث المطور
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
   const [termReason, setTermReason] = useState('استقالة');
   const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
   const [termSaving, setTermSaving] = useState(false);
 
-  // حالة الموظف الجديد
   const [newEmp, setNewEmp] = useState({
     employee_code: '', employee_name: '', national_id: '',
     department: '', company: '', job_title: '', hiring_date: '',
@@ -55,17 +103,14 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 1. استبعاد الموظفين المنتهية خدمتهم نهائياً من الجدول النشط
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // القوائم للفلاتر
   const deptsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployeesOnly]);
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // 2. تطبيق فلاتر البحث/الشركة/الإدارة
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -84,7 +129,6 @@ export default function EmployeesPage() {
     });
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType]);
 
-  // 3. إحصائيات الكروت الديناميكية
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
@@ -96,7 +140,6 @@ export default function EmployeesPage() {
     return { total, perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), aboveAge, aboveAgePct: calcPct(aboveAge) };
   }, [baseFilteredEmployees]);
 
-  // 4. القائمة النهائية للجدول مع الترتيب
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -114,17 +157,172 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // 🔍 نتائج البحث الحي لشاشة إنهاء الخدمة (بالكود والاسم)
-  const termSearchResults = useMemo(() => {
-    if (!termSearch.trim()) return [];
-    const term = termSearch.toLowerCase().trim();
-    return activeEmployeesOnly.filter(e => {
-      const code = String(getField(e, 'employee_code', 'EmployeeCode')).toLowerCase();
-      const name = String(getField(e, 'employee_name', 'ArabicName')).toLowerCase();
-      const dept = String(getField(e, 'department', 'Department')).toLowerCase();
-      return code.includes(term) || name.includes(term) || dept.includes(term);
-    }).slice(0, 8);
-  }, [activeEmployeesOnly, termSearch]);
+  // ============================================================
+  // 🌟 دالة الرفع الشاملة الذكية (تحديث جزئي حقيقي + تجاوز حاجز 1000 موظف)
+  // ============================================================
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+      const excelRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: undefined, raw: true });
+
+      if (excelRows.length === 0) {
+        alert('⚠️ الملف المرفوع فارغ أو لا يحتوي على بيانات.');
+        return;
+      }
+
+      // 🌟 سحب كل الموظفين (تجاوز حد الـ 1000 صف في سوبابيز) 🌟
+      let allExistingEmps: any[] = [];
+      let fromIdx = 0;
+      const step = 1000;
+      while (true) {
+        const { data, error } = await supabase.from('employees').select('*').range(fromIdx, fromIdx + step - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allExistingEmps.push(...data);
+        if (data.length < step) break;
+        fromIdx += step;
+      }
+
+      const existingMap = new Map(allExistingEmps.map(emp => [normalizeCode(emp.employee_code), emp]));
+
+      const getVal = (rowObj: any, keys: string[]) => {
+        for (const k of keys) {
+          const val = rowObj[k.toLowerCase()];
+          if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+        }
+        return undefined;
+      };
+
+      const skippedRows: number[] = [];
+      const dateWarnings: string[] = [];
+
+      const formattedRows = excelRows.map((rawRow: any, idx: number) => {
+        // تحويل كافة رؤوس الأعمدة من الإكسيل لحروف صغيرة للمطابقة
+        const row: any = {};
+        for (const k of Object.keys(rawRow)) {
+          row[k.trim().toLowerCase()] = rawRow[k];
+        }
+
+        const codeVal = getVal(row, COLUMN_MAP.employee_code);
+        if (!codeVal) { skippedRows.push(idx + 2); return null; }
+
+        const code = String(codeVal).trim();
+        const existingEmp = existingMap.get(normalizeCode(code)) || {};
+        const isNew = Object.keys(existingEmp).length === 0;
+
+        // 1. الأساس هو الداتا الموجودة (تحديث جزئي حقيقي — لا نفقد أي بيانات غير موجودة في الإكسيل)
+        const payload: any = { ...existingEmp };
+        payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
+        payload.employee_code = existingEmp.employee_code || code;
+
+        // 2. التحديث الديناميكي (ياخد من الإكسيل بس لو العمود موجود فعلاً وله قيمة)
+        const textFields: [string, string[]][] = [
+          ['employee_name', COLUMN_MAP.employee_name],
+          ['national_id', COLUMN_MAP.national_id],
+          ['department', COLUMN_MAP.department],
+          ['company', COLUMN_MAP.company],
+          ['job_title', COLUMN_MAP.job_title],
+          ['email', COLUMN_MAP.email],
+          ['mobile', COLUMN_MAP.mobile],
+        ];
+        for (const [field, keys] of textFields) {
+          const v = getVal(row, keys);
+          if (v !== undefined) payload[field] = String(v).trim();
+        }
+
+        // التواريخ: تتحدث بس لو موجودة في الإكسيل ونجح تفسيرها، وإلا يفضل التاريخ القديم كما هو
+        const valHiring = getVal(row, COLUMN_MAP.hiring_date);
+        if (valHiring !== undefined) {
+          const parsed = parseExcelDateStrict(valHiring);
+          if (parsed) payload.hiring_date = parsed;
+          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ تعيين غير مفهوم "${valHiring}"`);
+        }
+
+        const valEnd = getVal(row, COLUMN_MAP.contract_end_date);
+        if (valEnd !== undefined) {
+          const parsed = parseExcelDateStrict(valEnd);
+          if (parsed) payload.contract_end_date = parsed;
+          else dateWarnings.push(`صف ${idx + 2} (كود ${code}): تاريخ نهاية عقد غير مفهوم "${valEnd}"`);
+        }
+
+        const valType = getVal(row, COLUMN_MAP.contract_type);
+        if (valType !== undefined) {
+          const strType = String(valType).trim();
+          if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') {
+            payload.contract_type = 'دائم';
+          } else if (strType.includes('فوق السن')) {
+            payload.contract_type = 'محدد المدة - فوق السن';
+          } else {
+            payload.contract_type = strType;
+          }
+        }
+
+        // 3. قواعد العمل (Business Logic)
+        if (payload.department === 'تحويلات تحت الاعتماد') {
+          payload.status = 'Inactive';
+        } else if (!payload.status) {
+          payload.status = 'Active';
+        }
+
+        // 4. الحساب التلقائي لتاريخ النهاية بيحصل بس لو الموظف جديد فعلاً (مش موجود في القاعدة قبل كده)
+        if (isNew) {
+          if (!payload.contract_type) payload.contract_type = 'محدد المدة';
+
+          if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
+            const [y, m, d] = payload.hiring_date.split('-').map(Number);
+            const end = new Date(Date.UTC(y + 1, m - 1, d - 1));
+            payload.contract_end_date = `${end.getUTCFullYear()}-${String(end.getUTCMonth() + 1).padStart(2, '0')}-${String(end.getUTCDate()).padStart(2, '0')}`;
+          }
+        }
+
+        if (payload.contract_type === 'دائم' || payload.contract_type === 'Permanent') {
+          payload.contract_end_date = null;
+        }
+
+        return payload;
+      }).filter(r => r !== null) as any[];
+
+      if (formattedRows.length === 0) {
+        alert('⚠️ لم يتم العثور على أرقام أكواد للموظفين داخل الملف.');
+        return;
+      }
+
+      // رفع البيانات على دفعات
+      let updatedCount = 0;
+      const batchErrors: string[] = [];
+      for (let i = 0; i < formattedRows.length; i += 1000) {
+        const chunk = formattedRows.slice(i, i + 1000);
+        const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
+        if (error) batchErrors.push(`الدفعة ${Math.floor(i / 1000) + 1}: ${error.message}`);
+        else updatedCount += chunk.length;
+      }
+
+      let summary = `✅ تم تحديث ${updatedCount} من ${formattedRows.length} موظف.`;
+      if (skippedRows.length) {
+        summary += `\n⚠️ ${skippedRows.length} صف اتجاهل (بدون كود موظف): صفوف ${skippedRows.slice(0, 15).join(', ')}${skippedRows.length > 15 ? ' ...' : ''}`;
+      }
+      if (dateWarnings.length) {
+        summary += `\n⚠️ ${dateWarnings.length} تاريخ اتجاهل (احتفظنا بالتاريخ القديم):\n${dateWarnings.slice(0, 8).join('\n')}${dateWarnings.length > 8 ? '\n...' : ''}`;
+      }
+      if (batchErrors.length) {
+        summary += `\n❌ أخطاء أثناء الحفظ:\n${batchErrors.join('\n')}`;
+      }
+
+      alert(summary);
+      await fetchEmployees();
+    } catch (err: any) {
+      alert('❌ حدث خطأ أثناء التحديث من الإكسيل: ' + err.message);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleSort = (columnKey: string) => {
     if (sortColumn === columnKey) {
@@ -135,10 +333,15 @@ export default function EmployeesPage() {
     }
   };
 
-  const renderSortArrow = (colKey: string) => {
-    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
-    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
-  };
+  const termSearchResults = useMemo(() => {
+    if (!termSearch.trim()) return [];
+    const term = termSearch.toLowerCase().trim();
+    return activeEmployeesOnly.filter(e => {
+      const code = String(getField(e, 'employee_code', 'EmployeeCode')).toLowerCase();
+      const name = String(getField(e, 'employee_name', 'ArabicName')).toLowerCase();
+      return code.includes(term) || name.includes(term);
+    }).slice(0, 5);
+  }, [activeEmployeesOnly, termSearch]);
 
   const handleOpenEdit = async (emp: any) => {
     const code = getField(emp, 'employee_code', 'EmployeeCode', 'employee_id');
@@ -157,7 +360,6 @@ export default function EmployeesPage() {
     });
   };
 
-  // ✏️ حفظ التعديلات اليدوية بأمان مع حماية التواريخ الفارغة من الـ Exception
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -165,10 +367,6 @@ export default function EmployeesPage() {
 
     try {
       const empId = editData.emp.id || editData.emp.employee_id;
-      
-      const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
-      const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
-
       const updateData = {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -176,9 +374,9 @@ export default function EmployeesPage() {
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
-        hiring_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
+        hiring_date: getField(editData.emp, 'hiring_date', 'HiringDate'),
         contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
-        contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
+        contract_end_date: getField(editData.emp, 'contract_end_date', 'ContractEndDate'),
         status: getField(editData.emp, 'status', 'Status'),
         email: getField(editData.emp, 'email', 'Email'),
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
@@ -200,11 +398,10 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🚫 تأكيد إنهاء الخدمة للموظف المختار
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) {
-      alert('يرجى اختيار موظف أولاً من قائمة البحث.');
+      alert('يرجى اختيار موظف أولاً.');
       return;
     }
 
@@ -270,7 +467,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // ➕ إضافة موظف فردي مع أمان التواريخ
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -282,9 +478,9 @@ export default function EmployeesPage() {
         department: newEmp.department,
         company: newEmp.company,
         job_title: newEmp.job_title,
-        hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
+        hiring_date: newEmp.hiring_date,
         contract_type: newEmp.contract_type,
-        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
+        contract_end_date: newEmp.contract_type === 'دائم' ? null : newEmp.contract_end_date,
         status: newEmp.status,
         email: newEmp.email,
         mobile: newEmp.mobile
@@ -320,7 +516,7 @@ export default function EmployeesPage() {
       'hiring_date': getField(e, 'hiring_date', 'HiringDate'),
       'contract_end_date': getField(e, 'contract_end_date', 'ContractEndDate'),
       'contract_type': getField(e, 'contract_type', 'ContractType'),
-      'company': getField(e, 'company', 'Company')
+      'COMANY_NAME': getField(e, 'company', 'Company')
     }));
 
     const ws = XLSX.utils.json_to_sheet(exportData);
@@ -348,39 +544,60 @@ export default function EmployeesPage() {
     return <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>ساري ({days} يوم)</span>;
   };
 
+  const renderSortArrow = (colKey: string) => {
+    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
+    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
+  };
+
   return (
     <div style={{ animation: 'fadeIn 0.4s ease-in-out' }}>
       
-      {/* رأس الصفحة */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileUpload} 
+        accept=".xlsx, .xls" 
+        style={{ display: 'none' }} 
+      />
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين النشطين</h3>
           <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي المباشر للعمالة</p>
         </div>
         
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+          
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            disabled={uploading}
+            style={{ background: '#0284c7', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: uploading ? 'not-allowed' : 'pointer', opacity: uploading ? 0.7 : 1 }}
+          >
+            {uploading ? 'جاري التحديث...' : 'تحديث من إكسيل رايت 📊'}
+          </button>
+
           <button 
             onClick={() => handleExportToExcel(false)}
-            style={{ background: '#059669', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+            style={{ background: '#059669', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
           >
             📥 تصدير Excel
           </button>
 
           <button 
-            onClick={() => { setShowTermModal(true); setSelectedTermEmp(null); setTermSearch(''); }} 
-            style={{ background: '#ef4444', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
+            onClick={() => setShowTermModal(true)} 
+            style={{ background: '#ef4444', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
           >
             🚫 Terminated
           </button>
 
-          <button onClick={() => setShowAddModal(true)} style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+          <button onClick={() => setShowAddModal(true)} style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
             + إضافة موظف
           </button>
         </div>
       </div>
 
-      {/* الكروت الأربعة */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
+        
         <div 
           className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ALL_ACTIVE' ? null : 'ALL_ACTIVE')}
@@ -448,9 +665,9 @@ export default function EmployeesPage() {
           </div>
           <div style={{ background: '#fef3c7', color: '#d97706', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>💼</div>
         </div>
+
       </div>
 
-      {/* إجراءات النقل والتصدير المجمع */}
       {selectedEmpIds.length > 0 && (
         <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '10px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold' }}>
@@ -470,7 +687,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* الفلاتر والبحث في الصفحة */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '220px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         
@@ -492,7 +708,6 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* الجدول الرئيسي للموظفين */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
@@ -572,7 +787,6 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      {/* 👤 نافذة عرض الملف الشامل */}
       {profileEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '600px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -601,59 +815,43 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* 🚫 نافذة إنهاء الخدمة الفورية المطبّقة بالبحث الذكي بكود أو اسم الموظف */}
       {showTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>🚫 تسجيل إنهاء خدمة موظف (Termination)</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '17px', color: '#dc2626', fontWeight: '800' }}>🚫 تسجيل إنهاء خدمة موظف (Termination)</h3>
               <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
-            <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              
-              {/* حقل البحث الفوري المطور بالاسم أو الكود */}
+            <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف (اكتب كود أو اسم الموظف):</label>
-                <div style={{ position: 'relative' }}>
-                  <input 
-                    type="text"
-                    placeholder="اكتب كود الموظف، اسمه، أو إدارته..."
-                    value={termSearch}
-                    onChange={e => { setTermSearch(e.target.value); setSelectedTermEmp(null); }}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
-                  />
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>البحث عن الموظف النشط (بالاسم أو الكود):</label>
+                <input 
+                  type="text"
+                  placeholder="اكتب كود أو اسم الموظف..."
+                  value={termSearch}
+                  onChange={e => { setTermSearch(e.target.value); setSelectedTermEmp(null); }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+                />
 
-                  {/* قائمة الاقتراحات الفورية */}
-                  {termSearchResults.length > 0 && !selectedTermEmp && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, left: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-                      {termSearchResults.map((emp, i) => (
-                        <div 
-                          key={i} 
-                          onClick={() => { 
-                            setSelectedTermEmp(emp); 
-                            setTermSearch(`${getField(emp, 'employee_code', 'EmployeeCode')} - ${getField(emp, 'employee_name', 'ArabicName')}`); 
-                          }}
-                          style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: '11.5px', transition: 'background 0.2s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <strong style={{ color: '#0d9488' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')} 
-                          <span style={{ color: '#64748b', fontSize: '10.5px', marginRight: '6px' }}>({getField(emp, 'department', 'Department') || 'بدون إدارة'})</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                {termSearchResults.length > 0 && !selectedTermEmp && (
+                  <div style={{ background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', marginTop: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                    {termSearchResults.map((emp, i) => (
+                      <div 
+                        key={i} 
+                        onClick={() => { setSelectedTermEmp(emp); setTermSearch(`${getField(emp, 'employee_code', 'EmployeeCode')} - ${getField(emp, 'employee_name', 'ArabicName')}`); }}
+                        style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: '12px' }}
+                      >
+                        <strong style={{ color: '#0d9488' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</strong> | {getField(emp, 'employee_name', 'ArabicName')} - ({getField(emp, 'department', 'Department')})
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {/* الموظف المختار */}
               {selectedTermEmp && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 12px', borderRadius: '8px', fontSize: '11.5px', color: '#991b1b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong>الموظف المحدّد:</strong> {getField(selectedTermEmp, 'employee_name', 'ArabicName')} (كود: {getField(selectedTermEmp, 'employee_code', 'EmployeeCode')})
-                  </div>
-                  <button type="button" onClick={() => { setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'transparent', border: 0, color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}>تغيير ✕</button>
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '12px', borderRadius: '8px', fontSize: '12px', color: '#991b1b' }}>
+                  <strong>الموظف المحدّد:</strong> {getField(selectedTermEmp, 'employee_name', 'ArabicName')} (كود: {getField(selectedTermEmp, 'employee_code', 'EmployeeCode')})
                 </div>
               )}
 
@@ -662,7 +860,7 @@ export default function EmployeesPage() {
                 <select 
                   value={termReason}
                   onChange={e => setTermReason(e.target.value)}
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}
                 >
                   <option value="استقالة">استقالة</option>
                   <option value="إنهاء عقد">إنهاء عقد</option>
@@ -680,13 +878,13 @@ export default function EmployeesPage() {
                   required
                   value={termDate}
                   onChange={e => setTermDate(e.target.value)}
-                  style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer', opacity: (termSaving || !selectedTermEmp) ? 0.6 : 1 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={termSaving} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: termSaving ? 'not-allowed' : 'pointer', opacity: termSaving ? 0.7 : 1 }}>
                   {termSaving ? 'جاري الحفظ...' : 'تأكيد إنهاء الخدمة 🚫'}
                 </button>
               </div>
@@ -695,7 +893,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* 🔄 نافذة النقل المجمع */}
       {showBulkTransferModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -732,7 +929,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ✏️ نافذة التعديل الفردي الشامل مع حماية التواريخ */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -803,7 +999,6 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ➕ نافذة الإضافة المباشرة */}
       {showAddModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '650px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
