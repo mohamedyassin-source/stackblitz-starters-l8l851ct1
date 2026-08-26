@@ -55,7 +55,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
-  // حالات الفرز والتحديد المجمع
+  // 🌟 حالات الفرز والتحديد المجمع
   const [sortColumn, setSortColumn] = useState<string>('daysLeft');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedEmpCodes, setSelectedEmpCodes] = useState<string[]>([]);
@@ -299,6 +299,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     } catch (err: any) { alert('حدث خطأ أثناء حفظ الطلب: ' + err.message); } finally { setSaving(false); }
   };
 
+  // 🌟 دالة الحفظ المجمع للطلبات 🌟
   const handleSaveBulkRenewalRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedEmpCodes.length === 0) return;
@@ -310,12 +311,14 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         const emp = processedContracts.find(c => c.code === code);
         if (!emp) return null;
 
+        // تحديد ذكي لنوع العقد
         let type = bulkRenewalType;
         if (type === 'smart') {
           const isAbove60 = (emp.age !== null && emp.age >= 60) || emp.contractType === 'دائم';
           type = isAbove60 ? 'محدد المدة - فوق السن' : 'محدد المدة';
         }
 
+        // الحساب التلقائي للتواريخ بناءً على نهاية عقد كل موظف
         let start = new Date();
         if (emp.endDate) {
           const currentEnd = new Date(emp.endDate);
@@ -409,6 +412,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
+      {/* 🌟 شريط إجراءات التحديد المجمع (يظهر فقط عند التحديد) 🌟 */}
       {selectedEmpCodes.length > 0 && (
         <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '10px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s' }}>
           <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
@@ -425,18 +429,10 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
-      {/* 🌟 شريط الفلاتر المُعدّل (إضافة البحث التلقائي بالـ datalist) 🌟 */}
       <div className="db-card" style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="text" placeholder="بحث بـ كود الموظف، الاسم..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none', width: '200px' }} />
-        
-        {/* فلتر الشركة - بحث ذكي */}
-        <input list="companyList" placeholder="🏢 بحث/اختيار الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none', width: '160px' }} />
-        <datalist id="companyList">{companiesList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
-
-        {/* فلتر الإدارة - بحث ذكي */}
-        <input list="deptList" placeholder="💼 بحث/اختيار الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none', width: '160px' }} />
-        <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-
+        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none' }}><option value="">🏢 كل الشركات</option>{companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}</select>
+        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none' }}><option value="">💼 كل الإدارات</option>{deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}</select>
         <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '11px', outline: 'none' }}><option value="">📄 أنواع العقود</option>{typesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}</select>
         <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); setSelectedType(''); setActiveCardFilter(null); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
       </div>
@@ -449,6 +445,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
               <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 10 }}>
                 <tr style={{ borderBottom: '1px solid #cbd5e1' }}>
+                  {/* 🌟 صندوق تحديد الكل */}
                   <th style={{ padding: '12px', textAlign: 'center', width: '40px' }}>
                     <input 
                       type="checkbox" 
@@ -478,6 +475,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
 
                     return (
                       <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: isSelected ? '#f0fdf4' : 'transparent' }}>
+                        {/* 🌟 صندوق تحديد الفرد */}
                         <td style={{ padding: '10px', textAlign: 'center' }}>
                           <input 
                             type="checkbox" 
@@ -528,6 +526,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         )}
       </div>
 
+      {/* 🌟 نافذة إنشاء طلبات التجديد المجمعة (Bulk Renewal Modal) 🌟 */}
       {showBulkRenewalModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -575,6 +574,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
+      {/* نافذة التجديد الفردي */}
       {showRenewalModal && selectedEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -582,12 +582,14 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
               <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>✍️ إنشاء طلب تجديد / تحويل عقد</h3>
               <button onClick={() => setShowRenewalModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
+
             <form onSubmit={handleSaveRenewalRequest} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px' }}>
                 <div><strong>الموظف:</strong> {selectedEmp.name} (<span style={{ color: '#0d9488' }}>{selectedEmp.code}</span>)</div>
                 <div><strong>الإدارة:</strong> {selectedEmp.department || '—'} | <strong>السن الحالي:</strong> {selectedEmp.age ? `${selectedEmp.age} سنة` : '—'}</div>
                 <div><strong>نوع العقد الحالي:</strong> {selectedEmp.contractType || '—'}</div>
               </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>نوع العقد الجديد:</label>
                 <select value={renewalType} onChange={e => setRenewalType(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
@@ -595,6 +597,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن (تقاعد/60+)</option>
                 </select>
               </div>
+
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>مدة التجديد (بالشهور):</label>
                 <select value={renewalMonths} onChange={e => handleMonthsOrDateChange(Number(e.target.value), newStartDate)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
@@ -602,6 +605,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
                   <option value={6}>6 أشهر</option><option value={9}>9 أشهر</option><option value={12}>12 شهر (سنة)</option>
                 </select>
               </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', background: '#fffbeb', padding: '10px', borderRadius: '8px', border: '1px dashed #fde68a' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '11px', color: '#d97706', fontWeight: 'bold', marginBottom: '6px' }}>بداية العقد (متاح يدوياً):</label>
@@ -612,6 +616,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
                   <input type="date" required value={newEndDate} onChange={e => setNewEndDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #fcd34d', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 </div>
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '14px' }}>
                 <button type="button" onClick={() => setShowRenewalModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={saving} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1 }}>
@@ -623,6 +628,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
+      {/* نوافذ التعديل المباشر وإنشاء عقد جديد والإنهاء */}
       {editContractData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
