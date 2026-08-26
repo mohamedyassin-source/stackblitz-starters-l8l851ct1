@@ -324,7 +324,7 @@ export default function EmployeesPage() {
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'الموظفين_النشطين');
+    XLSX.utils.book_append_sheet(wb, ws, 'الموظفين_Active');
     XLSX.writeFile(wb, `بيانات_الموظفين_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
@@ -367,8 +367,8 @@ export default function EmployeesPage() {
       {/* رأس الصفحة */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين النشطين</h3>
-          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي المباشر للعمالة وقوة العمل</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين Active</h3>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي المباشر للموظفين وقوة العمل</p>
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -404,7 +404,7 @@ export default function EmployeesPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>إجمالي النشطين (Active)</div>
+            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>إجمالي الموظفين (Active)</div>
             <div style={{ fontSize: '20px', fontWeight: '900', color: '#16a34a' }}>{kpiStats.total.toLocaleString('en-US')}</div>
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#16a34a', marginTop: '2px' }}>100% من القوة المفلترة</div>
           </div>
@@ -455,7 +455,7 @@ export default function EmployeesPage() {
           }}
         >
           <div>
-            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عمالة فوق السن (60+)</div>
+            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>موظفين فوق السن (60+)</div>
             <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
             <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#d97706', marginTop: '2px' }}>{kpiStats.aboveAgePct}% من القوة الحالية</div>
           </div>
