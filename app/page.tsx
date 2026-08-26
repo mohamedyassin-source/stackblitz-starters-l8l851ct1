@@ -14,10 +14,17 @@ const ReportsPage = dynamic(() => import('@/components/ReportsPage'), { ssr: fal
 const AlertsPage = dynamic(() => import('@/components/AlertsPage'), { ssr: false });
 const AuditPage = dynamic(() => import('@/components/AuditPage'), { ssr: false });
 const SettingsPage = dynamic(() => import('@/components/SettingsPage'), { ssr: false });
+const DataSyncPage = dynamic(() => import('@/components/DataSyncPage'), { ssr: false }); // 👈 استدعاء شاشة تحديث البيانات
 
 const SIDEBAR_GROUPS = [
   { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
-  { title: 'شؤون العاملين', items: [{ id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] }] },
+  { 
+    title: 'شؤون العاملين', 
+    items: [
+      { id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] },
+      { id: 'data_sync', icon: '🔄', label: 'تحديث البيانات المجمع', roles: ['Admin', 'HR'] }, // 👈 الرابط الجديد في القائمة الجانبية
+    ] 
+  },
   { 
     title: 'إدارة العقود', 
     items: [
@@ -39,6 +46,7 @@ const SIDEBAR_GROUPS = [
 const PAGE_TITLES: Record<string, string> = {
   dashboard: 'لوحة التحكم',
   employees_data: 'بيانات الموظفين',
+  data_sync: 'تحديث واستيراد البيانات المجمع', // 👈 عنوان الصفحة المضاف
   contracts: 'العقود الحالية',
   renewals: 'طلبات التجديد',
   signatures: 'توقيع العقود',
@@ -70,7 +78,7 @@ export default function Home() {
     document.body.classList.toggle('dark', dark);
     setCheckingAuth(false);
 
-    // استقبال أوامر التنقّل الصادرة من أي صفحة (مثال: "اذهب لصفحة العقود وابحث عن هذا الموظف")
+    // استقبال أوامر التنقّل الصادرة من أي صفحة
     const unsubscribe = onAppNavigate(({ tab }) => {
       setActiveTab(tab);
       setSidebarOpen(false);
@@ -133,7 +141,7 @@ export default function Home() {
           </div>
         </div>
 
-        {/* عناصر القائمة الجانبية الملتفة بررول متجاوب */}
+        {/* عناصر القائمة الجانبية */}
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           {SIDEBAR_GROUPS.map((group, index) => {
             const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
@@ -227,6 +235,7 @@ export default function Home() {
         <main className="flex-1 overflow-y-auto p-4 sm:p-6">
           {activeTab === 'dashboard' && <DashboardPage />}
           {activeTab === 'employees_data' && <EmployeesPage />}
+          {activeTab === 'data_sync' && <DataSyncPage />} {/* 👈 إضافة العرض لصفحة التحديث */}
           {activeTab === 'contracts' && <ContractsPage />}
           {activeTab === 'renewals' && <RenewalsPage />}
           {activeTab === 'signatures' && <SignaturesPage />}
