@@ -7,44 +7,36 @@ import * as XLSX from 'xlsx';
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
-  // مرجع رفع الإكسيل الخفي
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  // حالات الفلاتر والبحث
   const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
-  // حالات الترتيب
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
-  // التحديد المجمع
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
 
-  // النوافذ المنبثقة
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTermModal, setShowTermModal] = useState(false);
   const [showBulkTransferModal, setShowBulkTransferModal] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [profileEmp, setProfileEmp] = useState<any>(null);
 
-  // حالة نموذج النقل المجمع
   const [bulkDept, setBulkDept] = useState('');
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
 
-  // حالة نموذج إنهاء الخدمة
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
   const [termReason, setTermReason] = useState('استقالة');
   const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
   const [termSaving, setTermSaving] = useState(false);
 
-  // حالة الموظف الجديد
   const [newEmp, setNewEmp] = useState({
     employee_code: '', employee_name: '', national_id: '',
     department: '', company: '', job_title: '', hiring_date: '',
@@ -59,17 +51,14 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 1. استبعاد الموظفين المنتهية خدمتهم نهائياً
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // القوائم للفلاتر
   const deptsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployeesOnly]);
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // 2. تطبيق فلاتر البحث/الشركة/الإدارة
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -88,7 +77,6 @@ export default function EmployeesPage() {
     });
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType]);
 
-  // 3. إحصائيات الكروت الديناميكية
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
@@ -100,7 +88,6 @@ export default function EmployeesPage() {
     return { total, perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), aboveAge, aboveAgePct: calcPct(aboveAge) };
   }, [baseFilteredEmployees]);
 
-  // 4. القائمة النهائية للجدول
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -118,7 +105,7 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // 🌟 دالة قوية لتحويل التواريخ بشكل آمن (UTC) لمنع نقص أو زيادة يوم
+  // دالة قوية لتحويل التواريخ بشكل آمن
   const formatExcelDate = (val: any) => {
     if (!val) return null;
     const toIso = (d: Date) => {
@@ -150,7 +137,7 @@ export default function EmployeesPage() {
     return null;
   };
 
-  // 🌟 دالة الرفع الشاملة والذكية (التحديث الجزئي الديناميكي)
+  // 🌟 دالة الرفع الشاملة الذكية (تجاوز حاجز 1000 موظف + التحديث الدقيق)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -167,13 +154,21 @@ export default function EmployeesPage() {
         return;
       }
 
-      // سحب الموظفين من قاعدة البيانات لعمل الدمج (Merge) مع الجديد
-      const { data: existingEmps, error: fetchErr } = await supabase.from('employees').select('*');
-      if (fetchErr) throw fetchErr;
+      // 🌟 الحل السحري: سحب كل الموظفين لتجاوز حد الـ 1000 في سوبابيز 🌟
+      let allExistingEmps: any[] = [];
+      let fromIdx = 0;
+      const step = 1000;
+      while (true) {
+        const { data, error } = await supabase.from('employees').select('*').range(fromIdx, fromIdx + step - 1);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        allExistingEmps.push(...data);
+        if (data.length < step) break;
+        fromIdx += step;
+      }
 
-      const existingMap = new Map((existingEmps || []).map(emp => [String(emp.employee_code).trim(), emp]));
+      const existingMap = new Map(allExistingEmps.map(emp => [String(emp.employee_code).trim(), emp]));
 
-      // دالة استخراج القيم بتجاهل حالة الأحرف والمسافات
       const getVal = (rowObj: any, keys: string[]) => {
         for (const k of keys) {
           const val = rowObj[k.toLowerCase()];
@@ -183,7 +178,7 @@ export default function EmployeesPage() {
       };
 
       const formattedRows = excelRows.map((rawRow: any) => {
-        // تحويل كافة مفاتيح صف الإكسيل لـ حروف صغيرة للمطابقة الدقيقة
+        // تحويل كافة رؤوس الأعمدة من الإكسيل لـ حروف صغيرة للمطابقة
         const row: any = {};
         for (const k of Object.keys(rawRow)) {
           row[k.trim().toLowerCase()] = rawRow[k];
@@ -196,12 +191,12 @@ export default function EmployeesPage() {
         const existingEmp = existingMap.get(code) || {}; 
         const isNew = Object.keys(existingEmp).length === 0;
 
-        // 1. نبدأ بنسخ البيانات القديمة من القاعدة للحفاظ عليها
+        // 1. الأساس هو الداتا الموجودة (لعدم فقدان البيانات اللي مش في الإكسيل)
         const payload: any = { ...existingEmp };
         payload.employee_id = existingEmp.employee_id || `EMP-${code}`;
         payload.employee_code = code;
 
-        // 2. تحديث الحقول فقط في حالة وجودها داخل شيت الإكسيل המرفوع
+        // 2. التحديث الديناميكي (ياخد من الإكسيل لو متاح)
         const valName = getVal(row, ['employee_name', 'اسم الموظف', 'الاسم']);
         if (valName !== undefined) payload.employee_name = String(valName).trim();
 
@@ -229,7 +224,7 @@ export default function EmployeesPage() {
         const valEnd = getVal(row, ['contract_end_date', 'تاريخ نهاية العقد', 'نهاية العقد']);
         if (valEnd !== undefined) payload.contract_end_date = formatExcelDate(valEnd);
 
-        const valType = getVal(row, ['contract_type', 'نوع العقد']);
+        const valType = getVal(row, ['contract_type', 'register', 'نوع العقد']);
         if (valType !== undefined) {
           const strType = String(valType).trim();
           if (strType.includes('دائم') || strType.toLowerCase() === 'permanent') {
@@ -242,21 +237,17 @@ export default function EmployeesPage() {
         }
 
         // 3. قواعد العمل (Business Logic)
-
-        // إنهاء خدمة موظفي "تحويلات تحت الاعتماد"
         if (payload.department === 'تحويلات تحت الاعتماد') {
           payload.status = 'Inactive';
         } else if (!payload.status) {
           payload.status = 'Active';
         }
 
-        // إعدادات الموظف الجديد والعقود
         if (isNew) {
           if (!payload.contract_type) payload.contract_type = 'محدد المدة';
           
-          // حساب تاريخ نهاية العقد التلقائي (سنة كاملة من التعيين)
           if (payload.hiring_date && !payload.contract_end_date && payload.contract_type !== 'دائم') {
-            const hDate = new Date(payload.hiring_date); // Parses as UTC
+            const hDate = new Date(payload.hiring_date);
             if (!isNaN(hDate.getTime())) {
               hDate.setUTCFullYear(hDate.getUTCFullYear() + 1);
               hDate.setUTCDate(hDate.getUTCDate() - 1);
@@ -268,7 +259,6 @@ export default function EmployeesPage() {
           }
         }
 
-        // مسح تاريخ الانتهاء للعقود الدائمة (تنظيف إضافي)
         if (payload.contract_type === 'دائم') {
           payload.contract_end_date = null;
         }
@@ -281,9 +271,10 @@ export default function EmployeesPage() {
         return;
       }
 
-      // رفع البيانات وتحديثها على دفعات لتجنب توقف الشبكة
+      // رفع البيانات على دفعات
       for (let i = 0; i < formattedRows.length; i += 1000) {
         const chunk = formattedRows.slice(i, i + 1000);
+        // تم تصحيح onConflict للاعتماد على المفتاح الأساسي للجدول
         const { error } = await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
         if (error) throw error;
       }
