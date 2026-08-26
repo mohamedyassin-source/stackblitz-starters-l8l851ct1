@@ -7,26 +7,22 @@ import Stamp from './Stamp';
 export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   const { employees, renewals, loading, refresh } = useAppData();
 
-  // الفلاتر والبحث
   const [activeCardFilter, setActiveCardFilter] = useState<'FIXED' | 'ABOVE_AGE' | 'PERM' | 'TURNING_60' | null>(null);
   const [searchTerm, setSearchTerm] = useState(jumpSearch || '');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedType, setSelectedType] = useState('');
 
-  // النوافذ المنبثقة
   const [showNewContractModal, setShowNewContractModal] = useState(false);
   const [showTermModal, setShowTermModal] = useState(false);
   const [editContractData, setEditData] = useState<any>(null);
 
-  // بيانات إنهاء التعاقد
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
   const [termReason, setTermReason] = useState('إنهاء عقد');
   const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
   const [termSaving, setTermSaving] = useState(false);
 
-  // بيانات إنشاء عقد جديد
   const [newContract, setNewContract] = useState({
     employee_code: '',
     contract_type: 'محدد المدة',
@@ -82,7 +78,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   const deptsList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployees]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployees]);
 
-  // دمج بيانات العقود المحدثة
   const processedContracts = useMemo(() => {
     return activeEmployees.map(emp => {
       const code = String(getField(emp, 'employee_code', 'EmployeeCode'));
@@ -111,7 +106,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     });
   }, [activeEmployees]);
 
-  // إحصائيات الكروت الأربعة
   const cardStats = useMemo(() => {
     const totalFixed = processedContracts.filter(c => c.contractType === 'محدد المدة').length;
     const totalAboveAge = processedContracts.filter(c => String(c.contractType).includes('فوق السن')).length;
@@ -121,16 +115,13 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     return { totalFixed, totalAboveAge, totalPerm, totalTurning60 };
   }, [processedContracts]);
 
-  // تطبيق الفلاتر
   const filteredContracts = useMemo(() => {
     return processedContracts.filter(item => {
-      // 1. التصفية التفاعلية بالكروت
       if (activeCardFilter === 'FIXED' && item.contractType !== 'محدد المدة') return false;
       if (activeCardFilter === 'ABOVE_AGE' && !String(item.contractType).includes('فوق السن')) return false;
       if (activeCardFilter === 'PERM' && item.contractType !== 'دائم') return false;
       if (activeCardFilter === 'TURNING_60' && !item.isTurning60Soon) return false;
 
-      // 2. الفلاتر النصية والقوائم
       const term = searchTerm.toLowerCase().trim();
       const matchesSearch = !term || item.code.toLowerCase().includes(term) || item.name.toLowerCase().includes(term);
       const matchesComp = !selectedCompany || item.company === selectedCompany;
@@ -141,7 +132,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     });
   }, [processedContracts, activeCardFilter, searchTerm, selectedCompany, selectedDept, selectedType]);
 
-  // نتائج البحث لشاشة إنهاء الخدمة
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
@@ -152,7 +142,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     }).slice(0, 6);
   }, [activeEmployees, termSearch]);
 
-  // فتح تعديل تاريخ نهاية العقد (أيقونة القلم ✏️)
   const handleOpenEditContract = (emp: any) => {
     setEditData({
       emp,
@@ -163,7 +152,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     });
   };
 
-  // حفظ تعديل العقد المباشر
   const handleSaveContractEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editContractData) return;
@@ -191,7 +179,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     }
   };
 
-  // إنشاء عقد جديد
   const handleCreateNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newContract.employee_code) return alert('يرجى اختيار الموظف أولاً');
@@ -201,7 +188,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
       const targetEmp = activeEmployees.find(e => String(getField(e, 'employee_code', 'EmployeeCode')) === newContract.employee_code);
       if (!targetEmp) throw new Error('الموظف غير موجود');
 
-      // 1. حساب تاريخ النهاية تلقائياً
       let calcEnd = newContract.end_date;
       if (!calcEnd && newContract.start_date) {
         const d = new Date(newContract.start_date);
@@ -210,7 +196,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         calcEnd = d.toISOString().split('T')[0];
       }
 
-      // 2. تحديث عقد الموظف بالجدول الرئيسي
       const empId = targetEmp.id || targetEmp.employee_id;
       const { error: empError } = await supabase
         .from('employees')
@@ -234,7 +219,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
     }
   };
 
-  // تأكيد إنهاء التعاقد
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار الموظف');
@@ -268,7 +252,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
   return (
     <div style={{ direction: 'rtl', animation: 'fadeIn 0.3s ease-in-out' }}>
       
-      {/* رأس الصفحة مع الأزرار العلوية */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>إدارة العقود الحالية</h3>
@@ -292,7 +275,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
-      {/* 🌟 الكروت الإحصائية الأربعة التفاعلية 🌟 */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
         
         {/* كارت محدد المدة */}
@@ -304,7 +286,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
             padding: '14px 16px',
             borderRadius: '12px',
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -327,7 +309,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
             padding: '14px 16px',
             borderRadius: '12px',
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -350,7 +332,7 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
             padding: '14px 16px',
             borderRadius: '12px',
             display: 'flex',
-            justify: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             cursor: 'pointer',
             transition: 'all 0.2s'
@@ -389,7 +371,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
 
       </div>
 
-      {/* الفلاتر والبحث */}
       <div className="db-card" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text"
@@ -432,7 +413,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       </div>
 
-      {/* الجدول الرئيسي للعقود مع أيقونة التعديل ✏️ */}
       <div className="db-card" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري جلب سريان العقود... ⏳</div>
@@ -473,7 +453,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
                       </td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contractType || '—'}</td>
 
-                      {/* ✏️ أيقونة شكل القلم لتعديل العقد بسرعة */}
                       <td style={{ padding: '10px', textAlign: 'center' }}>
                         <button
                           onClick={() => handleOpenEditContract(emp)}
@@ -492,7 +471,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         )}
       </div>
 
-      {/* ✏️ نافذة تعديل العقد (أيقونة القلم) */}
       {editContractData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -551,7 +529,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
-      {/* ✍️ نافذة إنشاء عقد جديد */}
       {showNewContractModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -642,7 +619,6 @@ export default function ContractsPage({ jumpSearch }: { jumpSearch?: string }) {
         </div>
       )}
 
-      {/* 🚫 نافذة إنهاء التعاقد */}
       {showTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
