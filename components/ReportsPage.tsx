@@ -20,20 +20,26 @@ const MONTHS_LIST = [
 export default function ReportsPage() {
   const { employees, renewals, loading } = useAppData();
 
-  // أنواع التقارير الجاهزة
-  const [reportType, setReportType] = useState<'all' | 'expiring' | 'approved_signed' | 'pending_action' | 'by_month'>('by_month');
+  // علامة التبويب والتقرير النشط
+  const [activeTab, setActiveTab] = useState<'monthly_expiry' | 'above_age' | 'approval_status' | 'full_roster'>('monthly_expiry');
 
-  // الفلاتر التفصيلية
+  // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedContractType, setSelectedType] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
 
-  // 🌟 فلتر الشهر والسنة المخصص للتصدير والفلترة (افتراضيًا: الشهر الحالي، وليس شهرًا ثابتًا)
+  // فلتر الشهر والسنة
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
+
+  const getField = (obj: any, ...keys: string[]) => {
+    if (!obj) return '';
+    for (const key of keys) {
+      if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+    }
+    return '';
+  };
 
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;
@@ -43,129 +49,145 @@ export default function ReportsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  const monthsList = MONTHS_LIST;
+  const getEmployeeAge = (emp: any) => {
+    const rawAge = getField(emp, 'age', 'Age');
+    if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
+      return Number(rawAge);
+    }
+    return null;
+  };
 
-  const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
-  const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
-  const contractTypesList = Array.from(new Set(employees.map(e => e.contract_type).filter(Boolean)));
+  const companiesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
+  const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
+  const contractTypesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
 
-  // دمج وبيانات التقرير المفلترة
-  const reportData = useMemo(() => {
-    return employees.map(emp => {
-      const days = getDaysRemaining(emp.contract_end_date);
-      const empRens = renewals.filter(r => r.employee_code === emp.employee_code).sort((a, b) => (b.request_id || '').localeCompare(a.request_id || ''));
+  // معالجة وتصفية بيانات التقرير الرئيسية
+  const processedData = useMemo(() => {
+    const activeEmps = employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
+
+    return activeEmps.map(emp => {
+      const code = getField(emp, 'employee_code', 'EmployeeCode');
+      const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const daysLeft = getDaysRemaining(endDate);
+      const age = getEmployeeAge(emp);
+
+      const empRens = renewals.filter(r => r.employee_code === code).sort((a, b) => (b.request_id || '').localeCompare(a.request_id || ''));
       const latestRenewal = empRens[0];
 
       return {
         ...emp,
-        daysRemaining: days,
+        code,
+        name: getField(emp, 'employee_name', 'ArabicName'),
+        jobTitle: getField(emp, 'job_title', 'JobTitle'),
+        department: getField(emp, 'department', 'Department'),
+        company: getField(emp, 'company', 'Company'),
+        contractType: getField(emp, 'contract_type', 'ContractType'),
+        endDate,
+        daysLeft,
+        age,
         renewalStatus: latestRenewal?.status || 'لا يوجد طلب',
         signatureStatus: latestRenewal?.signature_status || '—',
         requestId: latestRenewal?.request_id || '—',
-        renewalMonths: latestRenewal?.renewal_months || '—'
+        newEndDate: latestRenewal?.new_contract_end_date || '—',
       };
-    }).filter(item => {
-      // 1. التصفية حسب نوع التقرير المختار
-      if (reportType === 'expiring' && (item.daysRemaining === null || item.daysRemaining > 90)) return false;
-      if (reportType === 'approved_signed' && item.signatureStatus !== 'تم التوقيع') return false;
-      if (reportType === 'pending_action' && item.renewalStatus !== 'Pending' && item.signatureStatus !== 'في انتظار توقيع الموظف') return false;
+    });
+  }, [employees, renewals]);
 
-      // 🌟 تصفية محددة بشهر الانتهاء
-      if (reportType === 'by_month' || selectedMonth !== '') {
-        if (selectedMonth && item.contract_end_date) {
-          const contractDate = new Date(item.contract_end_date);
-          if (!isNaN(contractDate.getTime())) {
-            const expMonth = (contractDate.getMonth() + 1).toString();
-            if (expMonth !== selectedMonth) return false;
-
-            if (selectedYear) {
-              const expYear = contractDate.getFullYear().toString();
-              if (expYear !== selectedYear) return false;
-            }
+  // تصفية القائمة بناءً على التبويب والفلاتر المحددة
+  const filteredReportData = useMemo(() => {
+    return processedData.filter(item => {
+      // 1. التصفية حسب نوع التبويب النشط
+      if (activeTab === 'monthly_expiry') {
+        if (item.contractType === 'دائم') return false;
+        if (selectedMonth && item.endDate) {
+          const d = new Date(item.endDate);
+          if (!isNaN(d.getTime())) {
+            const m = String(d.getMonth() + 1);
+            const y = String(d.getFullYear());
+            if (selectedMonth && m !== selectedMonth) return false;
+            if (selectedYear && y !== selectedYear) return false;
           } else {
             return false;
           }
-        } else if (selectedMonth && !item.contract_end_date) {
+        } else if (selectedMonth && !item.endDate) {
           return false;
         }
+      } else if (activeTab === 'above_age') {
+        const isAbove60 = item.age !== null && item.age >= 60;
+        const isAboveAgeType = String(item.contractType).includes('فوق السن');
+        if (!isAbove60 && !isAboveAgeType) return false;
+      } else if (activeTab === 'approval_status') {
+        if (item.renewalStatus === 'لا يوجد طلب') return false;
       }
 
-      // 2. الفلاتر النصية والزمنية الأخرى
-      const term = searchTerm.toLowerCase();
-      const matchesSearch = !term || String(item.employee_code).toLowerCase().includes(term) || String(item.employee_name).toLowerCase().includes(term);
+      // 2. الفلاتر النصية والقوائم
+      const term = searchTerm.toLowerCase().trim();
+      const matchesSearch = !term || item.code.toLowerCase().includes(term) || item.name.toLowerCase().includes(term);
       const matchesComp = !selectedCompany || item.company === selectedCompany;
       const matchesDept = !selectedDept || item.department === selectedDept;
-      const matchesType = !selectedContractType || item.contract_type === selectedContractType;
+      const matchesType = !selectedContractType || item.contractType === selectedContractType;
 
-      let matchesDateRange = true;
-      if (startDate && item.contract_end_date) {
-        matchesDateRange = matchesDateRange && new Date(item.contract_end_date) >= new Date(startDate);
-      }
-      if (endDate && item.contract_end_date) {
-        matchesDateRange = matchesDateRange && new Date(item.contract_end_date) <= new Date(endDate);
-      }
-
-      return matchesSearch && matchesComp && matchesDept && matchesType && matchesDateRange;
+      return matchesSearch && matchesComp && matchesDept && matchesType;
     });
-  }, [employees, renewals, reportType, selectedMonth, selectedYear, searchTerm, selectedCompany, selectedDept, selectedContractType, startDate, endDate]);
+  }, [processedData, activeTab, selectedMonth, selectedYear, searchTerm, selectedCompany, selectedDept, selectedContractType]);
 
-  const stats = useMemo(() => {
-    const total = reportData.length;
-    const expired = reportData.filter(i => i.daysRemaining !== null && i.daysRemaining < 0).length;
-    const signed = reportData.filter(i => i.signatureStatus === 'تم التوقيع').length;
-    const pending = reportData.filter(i => i.renewalStatus === 'Pending').length;
-    return { total, expired, signed, pending };
-  }, [reportData]);
+  // إحصائيات سريعة للتقرير الحالي
+  const reportStats = useMemo(() => {
+    const total = filteredReportData.length;
+    const expired = filteredReportData.filter(i => i.daysLeft !== null && i.daysLeft < 0).length;
+    const expiringSoon = filteredReportData.filter(i => i.daysLeft !== null && i.daysLeft >= 0 && i.daysLeft <= 60).length;
+    const signedCount = filteredReportData.filter(i => i.signatureStatus === 'تم التوقيع').length;
+    const above60Count = filteredReportData.filter(i => (i.age !== null && i.age >= 60) || String(i.contractType).includes('فوق السن')).length;
 
-  // 🌟 توزيع نتائج التقرير الحالي على أشهر السنة (لعرض سريع لتمركز انتهاءات العقود)
-  const monthlyDistribution = useMemo(() => {
-    const counts = new Array(12).fill(0);
-    reportData.forEach(item => {
-      if (!item.contract_end_date) return;
-      const d = new Date(item.contract_end_date);
-      if (isNaN(d.getTime())) return;
-      counts[d.getMonth()] += 1;
+    return { total, expired, expiringSoon, signedCount, above60Count };
+  }, [filteredReportData]);
+
+  // توزيع أعلى 5 إدارات في التقرير المفلتر
+  const topDeptsInReport = useMemo(() => {
+    const counts: Record<string, number> = {};
+    filteredReportData.forEach(item => {
+      const d = item.department || 'غير محدد';
+      counts[d] = (counts[d] || 0) + 1;
     });
-    const max = Math.max(...counts, 1);
-    return monthsList.map((m, i) => ({ label: m.label.split(' ')[0], count: counts[i], pct: (counts[i] / max) * 100 }));
-  }, [reportData, monthsList]);
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  }, [filteredReportData]);
 
   const handlePrint = () => {
     window.print();
   };
 
   const handleExportExcel = async () => {
-    if (reportData.length === 0) return alert('لا توجد بيانات للتصدير بحسب الفلاتر المحددة.');
+    if (filteredReportData.length === 0) {
+      return alert('لا توجد بيانات للتصدير حسب الفلاتر المحددة.');
+    }
 
-    const fileName = selectedMonth
-      ? `تقرير_عقود_شهر_${selectedMonth}_${selectedYear || 'كل_السنوات'}.xlsx`
-      : `تقرير_العقود_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const fileName = `تقرير_${activeTab}_${new Date().toISOString().slice(0, 10)}.xlsx`;
 
-    const rows = reportData.map(item => ({
-      'كود الموظف': item.employee_code || '',
-      'اسم الموظف': item.employee_name || '',
-      'الشركة': item.company || '',
-      'الإدارة': item.department || '',
-      'الوظيفة': item.job_title || '',
-      'نوع العقد': item.contract_type || '',
-      'تاريخ الانتهاء': item.contract_end_date || '',
-      'الأيام المتبقية': item.daysRemaining !== null ? item.daysRemaining : '',
-      'حالة الطلب': item.renewalStatus,
+    const rows = filteredReportData.map(item => ({
+      'كود الموظف': item.code,
+      'اسم الموظف': item.name,
+      'الوظيفة': item.jobTitle || '—',
+      'الإدارة': item.department || '—',
+      'الشركة': item.company || '—',
+      'السن': item.age ? `${item.age} سنة` : '—',
+      'نوع العقد': item.contractType || '—',
+      'تاريخ نهاية العقد': item.endDate || '—',
+      'الأيام المتبقية': item.daysLeft !== null ? item.daysLeft : '—',
+      'حالة طلب التجديد': item.renewalStatus,
+      'تاريخ الانتهاء الجديد': item.newEndDate,
       'حالة التوقيع': item.signatureStatus,
     }));
 
-    // التحميل الديناميكي لمكتبة xlsx يبقيها خارج الحزمة الأساسية للتطبيق
-    // (لا يحتاجها إلا مستخدم صفحة التقارير عند الضغط على زر التصدير)
     const XLSX = await import('xlsx');
     const worksheet = XLSX.utils.json_to_sheet(rows);
     worksheet['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 18 }));
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'التقرير');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'تقرير_العقود');
     XLSX.writeFile(workbook, fileName);
   };
 
   return (
-    <div>
+    <div style={{ direction: 'rtl', paddingBottom: '40px' }}>
       <style>{`
         @media print {
           body * { visibility: hidden; }
@@ -176,206 +198,219 @@ export default function ReportsPage() {
         }
       `}</style>
 
-      {/* العنوان وأزرار التصدير */}
-      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      {/* رأس الصفحة وأزرار الإجراءات */}
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>التقارير والإحصائيات التفصيلية</h3>
-          <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>مركز استخراج بيانات العقود المخصصة وتصديرها للإكسيل</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>مركز التقارير والتحليلات الرقمية</h3>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>استخراج وتحليل وتصدير كشوف العقود والعمالة وفق أعلى معايير الحوكمة</p>
         </div>
-        
+
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleExportExcel} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button onClick={handleExportExcel} style={{ background: '#059669', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
             📥 تصدير Excel (XLSX)
           </button>
-          <button onClick={handlePrint} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button onClick={handlePrint} style={{ background: 'var(--navy-950, #0f172a)', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
             🖨️ طباعة التقرير / PDF
           </button>
         </div>
       </div>
 
-      {/* 🌟 مطبعة التقارير المسبقة */}
-      <div className="no-print" style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+      {/* 🌟 تبويبات أنواع التقارير الرئيسية */}
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
         {[
-          { id: 'by_month', title: '📅 تقرير عقود شهر محدد (التنفيذ الشهري)', desc: 'تخصيص شهر وشهر لعرض وتصدير عقوده' },
-          { id: 'expiring', title: '🚨 العقود المنتهية والقريبة من الانتهاء (90 يوم)', desc: 'تركيز على العقود الحرجة' },
-          { id: 'pending_action', title: '⏳ العقود المعلقة وقيد التجديد', desc: 'طلبات تنتظر الاعتماد أو التوقيع' },
-          { id: 'approved_signed', title: '✅ العقود المكتملة والموقع عليها', desc: 'سجل العقود المجددة بنجاح' },
-          { id: 'all', title: '📂 السجل الشامل لجميع الموظفين والعقود', desc: 'كشف عام لكافة القوة العمالية' },
-        ].map(preset => (
-          <button
-            key={preset.id}
-            onClick={() => {
-              setReportType(preset.id as any);
-              if (preset.id !== 'by_month') {
-                setSelectedMonth('');
-              } else {
-                setSelectedMonth(String(new Date().getMonth() + 1));
-              }
-            }}
+          { id: 'monthly_expiry', icon: '📅', title: 'تقرير الاستحقاق الشهري', desc: 'عقود تنتهي في شهر وسنة محددة' },
+          { id: 'above_age', icon: '💼', title: 'تقرير العمالة فوق السن (60+)', desc: 'متابعة المحالين للتقاعد وتجديدات فوق السن' },
+          { id: 'approval_status', icon: '⏳', title: 'موقف التجديدات والتوقيع', desc: 'متابعة الطلبات المعتمدة وقيد الاعتماد والتوقيع' },
+          { id: 'full_roster', icon: '📂', title: 'السجل العام الشامل', desc: 'كشف موحد لجميع الموظفين النشطين' },
+        ].map(tab => (
+          <div
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id as any)}
             style={{
-              flex: 1,
-              padding: '12px',
-              borderRadius: '8px',
-              textAlign: 'right',
-              border: reportType === preset.id ? '2px solid var(--brass-600)' : '1px solid var(--line)',
-              background: reportType === preset.id ? '#fefce8' : '#fff',
+              background: activeTab === tab.id ? '#f0fdf4' : 'var(--paper-card, #fff)',
+              border: activeTab === tab.id ? '2px solid #0d9488' : '1px solid var(--line, #e2e8f0)',
+              borderRadius: '12px',
+              padding: '14px',
               cursor: 'pointer',
-              transition: 'all 0.2s'
+              transition: 'all 0.2s',
             }}
           >
-            <div style={{ fontSize: '11px', fontWeight: 'bold', color: reportType === preset.id ? 'var(--brass-600)' : 'var(--navy-950)' }}>{preset.title}</div>
-            <div style={{ fontSize: '9px', color: 'var(--muted)', marginTop: '2px' }}>{preset.desc}</div>
-          </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '16px' }}>{tab.icon}</span>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: activeTab === tab.id ? '#0d9488' : 'var(--navy-950, #0f172a)' }}>{tab.title}</span>
+            </div>
+            <div style={{ fontSize: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{tab.desc}</div>
+          </div>
         ))}
       </div>
 
-      {/* 🌟 شريط الفلاتر المتقدم مع محدد الشهر والسنة */}
-      <div className="no-print" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '12px', borderRadius: '8px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* شريط الفلاتر الذكي */}
+      <div className="no-print" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         
-        {/* 🌟 فلتر اختيار الشهر والسنة المميز */}
-        <div style={{ display: 'flex', gap: '6px', background: '#eff6ff', padding: '4px 8px', borderRadius: '6px', border: '1px solid #bfdbfe', alignItems: 'center' }}>
-          <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ شهر الانتهاء:</span>
-          <select value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setReportType('by_month'); }} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #93c5fd', fontSize: '10px', fontWeight: 'bold', outline: 'none', background: 'var(--paper-card)' }}>
-            <option value="">كل الأشهر</option>
-            {monthsList.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-          </select>
+        {/* محدد الشهر والسنة يظهر عند اختيار تقرير الاستحقاق الشهري */}
+        {activeTab === 'monthly_expiry' && (
+          <div style={{ display: 'flex', gap: '6px', background: '#eff6ff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #bfdbfe', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ شهر وسنة الانتهاء:</span>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '11px', fontWeight: 'bold', outline: 'none' }}>
+              <option value="">كل الأشهر</option>
+              {MONTHS_LIST.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '11px', fontWeight: 'bold', outline: 'none' }}>
+              <option value="">كل السنوات</option>
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+              <option value="2028">2028</option>
+            </select>
+          </div>
+        )}
 
-          <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ padding: '4px 8px', borderRadius: '4px', border: '1px solid #93c5fd', fontSize: '10px', fontWeight: 'bold', outline: 'none', background: 'var(--paper-card)' }}>
-            <option value="">كل السنوات</option>
-            <option value="2024">2024</option>
-            <option value="2025">2025</option>
-            <option value="2026">2026</option>
-            <option value="2027">2027</option>
-            <option value="2028">2028</option>
-          </select>
-        </div>
+        <input
+          type="text"
+          placeholder="بحث بالاسم أو الكود..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '180px' }}
+        />
 
-        <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '160px' }} />
-
-        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none' }}>
+        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
           <option value="">🏢 كل الشركات</option>
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none' }}>
+        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
           <option value="">💼 كل الإدارات</option>
           {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
         </select>
 
-        <select value={selectedContractType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none' }}>
+        <select value={selectedContractType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
           <option value="">📄 أنواع العقود</option>
           {contractTypesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
         </select>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); setSelectedType(''); setStartDate(''); setEndDate(''); setSelectedMonth(''); setSelectedYear(''); setReportType('all'); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
-      </div>
+        <button
+          onClick={() => {
+            setSearchTerm('');
+            setSelectedCompany('');
+            setSelectedDept('');
+            setSelectedType('');
+            setSelectedMonth(String(new Date().getMonth() + 1));
+            setSelectedYear(new Date().getFullYear().toString());
+          }}
+          style={{ background: '#f1f5f9', border: '1px solid var(--line, #e2e8f0)', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+        >
+          إعادة ضبط
+        </button>
 
-      {/* ملخص النتائج */}
-      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '16px' }}>
-        <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
-          <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>إجمالي عقود هذا التقرير</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: 'var(--navy-950)' }}>{stats.total.toLocaleString('en-US')} سجل</div>
-        </div>
-        <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
-          <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>عقود منتهية بالكامل</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#dc2626' }}>{stats.expired.toLocaleString('en-US')} عقد</div>
-        </div>
-        <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
-          <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>طلبات تجديد قيد المعالجة</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#2563eb' }}>{stats.pending.toLocaleString('en-US')} طلب</div>
-        </div>
-        <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 14px', borderRadius: '8px' }}>
-          <div style={{ fontSize: '9.5px', color: 'var(--muted)', fontWeight: 'bold' }}>عقود متممة وموقعة</div>
-          <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#15803d' }}>{stats.signed.toLocaleString('en-US')} عقد</div>
+        <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
+          نتائج التقرير: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{filteredReportData.length.toLocaleString('en-US')}</span> سجل
         </div>
       </div>
 
-      {/* 🌟 توزيع انتهاءات عقود التقرير الحالي على أشهر السنة */}
-      {stats.total > 0 && (
-        <div className="no-print" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
-          <h4 style={{ margin: '0 0 14px', fontSize: '12.5px', fontWeight: 'bold', color: 'var(--navy-950)' }}>📊 توزيع انتهاءات عقود هذا التقرير على أشهر السنة</h4>
-          <div style={{ display: 'flex', alignItems: 'end', gap: '6px', height: '110px' }}>
-            {monthlyDistribution.map((m, idx) => (
-              <div key={idx} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
-                <span style={{ fontSize: '9px', fontWeight: 'bold', color: m.count > 0 ? 'var(--brass-600)' : 'transparent', marginBottom: '3px' }}>{m.count}</span>
-                <div
-                  style={{
-                    width: '100%',
-                    maxWidth: '22px',
-                    height: `${Math.max(m.pct, m.count > 0 ? 4 : 0)}%`,
-                    borderRadius: '4px 4px 0 0',
-                    background: m.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--line)',
-                    transition: 'height 0.5s',
-                  }}
-                />
-                <span style={{ fontSize: '9px', color: 'var(--muted)', marginTop: '4px', fontWeight: 'bold' }}>{m.label}</span>
+      {/* المؤشرات السريعة وتحليلات التقرير */}
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إجمالي العقود بالتقرير</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy-950, #0f172a)', marginTop: '2px' }}>{reportStats.total.toLocaleString('en-US')}</div>
+        </div>
+
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: '#991b1b', fontWeight: 'bold' }}>عقود منتهية المدة</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '2px' }}>{reportStats.expired.toLocaleString('en-US')}</div>
+        </div>
+
+        <div style={{ background: '#fef3c7', border: '1px solid #fde68a', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: '#92400e', fontWeight: 'bold' }}>تنتهي قريباً (خلال 60 يوم)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706', marginTop: '2px' }}>{reportStats.expiringSoon.toLocaleString('en-US')}</div>
+        </div>
+
+        <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: '#166534', fontWeight: 'bold' }}>عقود مكتملة وموقعة</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#15803d', marginTop: '2px' }}>{reportStats.signedCount.toLocaleString('en-US')}</div>
+        </div>
+      </div>
+
+      {/* تحليل أكبر الإدارات المتركز بها التقرير الحالي */}
+      {topDeptsInReport.length > 0 && (
+        <div className="no-print" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px' }}>
+          <div style={{ fontSize: '11.5px', fontWeight: 'bold', color: 'var(--navy-950, #0f172a)', marginBottom: '8px' }}>📊 أكثر الإدارات حيازة للسجلات في هذا التقرير:</div>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            {topDeptsInReport.map(([dept, count], idx) => (
+              <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontSize: '11px' }}>
+                <span style={{ color: '#64748b' }}>{dept}:</span> <strong style={{ color: '#0d9488' }}>{count} موظف</strong>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* منطقة التقرير والمعاينة */}
-      <div className="print-area" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', padding: '16px' }}>
+      {/* 🖨️ منطقة التقرير والمعاينة القابلة للطباعة */}
+      <div className="print-area" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', padding: '24px' }}>
         
-        {/* الترويسة الرسمية */}
-        <div style={{ borderBottom: '2px solid var(--navy-950)', paddingBottom: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        {/* الترويسة الرسمية للطباعة */}
+        <div style={{ borderBottom: '2px solid var(--navy-950, #0f172a)', paddingBottom: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)' }}>مجموعة شركات المراسم الدولية</h2>
-            <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>
-              {selectedMonth ? `تقرير الموظفين المنتهي عقودهم خلال شهر: (${monthsList.find(m => m.value === selectedMonth)?.label}) لسنة ${selectedYear || 'جميع السنوات'}` : 'تقرير المتابعة والتحليل الشامل لبيانات العقود'}
+            <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
+              {activeTab === 'monthly_expiry' && `كشف عقود الموظفين المستحقة للتجديد/الانتهاء خلال شهر (${MONTHS_LIST.find(m => m.value === selectedMonth)?.label || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
+              {activeTab === 'above_age' && 'كشف حصر الموظفين البالغين لسن التقاعد (60 سنة فأكثر)'}
+              {activeTab === 'approval_status' && 'تقرير متابعة موقف اعتمادات وتوقيعات العقود'}
+              {activeTab === 'full_roster' && 'السجل الموحد العام لكافة قوة العمل النشطة'}
             </p>
           </div>
-          <div style={{ textAlign: 'left', fontSize: '10px', color: 'var(--muted)' }}>
-            <div>تاريخ الاستخراج: <strong>{new Date().toLocaleDateString('ar-EG')}</strong></div>
-            <div>إجمالي السجلات: <strong>{reportData.length}</strong></div>
+
+          <div style={{ textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontFamily: 'monospace' }}>
+            <div>تاريخ التقرير: <strong>{new Date().toLocaleDateString('ar-EG')}</strong></div>
+            <div>عدد السجلات: <strong>{filteredReportData.length}</strong></div>
           </div>
         </div>
 
-        {/* الجدول الرئيسي */}
+        {/* الجدول الرئيسي للتقرير */}
         <div className="table-responsive" style={{ border: 0 }}>
           {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري معالجة واستخراج بيانات التقرير...</div>
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري استخراج وبناء التقرير... ⏳</div>
           ) : (
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '10px', whiteSpace: 'nowrap' }}>
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
               <thead>
-                <tr>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>#</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>الكود</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>الموظف</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>الشركة</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>الإدارة</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>الوظيفة</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>نوع العقد</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>تاريخ الانتهاء</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>المتبقي</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>حالة التجديد</th>
-                  <th style={{ padding: '8px', background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>موقف التوقيع</th>
+                <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
+                  <th style={{ padding: '10px' }}>#</th>
+                  <th style={{ padding: '10px' }}>الكود</th>
+                  <th style={{ padding: '10px' }}>اسم الموظف</th>
+                  <th style={{ padding: '10px' }}>الإدارة</th>
+                  <th style={{ padding: '10px' }}>الوظيفة</th>
+                  <th style={{ padding: '10px' }}>السن</th>
+                  <th style={{ padding: '10px' }}>نوع العقد</th>
+                  <th style={{ padding: '10px' }}>تاريخ الانتهاء</th>
+                  <th style={{ padding: '10px' }}>المتبقي</th>
+                  <th style={{ padding: '10px' }}>حالة التجديد</th>
+                  <th style={{ padding: '10px' }}>موقف التوقيع</th>
                 </tr>
               </thead>
               <tbody>
-                {reportData.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد عقود ينتهي أجلها في هذا الشهر/السنة المحددة.</td></tr>
+                {filteredReportData.length === 0 ? (
+                  <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>لا توجد بيانات مطابقة لخيارات التقرير المحددة.</td></tr>
                 ) : (
-                  reportData.map((item, index) => (
-                    <tr key={index} style={{ borderBottom: '1px solid var(--line)' }}>
-                      <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{index + 1}</td>
-                      <td style={{ padding: '6px 8px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{item.employee_code}</td>
-                      <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{item.employee_name}</td>
-                      <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{item.company || '—'}</td>
-                      <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{item.department || '—'}</td>
-                      <td style={{ padding: '6px 8px', color: 'var(--muted)' }}>{item.job_title || '—'}</td>
-                      <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{item.contract_type}</td>
-                      <td style={{ padding: '6px 8px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.contract_end_date || '—'}</td>
-                      <td style={{ padding: '6px 8px' }}>
-                        {item.daysRemaining !== null ? (
-                          <span style={{ fontWeight: 'bold', color: item.daysRemaining < 0 ? '#dc2626' : item.daysRemaining <= 60 ? '#c2410c' : '#15803d' }}>
-                            {item.daysRemaining < 0 ? `منتهي (${Math.abs(item.daysRemaining)})` : `${item.daysRemaining} يوم`}
+                  filteredReportData.map((item, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{idx + 1}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{item.code}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>{item.name}</td>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{item.department || '—'}</td>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{item.jobTitle || '—'}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', color: item.age && item.age >= 60 ? '#d97706' : '#334155' }}>
+                        {item.age ? `${item.age} سنة` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.contractType || '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.endDate || '—'}</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {item.daysLeft !== null ? (
+                          <span style={{ fontWeight: 'bold', color: item.daysLeft < 0 ? '#dc2626' : item.daysLeft <= 60 ? '#d97706' : '#15803d' }}>
+                            {item.daysLeft < 0 ? `منتهي (${Math.abs(item.daysLeft)} يوم)` : `${item.daysLeft} يوم`}
                           </span>
                         ) : '—'}
                       </td>
-                      <td style={{ padding: '6px 8px', fontWeight: 'bold' }}>{item.renewalStatus}</td>
-                      <td style={{ padding: '6px 8px', fontWeight: 'bold', color: item.signatureStatus === 'تم التوقيع' ? '#15803d' : 'var(--muted)' }}>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.renewalStatus}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', color: item.signatureStatus === 'تم التوقيع' ? '#15803d' : '#64748b' }}>
                         {item.signatureStatus}
                       </td>
                     </tr>
@@ -386,11 +421,11 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* التوقيعات الرسمية */}
-        <div style={{ marginTop: '30px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>
+        {/* التوقيعات الرسمية للطباعة */}
+        <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
           <div>مُعد التقرير: ........................</div>
           <div>مراجعة الموارد البشرية: ........................</div>
-          <div>اعتماد الإدارة العليا: ........................</div>
+          <div>اعتماد إدارة الشركة: ........................</div>
         </div>
 
       </div>
