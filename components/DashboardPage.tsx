@@ -56,7 +56,6 @@ export default function DashboardPage() {
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    // تصفية الموظفين النشطين لاستبعاد غير النشطين أو المحولين
     const activeEmployeesOnly = allEmployees.filter(emp => {
       const status = emp.status || 'Active';
       const dept = emp.department || '';
@@ -124,20 +123,19 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    // 🌟 📊 الخيار الثاني المطور: حساب خريطة التجديد الاستحقاقية التراكمية لقوة العمل الكاملة (+1 شهر)
+    // 🌟 📈 الرسم البياني الفعلي: القراءة المباشرة من طلبات التجديد المعالجة والمعتمدة لعام 2026 فقط
+    const targetYear = 2026;
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
-    filteredEmps.forEach((emp) => {
-      // الاعتماد على تاريخ نهاية العقد للموظفين أصحاب العقود المحددة وفوق السن
-      if (emp.contract_type !== 'دائم' && emp.contract_end_date) {
-        const endDate = new Date(emp.contract_end_date);
-        if (!isNaN(endDate.getTime())) {
-          // 👈 إضافة شهر واحد لـ تاريخ نهاية العقد للحساب الاستحقاقي
-          const renewalDueDate = new Date(endDate);
-          renewalDueDate.setMonth(renewalDueDate.getMonth() + 1);
-
-          const monthIdx = renewalDueDate.getMonth(); // إرجاع الشهر من 0 لـ 11
+    filteredRens.forEach((req) => {
+      // قراءة تاريخ الحركة المباشرة
+      const actionDateStr = req.request_date || req.contract_start_date || req.created_at;
+      
+      if (actionDateStr) {
+        const d = new Date(actionDateStr);
+        if (!isNaN(d.getTime()) && d.getFullYear() === targetYear) {
+          const monthIdx = d.getMonth();
           if (monthIdx >= 0 && monthIdx < 12) {
             renewalsByMonth[monthIdx].count++;
           }
@@ -157,6 +155,7 @@ export default function DashboardPage() {
       topDepts,
       urgentAlerts,
       renewalsByMonth,
+      targetYear,
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -227,10 +226,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 الرسم البياني التراكمي المطور بقراءة end_date + 1 month لقوة العمل الحالية */}
+        {/* 📈 رسم بياني يمثل إنجاز التجديدات الفعلي لعام 2026 */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 توزيع استحقاقات التجديد التراكمية لقوة العمل (الشهر التالي للنهاية)
+            📈 معدل التجديدات والعقود التي تم إنجازها لعام {dashboardData.targetYear}
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.renewalsByMonth.map((month, idx) => {
