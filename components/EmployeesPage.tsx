@@ -13,6 +13,7 @@ export default function EmployeesPage() {
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
+  const [selectedAgeRange, setSelectedAgeRange] = useState(''); // 🌟 فلتر مجال السن الجديد
 
   // حالات الترتيب والتحديد
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
@@ -52,36 +53,13 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 🎯 استخراج/معالجة حالة السن age_status من الرقم القومي أو الشيت
-  const getAgeStatus = (emp: any) => {
-    const rawStatus = getField(emp, 'age_status', 'AgeStatus');
-    if (rawStatus) return rawStatus;
-
-    const natId = String(getField(emp, 'national_id', 'NationalID')).trim();
-    if (natId.length === 14) {
-      const centuryDigit = natId.charAt(0);
-      const yearDigits = natId.substring(1, 3);
-      const monthDigits = natId.substring(3, 5);
-      const dayDigits = natId.substring(5, 7);
-
-      const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
-      const birthDate = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
-      if (!isNaN(birthDate.getTime())) {
-        const age60Date = new Date(birthDate);
-        age60Date.setFullYear(age60Date.getFullYear() + 60);
-        const today = new Date();
-        const daysLeft = Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
-
-        if (daysLeft < 0) return 'فوق السن (أكثر من 60)';
-        if (daysLeft <= 60) return 'قريب من الـ 60 (خلال 60 يوم)';
-        return 'أقل من 60';
-      }
+  // 🎯 استخراج العمر الصريح مباشرة من عمود age
+  const getEmployeeAge = (emp: any) => {
+    const rawAge = getField(emp, 'age', 'Age');
+    if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
+      return Number(rawAge);
     }
-
-    const cType = getField(emp, 'contract_type', 'ContractType');
-    if (String(cType).includes('فوق السن')) return 'فوق السن (أكثر من 60)';
-
-    return 'أقل من 60';
+    return null;
   };
 
   // 1. تصفية الموظفين النشطين واستبعاد من هم خارج الخدمة (مع إبقاء تحويلات تحت الاعتماد)
@@ -94,7 +72,7 @@ export default function EmployeesPage() {
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // 2. تطبيق البحث والتصفية
+  // 2. تطبيق البحث والتصفية بجميع الفلاتر بما فيها السن
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -103,15 +81,23 @@ export default function EmployeesPage() {
       const empDept = String(getField(emp, 'department', 'Department')).toLowerCase();
       const empComp = String(getField(emp, 'company', 'Company')).toLowerCase();
       const cType = getField(emp, 'contract_type', 'ContractType');
+      const age = getEmployeeAge(emp);
 
       const matchesSearch = !term || empCode.includes(term) || empName.includes(term) || empDept.includes(term);
       const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
       const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
       const matchesType = !selectedType || cType === selectedType;
 
-      return matchesSearch && matchesDept && matchesComp && matchesType;
+      // فلترة نطاق السن
+      let matchesAge = true;
+      if (selectedAgeRange === '60_plus') matchesAge = age !== null && age >= 60;
+      else if (selectedAgeRange === '50_59') matchesAge = age !== null && age >= 50 && age < 60;
+      else if (selectedAgeRange === '30_49') matchesAge = age !== null && age >= 30 && age < 50;
+      else if (selectedAgeRange === 'under_30') matchesAge = age !== null && age < 30;
+
+      return matchesSearch && matchesDept && matchesComp && matchesType && matchesAge;
     });
-  }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType]);
+  }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
   // 3. إحصائيات الكروت الديناميكية
   const kpiStats = useMemo(() => {
@@ -120,8 +106,8 @@ export default function EmployeesPage() {
     const fixed = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'محدد المدة').length;
     const aboveAge = baseFilteredEmployees.filter(e => {
       const cType = getField(e, 'contract_type', 'ContractType');
-      const ageSt = getAgeStatus(e);
-      return String(cType).includes('فوق السن') || String(ageSt).includes('فوق السن');
+      const age = getEmployeeAge(e);
+      return String(cType).includes('فوق السن') || (age !== null && age >= 60);
     }).length;
 
     const calcPct = (val: number) => (total > 0 ? ((val / total) * 100).toFixed(1) : '0');
@@ -133,10 +119,10 @@ export default function EmployeesPage() {
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
-      const ageSt = getAgeStatus(emp);
+      const age = getEmployeeAge(emp);
       if (activeCardFilter === 'PERM') return cType === 'دائم';
       if (activeCardFilter === 'FIXED') return cType === 'محدد المدة';
-      if (activeCardFilter === 'ABOVE_AGE') return String(cType).includes('فوق السن') || String(ageSt).includes('فوق السن');
+      if (activeCardFilter === 'ABOVE_AGE') return String(cType).includes('فوق السن') || (age !== null && age >= 60);
       return true;
     });
 
@@ -175,7 +161,6 @@ export default function EmployeesPage() {
   };
 
   const handleOpenEdit = async (emp: any) => {
-    const code = getField(emp, 'employee_code', 'EmployeeCode', 'employee_id');
     setEditData({ emp: { ...emp }, loading: false });
   };
 
@@ -193,6 +178,7 @@ export default function EmployeesPage() {
         employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
         national_id: getField(editData.emp, 'national_id', 'NationalID'),
+        age: editData.emp.age ? Number(editData.emp.age) : null,
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
@@ -327,8 +313,8 @@ export default function EmployeesPage() {
       'employee_name': getField(e, 'employee_name', 'ArabicName'),
       'job_title': getField(e, 'job_title', 'JobTitle'),
       'department': getField(e, 'department', 'Department'),
+      'age': getEmployeeAge(e) ? `${getEmployeeAge(e)} سنة` : '—',
       'national_id': getField(e, 'national_id', 'NationalID'),
-      'age_status': getAgeStatus(e),
       'mobile': getField(e, 'mobile', 'Mobile'),
       'hiring_date': getField(e, 'hiring_date', 'HiringDate'),
       'contract_end_date': getField(e, 'contract_end_date', 'ContractEndDate'),
@@ -364,16 +350,15 @@ export default function EmployeesPage() {
     return <span style={{ color: '#64748b' }}>—</span>;
   };
 
-  // 🌟 بادج تمييز السن المطور age_status
-  const renderAgeStatusBadge = (emp: any) => {
-    const ageSt = getAgeStatus(emp);
-    if (ageSt.includes('فوق السن')) {
-      return <span style={{ background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 فوق السن (60+)</span>;
+  // 🌟 عرض العمر الصريح بتمييز بصري
+  const renderAgeBadge = (emp: any) => {
+    const age = getEmployeeAge(emp);
+    if (age === null) return <span style={{ color: '#94a3b8' }}>—</span>;
+
+    if (age >= 60) {
+      return <span style={{ background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
     }
-    if (ageSt.includes('قريب')) {
-      return <span style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>🎂 يبلغ 60 قريباً</span>;
-    }
-    return <span style={{ background: '#f1f5f9', color: '#475569', padding: '3px 8px', borderRadius: '6px', fontSize: '10px' }}>🟢 أقل من 60</span>;
+    return <span style={{ background: '#f1f5f9', color: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{age} سنة</span>;
   };
 
   return (
@@ -498,14 +483,14 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* الفلاتر والبحث */}
+      {/* الفلاتر والبحث مع فلتر مجال السن الجديد 🎂 */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '220px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+        <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '200px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         
-        <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '140px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+        <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '130px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
         
-        <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '140px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+        <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '130px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
         <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
@@ -513,14 +498,23 @@ export default function EmployeesPage() {
           {typesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
         </select>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setActiveCardFilter('ALL_ACTIVE'); }} style={{ background: 'var(--line, #e2e8f0)', color: 'var(--ink, #0f172a)', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+        {/* 🌟 فلتر السن المطور */}
+        <select value={selectedAgeRange} onChange={e => setSelectedAgeRange(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)', fontWeight: 'bold' }}>
+          <option value="">فئة السن (الكل)</option>
+          <option value="60_plus">💼 فوق السن (60 سنة فأكثر)</option>
+          <option value="50_59">🎂 من 50 إلى 59 سنة</option>
+          <option value="30_49">👔 من 30 إلى 49 سنة</option>
+          <option value="under_30">🌱 أقل من 30 سنة</option>
+        </select>
+
+        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setSelectedAgeRange(''); setActiveCardFilter('ALL_ACTIVE'); }} style={{ background: 'var(--line, #e2e8f0)', color: 'var(--ink, #0f172a)', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
         
         <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
           النتائج بالجدول: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{finalTableEmployees.length.toLocaleString('en-US')}</span> موظف
         </div>
       </div>
 
-      {/* الجدول الرئيسي للموظفين مع دعم عمود age_status */}
+      {/* الجدول الرئيسي للموظفين مع عرض السن صراحة */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
@@ -536,7 +530,7 @@ export default function EmployeesPage() {
                   <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
                   <th onClick={() => handleSort('job_title')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                   <th onClick={() => handleSort('department')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>حالة السن (60)</th>
+                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>السن</th>
                   <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
                   <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
                   <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('contract_end_date')}</th>
@@ -569,9 +563,9 @@ export default function EmployeesPage() {
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
                       
-                      {/* 🌟 عمود حالة السن age_status */}
+                      {/* 🌟 عمود السن الصريح */}
                       <td style={{ padding: '10px' }}>
-                        {renderAgeStatusBadge(emp)}
+                        {renderAgeBadge(emp)}
                       </td>
 
                       <td style={{ padding: '10px', fontFamily: 'monospace', color: 'var(--ink, #0f172a)' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
@@ -606,7 +600,7 @@ export default function EmployeesPage() {
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>حالة السن:</strong> {getAgeStatus(profileEmp)}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
@@ -738,7 +732,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ✏️ نافذة التعديل الفردي الشامل */}
+      {/* ✏️ نافذة التعديل الفردي الشامل مع تعديل السن */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -755,6 +749,7 @@ export default function EmployeesPage() {
                     { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
                     { label: 'الاسم العربي', key1: 'employee_name', key2: 'ArabicName' },
                     { label: 'الرقم القومي', key1: 'national_id', key2: 'NationalID' },
+                    { label: 'السن (Age)', key1: 'age', key2: 'Age' },
                     { label: 'الإدارة', key1: 'department', key2: 'Department' },
                     { label: 'الشركة', key1: 'company', key2: 'Company' },
                     { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
