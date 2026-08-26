@@ -20,16 +20,13 @@ const MONTHS_LIST = [
 export default function ReportsPage() {
   const { employees, renewals, loading } = useAppData();
 
-  // علامة التبويب والتقرير النشط
   const [activeTab, setActiveTab] = useState<'monthly_expiry' | 'above_age' | 'approval_status' | 'full_roster'>('monthly_expiry');
 
-  // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedContractType, setSelectedType] = useState('');
 
-  // فلتر الشهر والسنة
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
@@ -57,19 +54,38 @@ export default function ReportsPage() {
     return null;
   };
 
+  // 🎯 استخراج تاريخ ودقة بلوغ سن الـ 60 من الرقم القومي
+  const getAge60Date = (nationalId: string) => {
+    if (!nationalId || String(nationalId).trim().length !== 14) return null;
+    const idStr = String(nationalId).trim();
+    const centuryDigit = idStr.charAt(0);
+    const yearDigits = idStr.substring(1, 3);
+    const monthDigits = idStr.substring(3, 5);
+    const dayDigits = idStr.substring(5, 7);
+
+    const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+    const birthDate = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+    if (isNaN(birthDate.getTime())) return null;
+
+    const age60Date = new Date(birthDate);
+    age60Date.setFullYear(age60Date.getFullYear() + 60);
+    return age60Date;
+  };
+
   const companiesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const contractTypesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
 
-  // معالجة وتصفية بيانات التقرير الرئيسية
   const processedData = useMemo(() => {
     const activeEmps = employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
 
     return activeEmps.map(emp => {
       const code = getField(emp, 'employee_code', 'EmployeeCode');
       const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const natId = getField(emp, 'national_id', 'NationalID');
       const daysLeft = getDaysRemaining(endDate);
       const age = getEmployeeAge(emp);
+      const age60DateObj = getAge60Date(natId);
 
       const empRens = renewals.filter(r => r.employee_code === code).sort((a, b) => (b.request_id || '').localeCompare(a.request_id || ''));
       const latestRenewal = empRens[0];
@@ -85,6 +101,8 @@ export default function ReportsPage() {
         endDate,
         daysLeft,
         age,
+        natId,
+        age60DateObj,
         renewalStatus: latestRenewal?.status || 'لا يوجد طلب',
         signatureStatus: latestRenewal?.signature_status || '—',
         requestId: latestRenewal?.request_id || '—',
@@ -93,25 +111,40 @@ export default function ReportsPage() {
     });
   }, [employees, renewals]);
 
-  // تصفية القائمة بناءً على التبويب والفلاتر المحددة
+  // 🌟 الفلترة المركبة الذكية
   const filteredReportData = useMemo(() => {
     return processedData.filter(item => {
-      // 1. التصفية حسب نوع التبويب النشط
+      // 1. تصفية التبويب "تقرير الاستحقاق الشهري" المركب
       if (activeTab === 'monthly_expiry') {
-        if (item.contractType === 'دائم') return false;
-        if (selectedMonth && item.endDate) {
+        let isContractExpiringInMonth = false;
+        let isTurning60InMonth = false;
+
+        // أ) مراجعة تاريخ انتهاء العقد (للعقود محددة المدة)
+        if (item.contractType !== 'دائم' && item.endDate) {
           const d = new Date(item.endDate);
           if (!isNaN(d.getTime())) {
             const m = String(d.getMonth() + 1);
             const y = String(d.getFullYear());
-            if (selectedMonth && m !== selectedMonth) return false;
-            if (selectedYear && y !== selectedYear) return false;
-          } else {
-            return false;
+            const matchM = !selectedMonth || m === selectedMonth;
+            const matchY = !selectedYear || y === selectedYear;
+            if (matchM && matchY) isContractExpiringInMonth = true;
           }
-        } else if (selectedMonth && !item.endDate) {
-          return false;
         }
+
+        // ب) مراجعة بلوغ سن الـ 60 (لأصحاب العقود الدائمة فقط ومش محولين فوق السن)
+        if (item.contractType === 'دائم' && !String(item.contractType).includes('فوق السن') && item.age60DateObj) {
+          const m = String(item.age60DateObj.getMonth() + 1);
+          const y = String(item.age60DateObj.getFullYear());
+          const matchM = !selectedMonth || m === selectedMonth;
+          const matchY = !selectedYear || y === selectedYear;
+          if (matchM && matchY) isTurning60InMonth = true;
+        }
+
+        // لو مش انتهاء عقد ولا بلوغ 60 في الشهر المختار، يستبعد
+        if (!isContractExpiringInMonth && !isTurning60InMonth) return false;
+
+        // حفظ نوع الإجراء المطلوب لتوضيحه في التقرير
+        (item as any).actionReason = isTurning60InMonth ? '🎂 بلوغ سن الـ 60 (عقد دائم)' : '📑 انتهاء عقد محدد المدة';
       } else if (activeTab === 'above_age') {
         const isAbove60 = item.age !== null && item.age >= 60;
         const isAboveAgeType = String(item.contractType).includes('فوق السن');
@@ -131,25 +164,13 @@ export default function ReportsPage() {
     });
   }, [processedData, activeTab, selectedMonth, selectedYear, searchTerm, selectedCompany, selectedDept, selectedContractType]);
 
-  // إحصائيات سريعة للتقرير الحالي
   const reportStats = useMemo(() => {
     const total = filteredReportData.length;
-    const expired = filteredReportData.filter(i => i.daysLeft !== null && i.daysLeft < 0).length;
-    const expiringSoon = filteredReportData.filter(i => i.daysLeft !== null && i.daysLeft >= 0 && i.daysLeft <= 60).length;
+    const turning60Count = filteredReportData.filter(i => (i as any).actionReason?.includes('60')).length;
+    const contractExpCount = total - turning60Count;
     const signedCount = filteredReportData.filter(i => i.signatureStatus === 'تم التوقيع').length;
-    const above60Count = filteredReportData.filter(i => (i.age !== null && i.age >= 60) || String(i.contractType).includes('فوق السن')).length;
 
-    return { total, expired, expiringSoon, signedCount, above60Count };
-  }, [filteredReportData]);
-
-  // توزيع أعلى 5 إدارات في التقرير المفلتر
-  const topDeptsInReport = useMemo(() => {
-    const counts: Record<string, number> = {};
-    filteredReportData.forEach(item => {
-      const d = item.department || 'غير محدد';
-      counts[d] = (counts[d] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    return { total, turning60Count, contractExpCount, signedCount };
   }, [filteredReportData]);
 
   const handlePrint = () => {
@@ -161,28 +182,26 @@ export default function ReportsPage() {
       return alert('لا توجد بيانات للتصدير حسب الفلاتر المحددة.');
     }
 
-    const fileName = `تقرير_${activeTab}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    const fileName = `تقرير_استحقاقات_${activeTab}_شهر_${selectedMonth || 'الكل'}.xlsx`;
 
     const rows = filteredReportData.map(item => ({
       'كود الموظف': item.code,
       'اسم الموظف': item.name,
-      'الوظيفة': item.jobTitle || '—',
       'الإدارة': item.department || '—',
-      'الشركة': item.company || '—',
+      'الوظيفة': item.jobTitle || '—',
       'السن': item.age ? `${item.age} سنة` : '—',
-      'نوع العقد': item.contractType || '—',
+      'نوع العقد الحالي': item.contractType || '—',
+      'سبب الإدراج بالتقرير': (item as any).actionReason || 'استحقاق دوري',
       'تاريخ نهاية العقد': item.endDate || '—',
-      'الأيام المتبقية': item.daysLeft !== null ? item.daysLeft : '—',
-      'حالة طلب التجديد': item.renewalStatus,
-      'تاريخ الانتهاء الجديد': item.newEndDate,
-      'حالة التوقيع': item.signatureStatus,
+      'تاريخ بلوغ 60': item.age60DateObj ? item.age60DateObj.toISOString().split('T')[0] : '—',
+      'حالة التجديد': item.renewalStatus,
     }));
 
     const XLSX = await import('xlsx');
     const worksheet = XLSX.utils.json_to_sheet(rows);
-    worksheet['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 18 }));
+    worksheet['!cols'] = Object.keys(rows[0] || {}).map(() => ({ wch: 22 }));
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'تقرير_العقود');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'استحقاقات_الشهر');
     XLSX.writeFile(workbook, fileName);
   };
 
@@ -202,7 +221,7 @@ export default function ReportsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>مركز التقارير والتحليلات الرقمية</h3>
-          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>استخراج وتحليل وتصدير كشوف العقود والعمالة وفق أعلى معايير الحوكمة</p>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>استخراج وحصر الاستحقاقات التعاقدية وحركات بلوغ الـ 60 المجمعة</p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -215,10 +234,10 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 🌟 تبويبات أنواع التقارير الرئيسية */}
+      {/* 🌟 تبويبات أنواع التقارير */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
         {[
-          { id: 'monthly_expiry', icon: '📅', title: 'تقرير الاستحقاق الشهري', desc: 'عقود تنتهي في شهر وسنة محددة' },
+          { id: 'monthly_expiry', icon: '🎯', title: 'تقرير استحقاقات الشهر المركب', desc: 'انتهاء عقود + بلوغ الـ 60 (للعقود الدائمة)' },
           { id: 'above_age', icon: '💼', title: 'تقرير العمالة فوق السن (60+)', desc: 'متابعة المحالين للتقاعد وتجديدات فوق السن' },
           { id: 'approval_status', icon: '⏳', title: 'موقف التجديدات والتوقيع', desc: 'متابعة الطلبات المعتمدة وقيد الاعتماد والتوقيع' },
           { id: 'full_roster', icon: '📂', title: 'السجل العام الشامل', desc: 'كشف موحد لجميع الموظفين النشطين' },
@@ -247,10 +266,9 @@ export default function ReportsPage() {
       {/* شريط الفلاتر الذكي */}
       <div className="no-print" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         
-        {/* محدد الشهر والسنة يظهر عند اختيار تقرير الاستحقاق الشهري */}
         {activeTab === 'monthly_expiry' && (
           <div style={{ display: 'flex', gap: '6px', background: '#eff6ff', padding: '5px 10px', borderRadius: '8px', border: '1px solid #bfdbfe', alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ شهر وسنة الانتهاء:</span>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ شهر الاستحقاق المطلوب:</span>
             <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '11px', fontWeight: 'bold', outline: 'none' }}>
               <option value="">كل الأشهر</option>
               {MONTHS_LIST.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -301,27 +319,23 @@ export default function ReportsPage() {
         >
           إعادة ضبط
         </button>
-
-        <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
-          نتائج التقرير: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{filteredReportData.length.toLocaleString('en-US')}</span> سجل
-        </div>
       </div>
 
-      {/* المؤشرات السريعة وتحليلات التقرير */}
+      {/* كروت المؤشرات المحدثة */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
         <div style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '10px' }}>
-          <div style={{ fontSize: '10.5px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إجمالي العقود بالتقرير</div>
+          <div style={{ fontSize: '10.5px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إجمالي الاستحقاقات المطلوب إجراءها</div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy-950, #0f172a)', marginTop: '2px' }}>{reportStats.total.toLocaleString('en-US')}</div>
         </div>
 
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '12px 16px', borderRadius: '10px' }}>
-          <div style={{ fontSize: '10.5px', color: '#991b1b', fontWeight: 'bold' }}>عقود منتهية المدة</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '2px' }}>{reportStats.expired.toLocaleString('en-US')}</div>
+        <div style={{ background: '#fef3c7', border: '1px solid #fde68a', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: '#92400e', fontWeight: 'bold' }}>🎂 بلوغ الـ 60 (تحويل لعقد فوق السن)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706', marginTop: '2px' }}>{reportStats.turning60Count.toLocaleString('en-US')} موظف</div>
         </div>
 
-        <div style={{ background: '#fef3c7', border: '1px solid #fde68a', padding: '12px 16px', borderRadius: '10px' }}>
-          <div style={{ fontSize: '10.5px', color: '#92400e', fontWeight: 'bold' }}>تنتهي قريباً (خلال 60 يوم)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706', marginTop: '2px' }}>{reportStats.expiringSoon.toLocaleString('en-US')}</div>
+        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: '#1e40af', fontWeight: 'bold' }}>📑 عقود محددة انتهى أجلها</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', marginTop: '2px' }}>{reportStats.contractExpCount.toLocaleString('en-US')} عقد</div>
         </div>
 
         <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', padding: '12px 16px', borderRadius: '10px' }}>
@@ -330,29 +344,14 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* تحليل أكبر الإدارات المتركز بها التقرير الحالي */}
-      {topDeptsInReport.length > 0 && (
-        <div className="no-print" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px' }}>
-          <div style={{ fontSize: '11.5px', fontWeight: 'bold', color: 'var(--navy-950, #0f172a)', marginBottom: '8px' }}>📊 أكثر الإدارات حيازة للسجلات في هذا التقرير:</div>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            {topDeptsInReport.map(([dept, count], idx) => (
-              <div key={idx} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontSize: '11px' }}>
-                <span style={{ color: '#64748b' }}>{dept}:</span> <strong style={{ color: '#0d9488' }}>{count} موظف</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* 🖨️ منطقة التقرير والمعاينة القابلة للطباعة */}
       <div className="print-area" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', padding: '24px' }}>
         
-        {/* الترويسة الرسمية للطباعة */}
         <div style={{ borderBottom: '2px solid var(--navy-950, #0f172a)', paddingBottom: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
-              {activeTab === 'monthly_expiry' && `كشف عقود الموظفين المستحقة للتجديد/الانتهاء خلال شهر (${MONTHS_LIST.find(m => m.value === selectedMonth)?.label || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
+              {activeTab === 'monthly_expiry' && `كشف استحقاقات العمل لشهر (${MONTHS_LIST.find(m => m.value === selectedMonth)?.label || 'الكل'}) لسنة ${selectedYear || 'الكل'} (عقود تنتهي + بلوغ الـ 60)`}
               {activeTab === 'above_age' && 'كشف حصر الموظفين البالغين لسن التقاعد (60 سنة فأكثر)'}
               {activeTab === 'approval_status' && 'تقرير متابعة موقف اعتمادات وتوقيعات العقود'}
               {activeTab === 'full_roster' && 'السجل الموحد العام لكافة قوة العمل النشطة'}
@@ -365,7 +364,6 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* الجدول الرئيسي للتقرير */}
         <div className="table-responsive" style={{ border: 0 }}>
           {loading ? (
             <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري استخراج وبناء التقرير... ⏳</div>
@@ -379,49 +377,46 @@ export default function ReportsPage() {
                   <th style={{ padding: '10px' }}>الإدارة</th>
                   <th style={{ padding: '10px' }}>الوظيفة</th>
                   <th style={{ padding: '10px' }}>السن</th>
-                  <th style={{ padding: '10px' }}>نوع العقد</th>
-                  <th style={{ padding: '10px' }}>تاريخ الانتهاء</th>
-                  <th style={{ padding: '10px' }}>المتبقي</th>
+                  <th style={{ padding: '10px' }}>نوع العقد الحالي</th>
+                  <th style={{ padding: '10px' }}>السبب / الإجراء المطلوب</th>
+                  <th style={{ padding: '10px' }}>تاريخ الاستحقاق</th>
                   <th style={{ padding: '10px' }}>حالة التجديد</th>
-                  <th style={{ padding: '10px' }}>موقف التوقيع</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredReportData.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>لا توجد بيانات مطابقة لخيارات التقرير المحددة.</td></tr>
+                  <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>لا توجد استحقاقات تعاقدية أو حركات بلوغ 60 في هذا الشهر. 🎉</td></tr>
                 ) : (
-                  filteredReportData.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{idx + 1}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{item.code}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>{item.name}</td>
-                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{item.department || '—'}</td>
-                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{item.jobTitle || '—'}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', color: item.age && item.age >= 60 ? '#d97706' : '#334155' }}>
-                        {item.age ? `${item.age} سنة` : '—'}
-                      </td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.contractType || '—'}</td>
-                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.endDate || '—'}</td>
-                      <td style={{ padding: '8px 10px' }}>
-                        {item.daysLeft !== null ? (
-                          <span style={{ fontWeight: 'bold', color: item.daysLeft < 0 ? '#dc2626' : item.daysLeft <= 60 ? '#d97706' : '#15803d' }}>
-                            {item.daysLeft < 0 ? `منتهي (${Math.abs(item.daysLeft)} يوم)` : `${item.daysLeft} يوم`}
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.renewalStatus}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', color: item.signatureStatus === 'تم التوقيع' ? '#15803d' : '#64748b' }}>
-                        {item.signatureStatus}
-                      </td>
-                    </tr>
-                  ))
+                  filteredReportData.map((item, idx) => {
+                    const is60Event = (item as any).actionReason?.includes('60');
+
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: is60Event ? '#fffbeb' : 'transparent' }}>
+                        <td style={{ padding: '8px 10px', color: '#64748b' }}>{idx + 1}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{item.code}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#0f172a' }}>{item.name}</td>
+                        <td style={{ padding: '8px 10px', color: '#64748b' }}>{item.department || '—'}</td>
+                        <td style={{ padding: '8px 10px', color: '#64748b' }}>{item.jobTitle || '—'}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: item.age && item.age >= 60 ? '#d97706' : '#334155' }}>
+                          {item.age ? `${item.age} سنة` : '—'}
+                        </td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.contractType || '—'}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: is60Event ? '#d97706' : '#2563eb' }}>
+                          {(item as any).actionReason || 'انتهاء عقد'}
+                        </td>
+                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                          {is60Event && item.age60DateObj ? item.age60DateObj.toISOString().split('T')[0] : (item.endDate || '—')}
+                        </td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.renewalStatus}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           )}
         </div>
 
-        {/* التوقيعات الرسمية للطباعة */}
         <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
           <div>مُعد التقرير: ........................</div>
           <div>مراجعة الموارد البشرية: ........................</div>
