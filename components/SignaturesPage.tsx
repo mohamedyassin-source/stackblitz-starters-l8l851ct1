@@ -102,16 +102,6 @@ export default function SignaturesPage() {
 
   return (
     <>
-      {/* 🌟 استايل الطباعة: إخفاء واجهة الإدارة وإظهار نموذج العقد فقط */}
-      <style>{`
-        @media print {
-          .hide-on-print { display: none !important; }
-          .print-only { display: block !important; position: static !important; overflow: visible !important; background: #fff !important; }
-          @page { margin: 15mm; size: A4 portrait; }
-          body { background: #fff; }
-        }
-      `}</style>
-
       <div className="hide-on-print">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
@@ -287,7 +277,10 @@ export default function SignaturesPage() {
                 <strong>ثانياً : السيد : </strong><strong>{previewContract.employee_name || dash}</strong>
               </div>
               <div style={{ fontSize: '13.5px', marginBottom: '4px' }}>
-                بطاقة رقم : <strong>{emp?.national_id || dashShort}</strong>
+                العنوان : <strong>{emp?.address || dash}</strong>
+              </div>
+              <div style={{ fontSize: '13.5px', marginBottom: '4px' }}>
+                بطاقة رقم : <strong>{emp?.national_id || dashShort}</strong> &nbsp;&nbsp;&nbsp; محافظة الميلاد : <strong>{emp?.birth_governorate || dashShort}</strong>
               </div>
               <div style={{ fontSize: '13.5px', fontWeight: 'bold', marginBottom: '14px' }}>
                 ويشار اليه فى هذا العقد بالطرف الثانى
