@@ -5,7 +5,7 @@ import { useAppData } from '@/lib/DataContext';
 
 export default function SignaturesPage() {
   const { renewals, loading, refresh: fetchApprovedRequests } = useAppData();
-  // نعرض فقط الطلبات المعتمدة لأنها هي التي تحتاج توقيع
+  
   const requests = useMemo(
     () =>
       renewals
@@ -13,12 +13,9 @@ export default function SignaturesPage() {
         .sort((a, b) => String(b.request_id).localeCompare(String(a.request_id))),
     [renewals]
   );
+  
   const [actionLoading, setActionLoading] = useState(false);
-
-  // حالات Slicers
   const [activeTab, setActiveTab] = useState<'PendingSignature' | 'Signed' | 'All'>('PendingSignature');
-
-  // حالات الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -26,11 +23,9 @@ export default function SignaturesPage() {
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
 
   const filteredRequests = requests.filter(req => {
-    // فلتر التبويبات
     if (activeTab === 'PendingSignature' && req.signature_status === 'تم التوقيع') return false;
     if (activeTab === 'Signed' && req.signature_status !== 'تم التوقيع') return false;
     
-    // فلتر البحث
     const term = searchTerm.toLowerCase();
     const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
     const matchesDept = !selectedDept || req.department === selectedDept;
@@ -42,7 +37,6 @@ export default function SignaturesPage() {
   const countSigned = requests.filter(r => r.signature_status === 'تم التوقيع').length;
   const countAll = requests.length;
 
-  // 🌟 دالة تنفيذ التوقيع (فردي ومجمع)
   const handleSign = async (reqId?: string) => {
     const idsToSign = reqId ? [reqId] : selectedIds;
     if (idsToSign.length === 0) return alert('يرجى تحديد عقد واحد على الأقل للتوقيع.');
@@ -65,6 +59,70 @@ export default function SignaturesPage() {
       alert('حدث خطأ: ' + err.message);
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  // 🌟 دالة إنشاء وتحميل العقد بصيغة PDF
+  const handleGeneratePDF = async (req: any) => {
+    try {
+      // استيراد المكتبة ديناميكياً لتجنب مشاكل الريندر في Next.js
+      // @ts-ignore
+      const html2pdf = (await import('html2pdf.js')).default;
+      
+      // تصميم العقد (يمكنك تعديل النصوص والألوان كما تشاء هنا)
+      const element = document.createElement('div');
+      element.innerHTML = `
+        <div style="padding: 40px; direction: rtl; font-family: Arial, sans-serif; color: #000; text-align: right;">
+            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
+                <h1 style="margin: 0; font-size: 24px;">عـقـد عـمـل</h1>
+            </div>
+            
+            <p style="font-size: 16px; line-height: 2;">
+                إنه في يوم الموافق <strong>${new Date().toLocaleDateString('ar-EG')}</strong>، تم الاتفاق والتعاقد بين كل من:
+            </p>
+            
+            <p style="font-size: 16px; line-height: 2;">
+                <strong>الطرف الأول:</strong> شركة (اكتب اسم شركتك هنا) <br/>
+                <strong>الطرف الثاني:</strong> السيد/ة <strong>${req.employee_name}</strong> - الكود الوظيفي: <strong>${req.employee_code}</strong>
+            </p>
+            
+            <p style="font-size: 16px; line-height: 2;">
+                بموجب هذا العقد، تم الاتفاق على تجديد عقد العمل الخاص بالطرف الثاني للعمل بقسم (<strong>${req.department || '—'}</strong>).<br/>
+                وقد تم الاتفاق على أن تكون مدة التجديد: <strong>${req.renewal_months ? `${req.renewal_months} شهور` : 'حسب المتفق عليه'}</strong>.<br/>
+                تاريخ بداية العقد: <span style="font-weight: bold; color: #15803d;">${req.start_date || 'غير محدد'}</span> <br/>
+                تاريخ نهاية العقد: <span style="font-weight: bold; color: #dc2626;">${req.new_contract_end_date || 'غير محدد'}</span>
+            </p>
+
+            <br/><br/><br/><br/>
+            
+            <table style="width: 100%; text-align: center; font-size: 16px; margin-top: 50px;">
+                <tr>
+                    <td style="width: 50%;"><strong>توقيع الطرف الأول (الشركة)</strong></td>
+                    <td style="width: 50%;"><strong>توقيع الطرف الثاني (الموظف)</strong></td>
+                </tr>
+                <tr>
+                    <td style="padding-top: 50px;">.......................................</td>
+                    <td style="padding-top: 50px;">.......................................</td>
+                </tr>
+            </table>
+        </div>
+      `;
+
+      // إعدادات ملف الـ PDF
+      const opt = {
+        margin: 10,
+        filename: `عقد_عمل_${req.employee_name}.pdf`,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      // تحويل التصميم إلى PDF وتنزيله
+      html2pdf().from(element).set(opt).save();
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('حدث خطأ أثناء تصدير العقد كـ PDF.');
     }
   };
 
@@ -125,7 +183,6 @@ export default function SignaturesPage() {
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الموظف</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الإدارة</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>مدة التجديد</th>
-                {/* 🌟 عمود جديد لتاريخ الانتهاء الجديد */}
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>تاريخ الانتهاء الجديد</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>حالة التوقيع</th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
@@ -149,12 +206,10 @@ export default function SignaturesPage() {
                   <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.employee_name}</td>
                   <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{req.department || '—'}</td>
                   
-                  {/* 🌟 مدة التجديد الفعلية */}
                   <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#15803d' }}>
                     {req.renewal_months ? `${req.renewal_months} شهور` : 'تاريخ مخصص'}
                   </td>
 
-                  {/* 🌟 تاريخ نهاية العقد الجديد */}
                   <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>
                     {req.new_contract_end_date || '—'}
                   </td>
@@ -167,16 +222,21 @@ export default function SignaturesPage() {
                     }
                   </td>
                   
-                  <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                  <td style={{ padding: '8px 10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
+                    
+                    {/* 🌟 الزر الجديد لإنشاء الـ PDF */}
+                    <button 
+                      onClick={() => handleGeneratePDF(req)} 
+                      style={{ background: '#0284c7', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
+                    >
+                      📄 إنشاء العقد PDF
+                    </button>
+
                     {req.signature_status !== 'تم التوقيع' ? (
                       <button onClick={() => handleSign(req.request_id)} disabled={actionLoading} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>
                         تسجيل التوقيع ✍️
                       </button>
-                    ) : (
-                      <button style={{ background: '#f1f5f9', color: 'var(--muted)', border: '1px solid var(--line)', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>
-                        🖨️ طباعة العقد
-                      </button>
-                    )}
+                    ) : null }
                   </td>
                 </tr>
               ))}
