@@ -20,7 +20,7 @@ export default function SignaturesPage() {
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   
-  // 🌟 حالة لفتح وإغلاق نافذة المعاينة
+  // حالة لفتح وإغلاق نافذة المعاينة
   const [previewContract, setPreviewContract] = useState<any>(null);
 
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
@@ -65,24 +65,38 @@ export default function SignaturesPage() {
     }
   };
 
-  // دالة تشغيل الطباعة
   const handlePrint = () => {
     window.print();
   };
 
   return (
     <>
-      {/* 🌟 استايل مخصص لضبط الطباعة: إخفاء الموقع بالكامل وإظهار العقد فقط */}
+      {/* 🌟 استايلات احترافية لضبط الطباعة والعقد */}
       <style>{`
         @media print {
           .hide-on-print { display: none !important; }
-          .print-only { display: block !important; position: static !important; overflow: visible !important; background: white !important; }
-          @page { margin: 15mm; size: A4 portrait; }
-          body { background: #fff; }
+          .print-only { display: block !important; position: static !important; overflow: visible !important; background: white !important; padding: 0 !important; margin: 0 !important; box-shadow: none !important; width: 100% !important; height: 100% !important;}
+          @page { margin: 15mm 20mm; size: A4 portrait; }
+          body { background: #fff; margin: 0; }
+        }
+        .data-value {
+          display: inline-block;
+          border-bottom: 1.5px dotted #1e293b;
+          min-width: 150px;
+          text-align: center;
+          font-weight: bold;
+          color: #0f172a;
+          padding: 0 8px;
+        }
+        .contract-text {
+          text-align: justify;
+          text-justify: inter-word;
+          line-height: 2.2;
+          font-size: 16px;
         }
       `}</style>
 
-      {/* 🌟 محتوى الصفحة الرئيسية (يختفي عند الطباعة) */}
+      {/* محتوى الصفحة الرئيسية */}
       <div className="hide-on-print">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
@@ -176,12 +190,11 @@ export default function SignaturesPage() {
                     </td>
                     <td style={{ padding: '8px 10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
                       
-                      {/* 🌟 زر فتح نافذة معاينة العقد */}
                       <button 
                         onClick={() => setPreviewContract(req)} 
                         style={{ background: '#0284c7', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
                       >
-                        📄 معاينة وطباعة
+                        📄 معاينة العقد
                       </button>
 
                       {req.signature_status !== 'تم التوقيع' ? (
@@ -198,66 +211,75 @@ export default function SignaturesPage() {
         </div>
       </div>
 
-      {/* 🌟 نافذة معاينة العقد (Modal) */}
+      {/* 🌟 نافذة العقد الرسمية المطبوعة */}
       {previewContract && (
         <div className="print-only" style={{
           position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', 
           background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', 
           justifyContent: 'center', alignItems: 'flex-start', overflowY: 'auto', padding: '20px'
         }}>
-          {/* محاكي لورقة A4 */}
+          {/* حاوية ورقة A4 */}
           <div style={{
-            background: '#fff', width: '210mm', minHeight: '297mm', padding: '40px 50px',
+            background: '#fff', width: '210mm', minHeight: '297mm', padding: '25mm 20mm',
             boxShadow: '0 0 15px rgba(0,0,0,0.3)', position: 'relative', direction: 'rtl',
-            fontFamily: '"Times New Roman", Arial, serif', color: '#000', margin: 'auto'
+            fontFamily: 'Arial, "Sakkal Majalla", "Traditional Arabic", sans-serif', color: '#000', margin: 'auto'
           }}>
             
-            {/* أزرار التحكم - تختفي عند الطباعة */}
-            <div className="hide-on-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}>
-              <button onClick={() => setPreviewContract(null)} style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ❌</button>
+            {/* شريط التحكم (يختفي عند الطباعة) */}
+            <div className="hide-on-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '30px', borderBottom: '1px solid #ccc', paddingBottom: '15px' }}>
+              <button onClick={() => setPreviewContract(null)} style={{ background: '#dc2626', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق المعاينة ❌</button>
               <button onClick={handlePrint} style={{ background: '#15803d', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>طباعة / حفظ PDF 🖨️</button>
             </div>
 
-            {/* --- محتوى العقد يطابق M-Contract.pdf --- */}
-            <div style={{ textAlign: 'left', fontWeight: 'bold', fontSize: '22px', marginBottom: '5px' }}>
-                ALMARASEM
-            </div>
-            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-                <h2 style={{ margin: 0, fontSize: '24px', textDecoration: 'underline' }}>عقد عمل محدد المدة</h2>
+            {/* --- بداية التصميم الرسمي للعقد --- */}
+            <div style={{ fontWeight: 'bold', fontSize: '24px', marginBottom: '10px' }}>ALMARASEM</div>
+            <div style={{ textAlign: 'center', margin: '20px 0 35px' }}>
+                <h2 style={{ margin: 0, fontSize: '22px', textDecoration: 'underline', fontWeight: 'bold' }}>عقد عمل محدد المدة</h2>
             </div>
             
-            <div style={{ fontSize: '18px', marginBottom: '20px' }}>
-                انه في يوم : <strong>{new Date().toLocaleDateString('ar-EG', { weekday: 'long' })}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; الموافق : <strong>{new Date().toLocaleDateString('ar-EG')}</strong><br/><br/>
+            <div style={{ fontSize: '17px', marginBottom: '20px' }}>
+                انه في يوم : <span className="data-value">{new Date().toLocaleDateString('ar-EG', { weekday: 'long' })}</span> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; الموافق : <span className="data-value">{new Date().toLocaleDateString('ar-EG')}</span><br/><br/>
                 قد تحرر هذا العقد بين كل من :-
             </div>
 
-            <div style={{ fontSize: '18px', marginBottom: '20px' }}>
-                <strong>أولاً : شركة المراسم لتنمية وادارة الاصول</strong><br/>
-                ويمثلها السيد : أسامه محمد زيدان عبدالله<br/>
-                ويشار اليه في هذا العقد <strong style={{ float: 'left' }}>بالطرف الأول</strong>
+            {/* الطرف الأول */}
+            <div style={{ fontSize: '17px', marginBottom: '25px' }}>
+                <strong>أولاً : شركة المراسم لتنمية وادرة الاصول</strong><br/>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                   <span>ويمثلها السيد : <strong>أسامه محمد زيدان عبدالله</strong></span>
+                   <strong>بالطرف الأول</strong>
+                </div>
             </div>
 
-            <div style={{ fontSize: '18px', marginBottom: '20px' }}>
-                <strong>ثانياً : السيد :</strong> <strong>{previewContract.employee_name}</strong><br/>
-                العنوان : {previewContract.address || '..........................................................................................'}<br/>
-                بطاقة رقم : <strong>{previewContract.national_id || '........................................'}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; محافظة الميلاد : {previewContract.birth_gov || '....................'}<br/>
-                ويشار اليه في هذا العقد <strong style={{ float: 'left' }}>بالطرف الثاني</strong>
+            {/* الطرف الثاني */}
+            <div style={{ fontSize: '17px', marginBottom: '25px' }}>
+                <strong>ثانياً : السيد :</strong> <span className="data-value" style={{ minWidth: '300px' }}>{previewContract.employee_name || ' '}</span><br/>
+                <div style={{ marginTop: '10px' }}>
+                   العنوان : <span className="data-value" style={{ width: '85%' }}>{previewContract.address || ' '}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+                   <span>بطاقة رقم : <span className="data-value" style={{ minWidth: '200px' }}>{previewContract.national_id || ' '}</span></span>
+                   <span>محافظة الميلاد : <span className="data-value">{previewContract.birth_gov || ' '}</span></span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px' }}>
+                   <span>ويشار اليه في هذا العقد</span>
+                   <strong>بالطرف الثاني</strong>
+                </div>
             </div>
 
-            <div style={{ fontSize: '18px', marginBottom: '20px' }}>
-                <strong>تمهيد :</strong><br/>
-                حيث أن الشركة تقوم ببعض العمليات المؤقته في إدارة / مشروع : <strong>{previewContract.department || '................................'}</strong><br/>
-                مما يستلزم ذلك إستخدام بعض الموظفين للعمل، ومن المتفق عليه بين الطرفين المتعاقدين أن هذا العقد ينتهى بأنتهاء مدته أو بإنتهاء المشروع أو بإنتهاء عمل الموظف أيهما أقل طبقاً لما يراه الطرف الأول سواء بالنقل الى مشروع أخر أو إنهاء الخدمة.<br/>
+            <div className="contract-text">
+                <strong style={{ fontSize: '17px' }}>تمهيد :</strong><br/>
+                حيث أن الشركة تقوم ببعض العمليات المؤقته في إدارة / مشروع <span className="data-value" style={{ minWidth: '200px' }}>{previewContract.department || ' '}</span> مما يستلزم ذلك إستخدام بعض الموظفين للعمل، ومن المتفق عليه بين الطرفين المتعاقدين أن هذا العقد ينتهى بأنتهاء مدته أو بإنتهاء المشروع أو بإنتهاء عمل الموظف أيهما أقل طبقاً لما يراه الطرف الأول سواء بالنقل الى مشروع أخر أو إنهاء الخدمة.<br/>
                 وعلى ذلك فقد إتفق الطرفان على ما يأتي :
             </div>
 
-            <div style={{ fontSize: '17px', marginBottom: '20px', textAlign: 'justify', lineHeight: '1.8' }}>
+            <div className="contract-text" style={{ marginTop: '20px' }}>
                 1- إعتبار هذا التمهيد السابق جزء لا يتجزء من هذا العقد.<br/>
-                2- مدة هذا العقد تبدأ من <strong>{previewContract.start_date || '........................'}</strong> وتنتهى في <strong>{previewContract.new_contract_end_date || '........................'}</strong>.<br/>
+                2- مدة هذا العقد تبدأ من <span className="data-value">{previewContract.start_date || ' '}</span> وتنتهى في <span className="data-value">{previewContract.new_contract_end_date || ' '}</span>.<br/>
                 3- ينتهى هذا العقد بانتهاء مدته أو بانتهاء العمل الموكل للموظف أى المدتين أقرب أو أقل طبقا لما يراه الطرف الأول دون التزام الطرف الأول بأداء لأى مكافأة أو تعويض عدا ما يقرره قانون العمل المصرى رقم 12 لسنة 2003.<br/>
                 4- يجدد هذا العقد بإخطار كتابي قبل تاريخ إنتهائه بشهر واحد على الأقل.<br/>
-                5- يعمل الطرف الثاني بمهنة : <strong>{previewContract.job_title || '................................'}</strong> بمرتب وقدره : <strong>{previewContract.salary ? previewContract.salary + ' جنيه' : '................................'}</strong><br/>
-                ({previewContract.salary_in_words || '................................................................................'}) فقط لا غير.<br/>
+                5- يعمل الطرف الثاني بمهنة : <span className="data-value">{previewContract.job_title || ' '}</span> بمرتب وقدره <span className="data-value">{previewContract.salary ? previewContract.salary + ' جنيه' : ' '}</span><br/>
+                <span className="data-value" style={{ width: '80%' }}>{previewContract.salary_in_words || ' '}</span> فقط لا غير.<br/>
                 6- يقر الطرف الثاني أن محله المختار هو العنوان الموضح بصدر هذا العقد وكل خطاب أو إعلان يرسل له عليه يعتبر قانونيا ما لم يخطر الشركة بكتاب بتغيير عنوانه.<br/>
                 7- يخضع هذا العقد لأحكام قانون العمل رقم 12 لسنة 2003 ولائحتى العمل الداخلية والجزاءات المعمول بها حاليا أو مستقبلا وهما يعتبران جزء لا يتجزء من هذا العقد.<br/>
                 8- يحق للطرف الأول أن يطلب من الطرف الثاني العمل في أي مشروع / فرع للشركة بداخل جمهورية مصر العربية أو خارجها، وكذلك تغيير مواقيت بدء وانتهاء فترة العمل الرسمية (الورديات) وذلك وفقا لمقتضيات العمل التي يقدرها الطرف الأول.<br/>
@@ -265,11 +287,11 @@ export default function SignaturesPage() {
                 10- حرر هذا العقد من أربع نسخ لكل طرف نسخة والنسخة الثالثة للتأمينات الاجتماعية والنسخة الرابعة الى الجهة الادارية المختصة.
             </div>
 
-            <table style={{ width: '100%', textAlign: 'center', fontSize: '18px', marginTop: '60px', fontWeight: 'bold' }}>
+            <table style={{ width: '100%', textAlign: 'center', fontSize: '18px', marginTop: '50px', fontWeight: 'bold' }}>
                 <tbody>
                   <tr>
                       <td style={{ width: '50%' }}>الطرف الأول</td>
-                      <td style={{ width: '50%' }}>الطرف الثاني<br/><span style={{ fontSize: '14px', fontWeight: 'normal' }}>استلمت نسخه من العقد</span></td>
+                      <td style={{ width: '50%' }}>الطرف الثاني<br/><span style={{ fontSize: '13px', fontWeight: 'normal' }}>استلمت نسخه من العقد</span></td>
                   </tr>
                   <tr>
                       <td style={{ paddingTop: '80px' }}>.......................................</td>
@@ -278,9 +300,9 @@ export default function SignaturesPage() {
                 </tbody>
             </table>
 
-            <div style={{ position: 'absolute', bottom: '40px', right: '50px', fontSize: '14px', textAlign: 'left', color: '#333' }}>
-                كود الموظف: {previewContract.employee_code || '............'} <br/>
-                FM-HR-ER-024
+            <div style={{ position: 'absolute', bottom: '30px', right: '20mm', left: '20mm', display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#333' }}>
+                <span>FM-HR-ER-024</span>
+                <span>{previewContract.employee_code || ' '}</span>
             </div>
 
           </div>
