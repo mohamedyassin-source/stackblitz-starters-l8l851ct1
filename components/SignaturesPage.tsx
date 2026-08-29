@@ -62,62 +62,92 @@ export default function SignaturesPage() {
     }
   };
 
-  // 🌟 دالة إنشاء وتحميل العقد بصيغة PDF
+  // 🌟 دالة إنشاء وتحميل العقد بصيغة PDF المطابقة لـ M-Contract
   const handleGeneratePDF = async (req: any) => {
     try {
-      // استيراد المكتبة ديناميكياً لتجنب مشاكل الريندر في Next.js
       // @ts-ignore
       const html2pdf = (await import('html2pdf.js')).default;
       
-      // تصميم العقد (يمكنك تعديل النصوص والألوان كما تشاء هنا)
+      const today = new Date();
+      const dayName = today.toLocaleDateString('ar-EG', { weekday: 'long' });
+      const fullDate = today.toLocaleDateString('ar-EG');
+
       const element = document.createElement('div');
       element.innerHTML = `
-        <div style="padding: 40px; direction: rtl; font-family: Arial, sans-serif; color: #000; text-align: right;">
-            <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
-                <h1 style="margin: 0; font-size: 24px;">عـقـد عـمـل</h1>
+        <div style="padding: 40px 60px; direction: rtl; font-family: 'Times New Roman', Arial, serif; color: #000; text-align: right; line-height: 1.8;">
+            
+            <div style="text-align: left; font-weight: bold; font-size: 20px; margin-bottom: 5px;">
+                ALMARASEM
+            </div>
+            <div style="text-align: center; margin-bottom: 30px;">
+                <h2 style="margin: 0; font-size: 22px; text-decoration: underline;">عقد عمل محدد المدة</h2>
             </div>
             
-            <p style="font-size: 16px; line-height: 2;">
-                إنه في يوم الموافق <strong>${new Date().toLocaleDateString('ar-EG')}</strong>، تم الاتفاق والتعاقد بين كل من:
-            </p>
-            
-            <p style="font-size: 16px; line-height: 2;">
-                <strong>الطرف الأول:</strong> شركة (اكتب اسم شركتك هنا) <br/>
-                <strong>الطرف الثاني:</strong> السيد/ة <strong>${req.employee_name}</strong> - الكود الوظيفي: <strong>${req.employee_code}</strong>
-            </p>
-            
-            <p style="font-size: 16px; line-height: 2;">
-                بموجب هذا العقد، تم الاتفاق على تجديد عقد العمل الخاص بالطرف الثاني للعمل بقسم (<strong>${req.department || '—'}</strong>).<br/>
-                وقد تم الاتفاق على أن تكون مدة التجديد: <strong>${req.renewal_months ? `${req.renewal_months} شهور` : 'حسب المتفق عليه'}</strong>.<br/>
-                تاريخ بداية العقد: <span style="font-weight: bold; color: #15803d;">${req.start_date || 'غير محدد'}</span> <br/>
-                تاريخ نهاية العقد: <span style="font-weight: bold; color: #dc2626;">${req.new_contract_end_date || 'غير محدد'}</span>
-            </p>
+            <div style="font-size: 16px; margin-bottom: 20px;">
+                انه في يوم : <strong>${dayName}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; الموافق : <strong>${fullDate}</strong><br/>
+                قد تحرر هذا العقد بين كل من :-
+            </div>
 
-            <br/><br/><br/><br/>
-            
-            <table style="width: 100%; text-align: center; font-size: 16px; margin-top: 50px;">
+            <div style="font-size: 16px; margin-bottom: 20px;">
+                <strong>أولاً : شركة المراسم لتنمية وادارة الاصول</strong><br/>
+                ويمثلها السيد : أسامه محمد زيدان عبدالله<br/>
+                ويشار اليه في هذا العقد <strong style="float: left;">بالطرف الأول</strong>
+            </div>
+
+            <div style="font-size: 16px; margin-bottom: 20px;">
+                <strong>ثانياً : السيد :</strong> <strong>${req.employee_name || '........................................'}</strong><br/>
+                العنوان : ${req.address || '....................................................................'}<br/>
+                بطاقة رقم : <strong>${req.national_id || '..............................'}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; محافظة الميلاد : ${req.birth_gov || '..............'}<br/>
+                ويشار اليه في هذا العقد <strong style="float: left;">بالطرف الثاني</strong>
+            </div>
+
+            <div style="font-size: 16px; margin-bottom: 20px;">
+                <strong>تمهيد :</strong><br/>
+                حيث أن الشركة تقوم ببعض العمليات المؤقته في إدارة / مشروع : <strong>${req.department || '.........................'}</strong><br/>
+                مما يستلزم ذلك إستخدام بعض الموظفين للعمل، ومن المتفق عليه بين الطرفين المتعاقدين أن هذا العقد ينتهى بأنتهاء مدته أو بإنتهاء المشروع أو بإنتهاء عمل الموظف أيهما أقل طبقاً لما يراه الطرف الأول سواء بالنقل الى مشروع أخر أو إنهاء الخدمة.<br/>
+                وعلى ذلك فقد إتفق الطرفان على ما يأتي :
+            </div>
+
+            <div style="font-size: 15px; margin-bottom: 20px; text-align: justify;">
+                1- إعتبار هذا التمهيد السابق جزء لا يتجزء من هذا العقد.<br/>
+                2- مدة هذا العقد تبدأ من <strong>${req.start_date || '................'}</strong> وتنتهى في <strong>${req.new_contract_end_date || '................'}</strong>.<br/>
+                3- ينتهى هذا العقد بانتهاء مدته أو بانتهاء العمل الموكل للموظف أى المدتين أقرب أو أقل طبقا لما يراه الطرف الأول دون التزام الطرف الأول بأداء لأى مكافأة أو تعويض عدا ما يقرره قانون العمل المصرى رقم 12 لسنة 2003.<br/>
+                4- يجدد هذا العقد بإخطار كتابي قبل تاريخ إنتهائه بشهر واحد على الأقل.<br/>
+                5- يعمل الطرف الثاني بمهنة : <strong>${req.job_title || '.........................'}</strong> بمرتب وقدره : <strong>${req.salary ? req.salary + ' جنيه' : '.........................'}</strong><br/>
+                (${req.salary_in_words || '.........................................................'}) فقط لا غير.<br/>
+                6- يقر الطرف الثاني أن محله المختار هو العنوان الموضح بصدر هذا العقد وكل خطاب أو إعلان يرسل له عليه يعتبر قانونيا ما لم يخطر الشركة بكتاب بتغيير عنوانه.<br/>
+                7- يخضع هذا العقد لأحكام قانون العمل رقم 12 لسنة 2003 ولائحتى العمل الداخلية والجزاءات المعمول بها حاليا أو مستقبلا وهما يعتبران جزء لا يتجزء من هذا العقد.<br/>
+                8- يحق للطرف الأول أن يطلب من الطرف الثاني العمل في أي مشروع / فرع للشركة بداخل جمهورية مصر العربية أو خارجها، وكذلك تغيير مواقيت بدء وانتهاء فترة العمل الرسمية (الورديات) وذلك وفقا لمقتضيات العمل التي يقدرها الطرف الأول.<br/>
+                9- لا يحق لأي من الطرفين إنهاء هذا العقد إلا بعد إخطار الطرف الآخر بمدة لا تقل عن شهر من رغبته في الإنهاء.<br/>
+                10- حرر هذا العقد من أربع نسخ لكل طرف نسخة والنسخة الثالثة للتأمينات الاجتماعية والنسخة الرابعة الى الجهة الادارية المختصة.
+            </div>
+
+            <table style="width: 100%; text-align: center; font-size: 16px; margin-top: 40px; font-weight: bold;">
                 <tr>
-                    <td style="width: 50%;"><strong>توقيع الطرف الأول (الشركة)</strong></td>
-                    <td style="width: 50%;"><strong>توقيع الطرف الثاني (الموظف)</strong></td>
+                    <td style="width: 50%;">الطرف الأول</td>
+                    <td style="width: 50%;">الطرف الثاني<br/><span style="font-size: 12px; font-weight: normal;">استلمت نسخه من العقد</span></td>
                 </tr>
                 <tr>
-                    <td style="padding-top: 50px;">.......................................</td>
-                    <td style="padding-top: 50px;">.......................................</td>
+                    <td style="padding-top: 60px;">.......................................</td>
+                    <td style="padding-top: 60px;">.......................................</td>
                 </tr>
             </table>
+
+            <div style="margin-top: 40px; font-size: 12px; text-align: left; color: #555;">
+                كود الموظف: ${req.employee_code || '.........'} <br/>
+                FM-HR-ER-024
+            </div>
         </div>
       `;
 
-      // إعدادات ملف الـ PDF
       const opt = {
-        margin: 10,
-        filename: `عقد_عمل_${req.employee_name}.pdf`,
+        margin: 0,
+        filename: `عقد_عمل_${req.employee_name}_${req.employee_code}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2 },
         jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      // تحويل التصميم إلى PDF وتنزيله
       html2pdf().from(element).set(opt).save();
 
     } catch (error) {
@@ -224,12 +254,11 @@ export default function SignaturesPage() {
                   
                   <td style={{ padding: '8px 10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
                     
-                    {/* 🌟 الزر الجديد لإنشاء الـ PDF */}
                     <button 
                       onClick={() => handleGeneratePDF(req)} 
                       style={{ background: '#0284c7', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}
                     >
-                      📄 إنشاء العقد PDF
+                      📄 طباعة العقد PDF
                     </button>
 
                     {req.signature_status !== 'تم التوقيع' ? (
