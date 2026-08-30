@@ -67,21 +67,23 @@ export default function RenewalsPage() {
   const countRejected = requests.filter(r => r.status === 'Rejected').length;
   const countAll = requests.length;
 
-  // حساب تاريخ النهاية الجديد
-  const calculateNewEndDate = (oldDateStr: string, monthsToAdd: number) => {
-    if (!oldDateStr) return null;
-    const date = new Date(oldDateStr);
+  // 🌟 (تم التعديل) حساب تاريخ النهاية الجديد ليقبل التواريخ الفارغة
+  const calculateNewEndDate = (oldDateStr: string | null | undefined, monthsToAdd: number) => {
+    const dateStr = oldDateStr || new Date().toISOString().split('T')[0]; // استخدام اليوم كبديل
+    const date = new Date(dateStr);
     if (isNaN(date.getTime())) return null;
     date.setMonth(date.getMonth() + monthsToAdd);
     return date.toISOString().split('T')[0]; 
   };
 
-  // حساب تاريخ البداية الجديد (اليوم التالي لانتهاء العقد القديم)
-  const calculateNewStartDate = (oldDateStr: string) => {
-    if (!oldDateStr) return null;
+  // 🌟 (تم التعديل) حساب تاريخ البداية الجديد ليقبل التواريخ الفارغة
+  const calculateNewStartDate = (oldDateStr: string | null | undefined) => {
+    if (!oldDateStr) {
+      return new Date().toISOString().split('T')[0]; // إذا لم يكن له تاريخ قديم، يبدأ العقد اليوم
+    }
     const date = new Date(oldDateStr);
     if (isNaN(date.getTime())) return null;
-    date.setDate(date.getDate() + 1);
+    date.setDate(date.getDate() + 1); // يبدأ في اليوم التالي لانتهاء العقد القديم
     return date.toISOString().split('T')[0]; 
   };
 
@@ -103,7 +105,7 @@ export default function RenewalsPage() {
           new_contract_end_date: newEndDate
         }).eq('request_id', req.request_id);
 
-        if (reqError) throw reqError; // إجبار الكود على التوقف وإظهار الخطأ
+        if (reqError) throw reqError;
 
         // 2. تحديث بيانات الموظف (البداية والنهاية)
         if (newEndDate && newStartDate) {
@@ -149,7 +151,7 @@ export default function RenewalsPage() {
 
       setSelectedIds([]);
       setApprovalModal({ isOpen: false, type: 'single' });
-      await fetchRequests(); // جلب البيانات الجديدة
+      await fetchRequests(); 
 
     } catch (err: any) {
       alert('حدث خطأ أثناء الاعتماد أو تحديث بيانات الموظف: ' + err.message);
@@ -323,7 +325,6 @@ export default function RenewalsPage() {
               {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
             </h3>
             
-            {/* التعديل تم هنا لإصلاح خطأ ESLint الخاص بعلامات التنصيص */}
             <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
               سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. وسيتحول الطلب تلقائياً إلى السجلات &quot;المعتمدة&quot; لانتظار توقيع الموظف.
             </p>
