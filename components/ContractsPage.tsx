@@ -33,14 +33,14 @@ export default function ContractsPage() {
   const [newContractStartDate, setNewContractStartDate] = useState('');
   const [newContractEndDate, setNewContractEndDate] = useState('');
   const [newContractType, setNewContractType] = useState('محدد المدة');
-  const [empSearchTerm, setEmpSearchTerm] = useState(''); // حالة البحث
-  const [showEmpDropdown, setShowEmpDropdown] = useState(false); // إظهار وإخفاء قائمة البحث
+  const [empSearchTerm, setEmpSearchTerm] = useState(''); 
+  const [showEmpDropdown, setShowEmpDropdown] = useState(false); 
 
   // حالة نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
 
-  // 🌟 حالات نافذة التعديل المباشر للعقد
+  // حالات نافذة التعديل المباشر للعقد
   const [editModal, setEditModal] = useState<{ isOpen: boolean; emp?: any }>({ isOpen: false });
   const [editContractType, setEditContractType] = useState('');
   const [editStartDate, setEditStartDate] = useState('');
@@ -157,13 +157,11 @@ export default function ContractsPage() {
     return daysA - daysB;
   });
 
-  // إحصائيات الكروت العلوية
   const totalFixedContracts = employees.filter(e => e.contract_type?.includes('محدد')).length;
   const overAgeContracts = employees.filter(e => e.contract_type?.includes('فوق السن')).length;
   const expiringSoonCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
   const expiredCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d < 0; }).length;
 
-  // دوال التحديد (Checkboxes)
   const toggleSelection = (code: string) => {
     setSelectedEmpCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   };
@@ -187,7 +185,6 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  // 🌟 دالة فتح نافذة التعديل
   const openEditModal = (emp: any) => {
     setEditContractType(emp.contract_type || 'محدد المدة');
     setEditStartDate(emp.contract_start_date || '');
@@ -200,7 +197,6 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
-  // دالة إنهاء التعاقد
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى اختيار الموظف.');
@@ -213,7 +209,6 @@ export default function ContractsPage() {
     else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); fetchData(); }
   };
 
-  // 🌟 دالة حفظ التعديل المباشر للعقد
   const handleEditContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModal.emp) return;
@@ -236,7 +231,7 @@ export default function ContractsPage() {
     }
   };
 
-  // دالة إنشاء عقد جديد كلياً
+  // ✅ تم إصلاح هذه الدالة لمنع الخطأ
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى اختيار الموظف من القائمة.');
@@ -255,8 +250,7 @@ export default function ContractsPage() {
       department: emp.department,
       job_title: emp.job_title,
       company: emp.company,
-      contract_start_date: newContractStartDate,
-      contract_end_date: newContractStartDate,
+      contract_end_date: newContractStartDate, // استخدام تاريخ البداية هنا للعرض في PDF
       new_contract_end_date: newContractEndDate,
       status: 'Pending',
       signature_status: 'قيد التوقيع',
@@ -269,9 +263,10 @@ export default function ContractsPage() {
       return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
     }
 
-    // التحديث التلقائي لنوع العقد وتاريخ النهاية في سجل الموظف
+    // تحديث بيانات الموظف (تم إضافة تحديث contract_start_date هنا)
     await supabase.from('employees').update({ 
       contract_type: newContractType, 
+      contract_start_date: newContractStartDate,
       contract_end_date: newContractEndDate 
     }).eq('employee_code', emp.employee_code);
 
@@ -487,7 +482,6 @@ export default function ContractsPage() {
                     <td style={{ padding: '10px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '10px' }}><span style={{ color: statusInfo.color }}>{statusInfo.text}</span></td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      {/* 🌟 زر إنشاء الطلب وزر التعديل جنباً إلى جنب */}
                       <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                         <button
                           onClick={() => openSingleRenewal(emp)}
@@ -540,7 +534,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد مع خاصية البحث */}
+      {/* نافذة إنشاء عقد جديد مع خاصية البحث */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -550,7 +544,6 @@ export default function ContractsPage() {
             </div>
             <form onSubmit={handleCreateBrandNewContract}>
               
-              {/* حقل البحث بالاسم أو الكود */}
               <div style={{ marginBottom: '16px', position: 'relative' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
                   اختر الموظف (ابحث بالاسم أو الكود) *
@@ -569,7 +562,6 @@ export default function ContractsPage() {
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}
                 />
 
-                {/* القائمة المنسدلة للبحث */}
                 {showEmpDropdown && (
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 9 }} onClick={() => setShowEmpDropdown(false)} />
@@ -705,7 +697,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة تعديل بيانات العقد المباشرة */}
+      {/* 🌟 نافذة تعديل بيانات العقد المباشرة */}
       {editModal.isOpen && editModal.emp && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
