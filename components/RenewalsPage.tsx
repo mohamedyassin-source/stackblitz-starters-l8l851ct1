@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import * as XLSX from 'xlsx';
 
 export default function RenewalsPage() {
   const [requests, setRequests] = useState<any[]>([]);
@@ -14,20 +15,18 @@ export default function RenewalsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(''); // 🌟 فلتر شهر وسنة بداية التجديد
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // حالات نافذة الاعتماد
   const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean, type: 'single' | 'bulk', req?: any }>({ isOpen: false, type: 'single' });
   const [confirmedMonths, setConfirmedMonths] = useState<number>(12);
 
-  // 🌟 حالة الطباعة
-  const [printData, setPrintData] = useState<any[] | null>(null);
-
   useEffect(() => {
     fetchRequests();
   }, []);
 
-  // تفريغ التحديد عند تغيير التاب
+  // تفريغ التحديد التلقائي عند تغيير التاب
   useEffect(() => {
     setSelectedIds([]);
   }, [activeTab]);
@@ -48,6 +47,25 @@ export default function RenewalsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
+  // 🌟 (إصلاح جذري لحساب التواريخ لتتوافق مع الشهور 28 أو 30 أو 31 يوم)
+  const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
+    if (!oldEndDateStr) {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    const d = new Date(oldEndDateStr);
+    d.setDate(d.getDate() + 1); // البداية هي اليوم التالي لانتهاء العقد القديم
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const calculateNewEndDateFromStart = (startDateStr: string | null, monthsToAdd: number) => {
+    if (!startDateStr) return null;
+    const d = new Date(startDateStr);
+    d.setMonth(d.getMonth() + monthsToAdd); // إضافة الشهور
+    d.setDate(d.getDate() - 1); // خصم يوم واحد ليكون نهاية العقد قانونية
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
   const compsList = Array.from(new Set(requests.map(r => r.company).filter(Boolean)));
 
@@ -57,7 +75,15 @@ export default function RenewalsPage() {
     const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
     const matchesDept = !selectedDept || req.department === selectedDept;
     const matchesComp = !selectedCompany || req.company === selectedCompany;
-    return matchesSearch && matchesDept && matchesComp;
+    
+    // 🌟 فلترة بشهر التجديد الجديد (مثل: 2026-09)
+    let matchesMonth = true;
+    if (selectedMonth) {
+      const newStart = calculateNewStartDate(req.contract_end_date);
+      matchesMonth = newStart.startsWith(selectedMonth);
+    }
+
+    return matchesSearch && matchesDept && matchesComp && matchesMonth;
   });
 
   const sortedRequests = [...filteredRequests].sort((a, b) => {
@@ -73,31 +99,13 @@ export default function RenewalsPage() {
   const countRejected = requests.filter(r => r.status === 'Rejected').length;
   const countAll = requests.length;
 
-  const calculateNewEndDate = (oldDateStr: string | null | undefined, monthsToAdd: number) => {
-    const dateStr = oldDateStr || new Date().toISOString().split('T')[0]; 
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return null;
-    date.setMonth(date.getMonth() + monthsToAdd);
-    return date.toISOString().split('T')[0]; 
-  };
-
-  const calculateNewStartDate = (oldDateStr: string | null | undefined) => {
-    if (!oldDateStr) {
-      return new Date().toISOString().split('T')[0];
-    }
-    const date = new Date(oldDateStr);
-    if (isNaN(date.getTime())) return null;
-    date.setDate(date.getDate() + 1); 
-    return date.toISOString().split('T')[0]; 
-  };
-
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
       if (approvalModal.type === 'single' && approvalModal.req) {
         const req = approvalModal.req;
-        const newEndDate = calculateNewEndDate(req.contract_end_date, confirmedMonths);
         const newStartDate = calculateNewStartDate(req.contract_end_date);
+        const newEndDate = calculateNewEndDateFromStart(newStartDate, confirmedMonths);
 
         const { error: reqError } = await supabase.from('renewal_requests').update({
           status: 'Approved',
@@ -121,8 +129,8 @@ export default function RenewalsPage() {
       } else if (approvalModal.type === 'bulk') {
         const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
         const updatePromises = reqsToApprove.map(async (req) => {
-          const newEndDate = calculateNewEndDate(req.contract_end_date, confirmedMonths);
           const newStartDate = calculateNewStartDate(req.contract_end_date);
+          const newEndDate = calculateNewEndDateFromStart(newStartDate, confirmedMonths);
           
           const { error: reqError } = await supabase.from('renewal_requests').update({
             status: 'Approved',
@@ -175,39 +183,56 @@ export default function RenewalsPage() {
     setActionLoading(false);
   };
 
-  // 🌟 دالة تجهيز العقود للطباعة
-  const handlePreparePrint = async () => {
+  // 🌟 دالة تصدير الإكسيل (محمية ومخصصة للطلبات المعتمدة فقط)
+  const handleExportApprovedToExcel = async () => {
     if (selectedIds.length === 0) return alert('يرجى تحديد طلبات أولاً.');
     setActionLoading(true);
 
     try {
-      const selectedReqs = requests.filter(r => selectedIds.includes(r.request_id));
+      // 🔒 تأكيد أمني: فلترة الطلبات المحددة للتأكد إن حالتها Approved فقط
+      const selectedReqs = requests.filter(r => selectedIds.includes(r.request_id) && r.status === 'Approved');
+      
+      if (selectedReqs.length === 0) {
+        setActionLoading(false);
+        return alert('⚠️ لا يمكن تصدير هذا الكشف. يرجى التأكد من تحديد طلبات معتمدة فقط من الجدول.');
+      }
+
       const empCodes = selectedReqs.map(r => r.employee_code);
 
       // جلب بيانات الرقم القومي للموظفين المحددين
       const { data: emps, error } = await supabase.from('employees').select('employee_code, national_id').in('employee_code', empCodes);
       if (error) throw error;
 
-      // دمج البيانات
-      const mergedData = selectedReqs.map(req => {
+      // دمج وتجهيز البيانات لشيت الإكسيل
+      const exportData = selectedReqs.map(req => {
         const empDetails = emps?.find(e => e.employee_code === req.employee_code);
+        const newStart = calculateNewStartDate(req.contract_end_date);
+        
         return {
-          ...req,
-          national_id: empDetails?.national_id || '.......................',
-          new_start_date: calculateNewStartDate(req.contract_end_date)
+          'رقم الطلب': req.request_id,
+          'كود الموظف': req.employee_code,
+          'اسم الموظف': req.employee_name,
+          'الرقم القومي': empDetails?.national_id || '—',
+          'الإدارة': req.department || '—',
+          'الوظيفة': req.job_title || '—',
+          'الشركة': req.company || '—',
+          'تاريخ نهاية العقد القديم': req.contract_end_date || '—',
+          'تاريخ بداية العقد الجديد': newStart,
+          'مدة التجديد (شهور)': req.renewal_months || 12,
+          'تاريخ نهاية العقد الجديد': req.new_contract_end_date || calculateNewEndDateFromStart(newStart, req.renewal_months || 12),
         };
       });
 
-      setPrintData(mergedData);
-      
-      // فتح شاشة الطباعة بعد اكتمال التحميل بـ نصف ثانية
-      setTimeout(() => {
-        window.print();
-        setActionLoading(false);
-      }, 500);
+      // إنشاء الملف وتنزيله
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'عقود التجديد المعتمدة');
+      XLSX.writeFile(wb, `كشف_عقود_التجديد_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+      setActionLoading(false);
 
     } catch (err: any) {
-      alert('حدث خطأ أثناء تجهيز الطباعة: ' + err.message);
+      alert('حدث خطأ أثناء تجهيز الإكسيل: ' + err.message);
       setActionLoading(false);
     }
   };
@@ -223,17 +248,7 @@ export default function RenewalsPage() {
 
   return (
     <div style={{ paddingBottom: '40px' }}>
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #contract-print-area, #contract-print-area * { visibility: visible; }
-          #contract-print-area { position: absolute; left: 0; top: 0; width: 100%; direction: rtl; background: #fff !important; color: #000 !important; }
-          .no-print { display: none !important; }
-          .page-break { page-break-after: always; padding: 40px; }
-        }
-      `}</style>
-
-      <div className="no-print">
+      <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>طلبات التجديد</h3>
@@ -244,7 +259,7 @@ export default function RenewalsPage() {
               + إنشاء طلب جديد
             </button>
             
-            {/* 🌟 الزر يتغير حسب التاب النشط */}
+            {/* الزر يتغير حسب التاب النشط */}
             {activeTab === 'Pending' && (
               <button onClick={() => {
                 if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
@@ -254,9 +269,10 @@ export default function RenewalsPage() {
               </button>
             )}
 
+            {/* 🌟 زر استخراج الإكسيل */}
             {activeTab === 'Approved' && (
-              <button onClick={handlePreparePrint} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
-                {actionLoading ? 'جاري التجهيز...' : `🖨️ طباعة العقود للمحددين (${selectedIds.length})`}
+              <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#059669', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+                {actionLoading ? 'جاري التجهيز...' : `📥 تصدير كشف عقود (${selectedIds.length})`}
               </button>
             )}
           </div>
@@ -283,11 +299,26 @@ export default function RenewalsPage() {
 
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '220px' }} />
-          <input list="deptList" placeholder="الإدارة (اكتب للبحث)..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '160px' }} />
+          
+          <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-          <input list="compList" placeholder="الشركة (اكتب للبحث)..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '160px' }} />
+          
+          <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+
+          {/* 🌟 فلتر شهر وسنة التجديد */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--muted)', marginLeft: '6px' }}>شهر البداية:</span>
+            <input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={e => setSelectedMonth(e.target.value)} 
+              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} 
+            />
+          </div>
+
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+          
           <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>معروض: <span style={{ color: 'var(--navy-950)' }}>{sortedRequests.length}</span> طلب</div>
         </div>
 
@@ -381,6 +412,16 @@ export default function RenewalsPage() {
               <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
                 سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. وسيتحول الطلب تلقائياً إلى السجلات &quot;المعتمدة&quot; لانتظار توقيع الموظف.
               </p>
+              
+              {/* عرض تواريخ العقد للتأكيد (للموظف الواحد فقط) */}
+              {approvalModal.type === 'single' && approvalModal.req && (
+                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#334155' }}>
+                  <div style={{ marginBottom: '6px' }}><strong>تاريخ النهاية القديم:</strong> {approvalModal.req.contract_end_date || 'غير مسجل'}</div>
+                  <div style={{ marginBottom: '6px', color: '#059669' }}><strong>تاريخ البداية الجديد:</strong> {calculateNewStartDate(approvalModal.req.contract_end_date)}</div>
+                  <div style={{ color: '#059669' }}><strong>تاريخ النهاية المتوقع:</strong> {calculateNewEndDateFromStart(calculateNewStartDate(approvalModal.req.contract_end_date), confirmedMonths)}</div>
+                </div>
+              )}
+
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 'bold' }}>المدة المعتمدة للتجديد:</label>
                 <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
@@ -402,74 +443,6 @@ export default function RenewalsPage() {
           </div>
         )}
       </div>
-
-      {/* 🌟 منطقة الطباعة للملفات المجمعة */}
-      {printData && (
-        <div id="contract-print-area">
-          {printData.map((data, index) => (
-            <div key={index} className="page-break" style={{ fontFamily: 'Arial, sans-serif', color: '#000' }}>
-              
-              {/* ترويسة العقد */}
-              <div style={{ textAlign: 'center', marginBottom: '40px' }}>
-                <h1 style={{ margin: 0, fontSize: '28px', letterSpacing: '2px' }}>ALMARASEM</h1>
-                <h2 style={{ margin: '10px 0 0', fontSize: '22px', textDecoration: 'underline' }}>عقد عمل محدد المدة</h2>
-              </div>
-
-              <div style={{ fontSize: '16px', lineHeight: '2.4', textAlign: 'justify' }}>
-                <div style={{ marginBottom: '20px' }}>
-                  انه في يوم ........................... الموافق : ...........................
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <strong>قد تحرر هذا العقد بين كل من :-</strong><br/>
-                  <strong>أولاً :</strong> شركة المراسم لتنمية وادرة الاصول<br/>
-                  ويمثلها السيد : أسامه محمد زیدان عبدالله <span style={{ float: 'left' }}>(ويشار اليه في هذا العقد بالطرف الأول)</span>
-                </div>
-
-                <div style={{ marginBottom: '30px' }}>
-                  <strong>ثانياً :</strong> السيد : <strong>{data.employee_name}</strong><br/>
-                  العنوان : ........................................................................................<br/>
-                  بطاقة رقم : <strong>{data.national_id}</strong> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; محافظة الميلاد : ...........................<br/>
-                  <span style={{ display: 'block', textAlign: 'left' }}>(ويشار اليه في هذا العقد بالطرف الثاني)</span>
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <strong>تمهيد :</strong><br/>
-                  حيث أن الشركة تقوم ببعض العمليات المؤقته في إدارة / مشروع <strong>({data.department || '.......................'})</strong>، مما يستلزم ذلك إستخدام بعض الموظفين للعمل، ومن المتفق عليه بين الطرفين المتعاقدين أن هذا العقد ينتهى بأنتهاء مدته أو بإنتهاء المشروع أو بإنتهاء عمل الموظف أيهما أقل طبقاً لما يراه الطرف الأول سواء بالنقل إلى مشروع أخر أو إنهاء الخدمة.
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  <strong>وعلى ذلك فقد إتفق الطرفان على ما يأتي :</strong><br/>
-                  1- إعتبار هذا التمهيد السابق جزء لا يتجزء من هذا العقد.<br/>
-                  2- مدة هذا العقد تبدأ من <strong>{data.new_start_date}</strong> وتنتهى في <strong>{data.new_contract_end_date}</strong>.<br/>
-                  3- ينتهى هذا العقد بانتهاء مدته أو بانتهاء العمل الموكل للموظف أى المدتين أقرب أو أقل طبقا لما يراه الطرف الأول دون التزام الطرف الأول بأداء لأى مكافأة أو تعويض عدا ما يقرره قانون العمل المصرى رقم 14 لسنة 2025.<br/>
-                  4- يجدد هذا العقد بإخطار كتابي قبل تاريخ إنتهائه بشهر واحد على الأقل.<br/>
-                  5- يعمل الطرف الثاني بمهنة : <strong>{data.job_title || '.......................'}</strong> بمرتب وقدره .....................................................<br/>
-                  6- يقر الطرف الثاني أن محله المختار هو العنوان الموضح بصدر هذا العقد وكل خطاب أو إعلان يرسل له عليه يعتبر قانونيا ما لم يخطر الشركة بكتاب بتغيير عنوانه.<br/>
-                  7- يخضع هذا العقد لأحكام قانون العمل رقم 14 لسنة 2025 ولائحتى العمل الداخلية والجزاءات المعمول بها حاليا أو مستقبلا وهما يعتبران جزء لا يتجزء من هذا العقد.<br/>
-                  8- يحق للطرف الأول أن يطلب من الطرف الثاني العمل في أي مشروع / فرع للشركة بداخل جمهورية مصر العربية أو خارجها، وكذلك تغيير مواقيت بدء وانتهاء فترة العمل الرسمية (الورديات) وذلك وفقا لمقتضيات العمل التي يقدرها الطرف الأول.<br/>
-                  9- لا يحق لأي من الطرفين إنهاء هذا العقد إلا بعد إخطار الطرف الآخر بمدة لا تقل عن شهر من رغبته في الإنهاء.<br/>
-                  10- حرر هذا العقد من أربع نسخ لكل طرف نسخة والنسخة الثالثة للتأمينات الاجتماعية والنسخة الرابعة الى الجهة الادارية المختصة.
-                </div>
-              </div>
-
-              {/* التوقيعات */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', marginTop: '60px', textAlign: 'center', fontSize: '18px', fontWeight: 'bold' }}>
-                <div>الطرف الأول</div>
-                <div>الطرف الثاني<br/><span style={{ fontSize: '14px', fontWeight: 'normal', display: 'block', marginTop: '10px' }}>استلمت نسخه من العقد</span></div>
-              </div>
-
-              {/* تذييل الصفحة */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '120px', fontSize: '12px', color: '#555' }}>
-                <div>FM-HR-ER-024</div>
-                <div style={{ fontFamily: 'monospace', fontWeight: 'bold' }}>{data.employee_code}</div>
-              </div>
-
-            </div>
-          ))}
-        </div>
-      )}
-
     </div>
   );
 }
