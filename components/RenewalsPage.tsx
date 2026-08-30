@@ -1,10 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAppData } from '@/lib/DataContext';
 
 export default function RenewalsPage() {
-  const { renewals: requests, loading, refresh: fetchRequests } = useAppData();
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
   // حالات Slicers
@@ -16,11 +16,21 @@ export default function RenewalsPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // 🌟 حالات نافذة الاعتماد المتقدمة
-  const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean; type: 'single' | 'bulk'; req?: any }>({ isOpen: false, type: 'single' });
-  const [renewalMode, setRenewalMode] = useState<'months' | 'custom'>('months');
+  // حالات نافذة الاعتماد
+  const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean, type: 'single' | 'bulk', req?: any }>({ isOpen: false, type: 'single' });
   const [confirmedMonths, setConfirmedMonths] = useState<number>(12);
-  const [customEndDate, setCustomEndDate] = useState<string>('');
+
+  useEffect(() => {
+    fetchRequests();
+  }, []);
+
+  const fetchRequests = async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('renewal_requests').select('*');
+    if (error) console.error("Error fetching requests:", error.message);
+    if (data) setRequests(data);
+    setLoading(false);
+  };
 
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;
@@ -43,7 +53,7 @@ export default function RenewalsPage() {
     return matchesSearch && matchesDept && matchesComp;
   });
 
-  // الترتيب الذكي
+  // الترتيب الذكي (Sorting) بناءً على الأيام المتبقية
   const sortedRequests = [...filteredRequests].sort((a, b) => {
     const daysA = getDaysRemaining(a.contract_end_date);
     const daysB = getDaysRemaining(b.contract_end_date);
@@ -57,80 +67,92 @@ export default function RenewalsPage() {
   const countRejected = requests.filter(r => r.status === 'Rejected').length;
   const countAll = requests.length;
 
+  // حساب تاريخ النهاية الجديد
   const calculateNewEndDate = (oldDateStr: string, monthsToAdd: number) => {
-    if (!oldDateStr) return '';
+    if (!oldDateStr) return null;
     const date = new Date(oldDateStr);
-    if (isNaN(date.getTime())) return '';
+    if (isNaN(date.getTime())) return null;
     date.setMonth(date.getMonth() + monthsToAdd);
     return date.toISOString().split('T')[0]; 
   };
 
-  // فتح نافذة الاعتماد مع تهيئة القيمة
-  const openApprovalModal = (type: 'single' | 'bulk', req?: any) => {
-    setRenewalMode('months');
-    setConfirmedMonths(req?.renewal_months || 12);
-    setCustomEndDate('');
-    setApprovalModal({ isOpen: true, type, req });
+  // حساب تاريخ البداية الجديد (اليوم التالي لانتهاء العقد القديم)
+  const calculateNewStartDate = (oldDateStr: string) => {
+    if (!oldDateStr) return null;
+    const date = new Date(oldDateStr);
+    if (isNaN(date.getTime())) return null;
+    date.setDate(date.getDate() + 1);
+    return date.toISOString().split('T')[0]; 
   };
 
   // تنفيذ الاعتماد
   const handleConfirmApproval = async () => {
-    if (renewalMode === 'custom' && !customEndDate) {
-      return alert('يرجى تحديد تاريخ انتهاء العقد المخصص.');
-    }
-
     setActionLoading(true);
     
     try {
       if (approvalModal.type === 'single' && approvalModal.req) {
         const req = approvalModal.req;
-        const newEndDate = renewalMode === 'months' 
-          ? calculateNewEndDate(req.contract_end_date, confirmedMonths) 
-          : customEndDate;
+        const newEndDate = calculateNewEndDate(req.contract_end_date, confirmedMonths);
+        const newStartDate = calculateNewStartDate(req.contract_end_date);
 
-        await supabase.from('renewal_requests').update({
+        // 1. تحديث حالة الطلب
+        const { error: reqError } = await supabase.from('renewal_requests').update({
           status: 'Approved',
           signature_status: 'في انتظار توقيع الموظف',
-          renewal_months: renewalMode === 'months' ? confirmedMonths : null,
+          renewal_months: confirmedMonths,
           new_contract_end_date: newEndDate
         }).eq('request_id', req.request_id);
 
-        if (newEndDate) {
-          await supabase.from('employees').update({ contract_end_date: newEndDate }).eq('employee_code', req.employee_code);
+        if (reqError) throw reqError; // إجبار الكود على التوقف وإظهار الخطأ
+
+        // 2. تحديث بيانات الموظف (البداية والنهاية)
+        if (newEndDate && newStartDate) {
+          const { error: empError } = await supabase.from('employees').update({ 
+            contract_start_date: newStartDate,
+            contract_end_date: newEndDate 
+          }).eq('employee_code', req.employee_code);
+
+          if (empError) throw empError;
         }
 
-        alert(`تم اعتماد الطلب وتمديد العقد حتى ${newEndDate} ✅`);
+        alert(`تم اعتماد الطلب وتحديث العقد بنجاح: \n يبدأ في: ${newStartDate} \n ينتهي في: ${newEndDate} ✅`);
         
       } else if (approvalModal.type === 'bulk') {
         const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
         
         const updatePromises = reqsToApprove.map(async (req) => {
-          const newEndDate = renewalMode === 'months' 
-            ? calculateNewEndDate(req.contract_end_date, confirmedMonths) 
-            : customEndDate;
+          const newEndDate = calculateNewEndDate(req.contract_end_date, confirmedMonths);
+          const newStartDate = calculateNewStartDate(req.contract_end_date);
           
-          await supabase.from('renewal_requests').update({
+          const { error: reqError } = await supabase.from('renewal_requests').update({
             status: 'Approved',
             signature_status: 'في انتظار توقيع الموظف',
-            renewal_months: renewalMode === 'months' ? confirmedMonths : null,
+            renewal_months: confirmedMonths,
             new_contract_end_date: newEndDate
           }).eq('request_id', req.request_id);
 
-          if (newEndDate) {
-            await supabase.from('employees').update({ contract_end_date: newEndDate }).eq('employee_code', req.employee_code);
+          if (reqError) throw reqError;
+
+          if (newEndDate && newStartDate) {
+            const { error: empError } = await supabase.from('employees').update({ 
+              contract_start_date: newStartDate,
+              contract_end_date: newEndDate 
+            }).eq('employee_code', req.employee_code);
+
+            if (empError) throw empError;
           }
         });
 
         await Promise.all(updatePromises);
-        alert(`تم اعتماد ${reqsToApprove.length} طلب تجديد بنجاح ✅`);
+        alert(`تم اعتماد ${reqsToApprove.length} طلب تجديد وتحديث بيانات الموظفين بنجاح ✅`);
       }
 
       setSelectedIds([]);
       setApprovalModal({ isOpen: false, type: 'single' });
-      await fetchRequests();
+      await fetchRequests(); // جلب البيانات الجديدة
 
     } catch (err: any) {
-      alert('حدث خطأ أثناء الاعتماد: ' + err.message);
+      alert('حدث خطأ أثناء الاعتماد أو تحديث بيانات الموظف: ' + err.message);
     } finally {
       setActionLoading(false);
     }
@@ -141,13 +163,17 @@ export default function RenewalsPage() {
     if (!confirmReject) return;
     
     setActionLoading(true);
-    await supabase.from('renewal_requests').update({
+    const { error } = await supabase.from('renewal_requests').update({
       status: 'Rejected',
       signature_status: 'مرفوض'
     }).eq('request_id', requestId);
     
-    alert('تم رفض الطلب ❌');
-    fetchRequests();
+    if (error) {
+      alert('حدث خطأ أثناء رفض الطلب: ' + error.message);
+    } else {
+      alert('تم رفض الطلب بنجاح ❌');
+      fetchRequests();
+    }
     setActionLoading(false);
   };
 
@@ -164,7 +190,7 @@ export default function RenewalsPage() {
           </button>
           <button onClick={() => {
             if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
-            openApprovalModal('bulk');
+            setApprovalModal({ isOpen: true, type: 'bulk' });
           }} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
             ✅ اعتماد مجمع ({selectedIds.length})
           </button>
@@ -249,7 +275,9 @@ export default function RenewalsPage() {
                     <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{req.employee_code}</td>
                     <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.employee_name}</td>
                     <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{req.department || '—'}</td>
+                    
                     <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{req.contract_end_date || '—'}</td>
+                    
                     <td style={{ padding: '8px 10px' }}>
                       {days !== null ? (
                         <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', background: days < 0 ? '#fef2f2' : days <= 60 ? '#fff7ed' : '#dcfce7', color: days < 0 ? '#dc2626' : days <= 60 ? '#c2410c' : '#15803d' }}>
@@ -273,7 +301,7 @@ export default function RenewalsPage() {
                     <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                       {req.status === 'Pending' ? (
                         <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                          <button onClick={() => openApprovalModal('single', req)} style={{ background: '#15803d', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
+                          <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: '#15803d', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
                           <button onClick={() => handleReject(req.request_id)} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
                         </div>
                       ) : (
@@ -288,73 +316,37 @@ export default function RenewalsPage() {
         )}
       </div>
 
-      {/* 🌟 🆕 النافذة المنبثقة للاعتماد بنفس تصميم صفحة العقود */}
       {approvalModal.isOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-          <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
-            
-            {/* العنوان */}
-            <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: '#334155', textAlign: 'center', fontWeight: '800' }}>
-              {approvalModal.type === 'single' ? `اعتماد طلب تجديد لـ (${approvalModal.req?.employee_name})` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
+          <div style={{ width: '400px', background: 'var(--paper-card)', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 16px', fontSize: '15px', color: '#15803d' }}>
+              {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
             </h3>
+            
+            <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
+              سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. وسيتحول الطلب تلقائياً إلى السجلات "المعتمدة" لانتظار توقيع الموظف.
+            </p>
 
-            {/* شريط خيارات الراديو (تجديد بالشهور / تاريخ انتهاء مخصص) */}
-            <div style={{ background: '#fdfbf7', border: '1px solid #f1e9d2', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'months' ? '#856404' : '#64748b', cursor: 'pointer' }}>
-                <input type="radio" name="renewalMode" checked={renewalMode === 'months'} onChange={() => setRenewalMode('months')} style={{ accentColor: '#0d9488' }} />
-                تجديد بالشهور (تلقائي)
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'custom' ? '#856404' : '#64748b', cursor: 'pointer' }}>
-                <input type="radio" name="renewalMode" checked={renewalMode === 'custom'} onChange={() => setRenewalMode('custom')} style={{ accentColor: '#0d9488' }} />
-                تاريخ انتهاء مخصص
-              </label>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 'bold' }}>المدة المعتمدة للتجديد:</label>
+              <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
+                <option value={1}>شهر واحد (1)</option>
+                <option value={2}>شهران (2)</option>
+                <option value={3}>3 شهور (ربع سنوي)</option>
+                <option value={6}>6 شهور (نصف سنوي)</option>
+                <option value={9}>9 شهور</option>
+                <option value={12}>12 شهر (سنة كاملة)</option>
+              </select>
             </div>
 
-            {/* محتوى الاختيار 1: التجديد بالشهور (1, 2, 3, 6, 9, 12, 24, 36) */}
-            {renewalMode === 'months' && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>يرجى اختيار مدة التجديد بالشهور:</label>
-                <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold', background: '#fff' }}>
-                  <option value={1}>شهر واحد (1 شهر)</option>
-                  <option value={2}>شهران (2 شهر)</option>
-                  <option value={3}>3 شهور (ربع سنوي)</option>
-                  <option value={6}>6 شهور (نصف سنوي)</option>
-                  <option value={9}>9 شهور</option>
-                  <option value={12}>12 شهر (سنة كاملة)</option>
-                  <option value={24}>24 شهر (سنتين)</option>
-                  <option value={36}>36 شهر (3 سنوات)</option>
-                </select>
-              </div>
-            )}
-
-            {/* محتوى الاختيار 2: تاريخ انتهاء مخصص (تحديد يدوي) */}
-            {renewalMode === 'custom' && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>حدد تاريخ انتهاء العقد الجديد يدوياً:</label>
-                <input type="date" value={customEndDate} onChange={e => setCustomEndDate(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
-              </div>
-            )}
-
-            {/* عرض تاريخ الانتهاء المتوقع باللون الأخضر */}
-            {approvalModal.type === 'single' && (
-              <div style={{ textAlign: 'left', fontSize: '12px', marginBottom: '24px', direction: 'ltr' }}>
-                <span style={{ color: '#15803d', fontWeight: 'bold', fontFamily: 'monospace', fontSize: '13px' }}>
-                  {renewalMode === 'months' ? calculateNewEndDate(approvalModal.req?.contract_end_date, confirmedMonths) : (customEndDate || '—')}
-                </span>
-                <span style={{ color: '#64748b', fontWeight: 'bold', marginLeft: '6px' }}>:تاريخ الانتهاء المتوقع</span>
-              </div>
-            )}
-
-            {/* زراير الإلغاء والتأكيد */}
-            <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px', direction: 'rtl' }}>
-              <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: '#15803d', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                ✅ {actionLoading ? 'جاري الاعتماد...' : 'تأكيد الاعتماد والتجديد'}
-              </button>
-              <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#475569', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', color: 'var(--ink)' }}>
                 إلغاء
               </button>
+              <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
+                {actionLoading ? 'جاري الاعتماد...' : 'تأكيد الاعتماد ✅'}
+              </button>
             </div>
-
           </div>
         </div>
       )}
