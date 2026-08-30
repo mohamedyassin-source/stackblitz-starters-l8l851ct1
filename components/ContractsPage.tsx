@@ -13,6 +13,9 @@ export default function ContractsPage() {
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedType, setSelectedType] = useState('');
   const [expiryStatus, setExpiryStatus] = useState('');
+  
+  // 🌟 فلتر الكروت العلوية (Active Card)
+  const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'expired'>('all');
 
   // حالة التحديد المجمع (Checkboxes)
   const [selectedEmpCodes, setSelectedEmpCodes] = useState<string[]>([]);
@@ -140,13 +143,23 @@ export default function ContractsPage() {
   const filteredContracts = employees.filter((emp) => {
     const term = searchTerm.toLowerCase();
     const days = getDaysRemaining(emp.contract_end_date);
+    
+    // الفلاتر العادية
     const matchesSearch = !term || String(emp.employee_code).toLowerCase().includes(term) || String(emp.employee_name).toLowerCase().includes(term) || String(emp.department).toLowerCase().includes(term);
     const matchesDept = !selectedDept || emp.department === selectedDept;
     const matchesType = !selectedType || emp.contract_type === selectedType;
     let matchesExpiry = true;
     if (expiryStatus === 'expiring_60') matchesExpiry = days !== null && days <= 60 && days >= 0;
     if (expiryStatus === 'expired') matchesExpiry = days !== null && days < 0;
-    return matchesSearch && matchesDept && matchesType && matchesExpiry;
+
+    // 🌟 فلاتر الكروت التفاعلية
+    let matchesCard = true;
+    if (activeFilterCard === 'fixed') matchesCard = emp.contract_type?.includes('محدد');
+    if (activeFilterCard === 'overage') matchesCard = emp.contract_type?.includes('فوق السن');
+    if (activeFilterCard === 'expiring') matchesCard = days !== null && days <= 60 && days >= 0;
+    if (activeFilterCard === 'expired') matchesCard = days !== null && days < 0;
+
+    return matchesSearch && matchesDept && matchesType && matchesExpiry && matchesCard;
   });
 
   const sortedContracts = [...filteredContracts].sort((a, b) => {
@@ -157,10 +170,13 @@ export default function ContractsPage() {
     return daysA - daysB;
   });
 
-  const totalFixedContracts = employees.filter(e => e.contract_type?.includes('محدد')).length;
-  const overAgeContracts = employees.filter(e => e.contract_type?.includes('فوق السن')).length;
-  const expiringSoonCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
-  const expiredCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d < 0; }).length;
+  // إحصائيات الكروت العلوية (استبعاد المنهي تعاقدهم للأرقام الدقيقة)
+  const activeEmployees = employees.filter(e => e.contract_type !== 'إنهاء تعاقد');
+  const totalAll = activeEmployees.length;
+  const totalFixedContracts = activeEmployees.filter(e => e.contract_type?.includes('محدد')).length;
+  const overAgeContracts = activeEmployees.filter(e => e.contract_type?.includes('فوق السن')).length;
+  const expiringSoonCount = activeEmployees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
+  const expiredCount = activeEmployees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d < 0; }).length;
 
   const toggleSelection = (code: string) => {
     setSelectedEmpCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
@@ -231,7 +247,6 @@ export default function ContractsPage() {
     }
   };
 
-  // ✅ تم إصلاح هذه الدالة لمنع الخطأ
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى اختيار الموظف من القائمة.');
@@ -263,7 +278,6 @@ export default function ContractsPage() {
       return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
     }
 
-    // تحديث بيانات الموظف (تم إضافة تحديث contract_start_date هنا)
     await supabase.from('employees').update({ 
       contract_type: newContractType, 
       contract_start_date: newContractStartDate,
@@ -341,6 +355,44 @@ export default function ContractsPage() {
           #pdf-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; direction: rtl; background: #fff !important; color: #000 !important; }
           .no-print { display: none !important; }
         }
+
+        /* 🌟 تنسيقات الكروت الجديدة */
+        .stat-card {
+          background: #fff;
+          padding: 18px 20px;
+          border-radius: 16px;
+          border: 1px solid #e2e8f0;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+          position: relative;
+          overflow: hidden;
+        }
+        .stat-card:hover {
+          transform: translateY(-4px);
+          box-shadow: 0 12px 20px -8px rgba(0,0,0,0.12);
+          border-color: #cbd5e1;
+        }
+        
+        /* تأثيرات الحالة النشطة (Active) */
+        .stat-card.active-all { border: 2px solid #64748b; background: #f8fafc; }
+        .stat-card.active-fixed { border: 2px solid #3b82f6; background: #eff6ff; }
+        .stat-card.active-overage { border: 2px solid #8b5cf6; background: #faf5ff; }
+        .stat-card.active-expiring { border: 2px solid #f97316; background: #fff7ed; }
+        .stat-card.active-expired { border: 2px solid #ef4444; background: #fef2f2; }
+
+        .icon-box {
+          width: 44px;
+          height: 44px;
+          border-radius: 12px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 22px;
+        }
       `}</style>
 
       {/* الهيدر والزراير العلوية */}
@@ -382,24 +434,69 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* الكروت الإحصائية */}
-      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>العقود المحددة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>عقود محددة المدة</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{totalFixedContracts.toLocaleString()}</div>
+      {/* 🌟 الكروت التفاعلية الجديدة المفلترة */}
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px', direction: 'rtl' }}>
+        
+        {/* كارت الكل */}
+        <div className={`stat-card ${activeFilterCard === 'all' ? 'active-all' : ''}`} onClick={() => setActiveFilterCard('all')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="icon-box" style={{ background: '#f1f5f9' }}>🌍</div>
+            <div>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: '#334155' }}>إجمالي العقود</p>
+              <p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>جميع الموظفين</p>
+            </div>
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#334155' }}>{totalAll.toLocaleString()}</div>
         </div>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>عقود فوق السن</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تجديد سنوي</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{overAgeContracts.toLocaleString()}</div>
+
+        {/* كارت العقود المحددة */}
+        <div className={`stat-card ${activeFilterCard === 'fixed' ? 'active-fixed' : ''}`} onClick={() => setActiveFilterCard('fixed')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="icon-box" style={{ background: '#eff6ff', color: '#2563eb' }}>📑</div>
+            <div>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: '#1e293b' }}>العقود المحددة</p>
+              <p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>محددة المدة</p>
+            </div>
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb' }}>{totalFixedContracts.toLocaleString()}</div>
         </div>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>تقترب من الانتهاء</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>متبقي 60 يوم أو أقل</p></div>
+
+        {/* كارت فوق السن */}
+        <div className={`stat-card ${activeFilterCard === 'overage' ? 'active-overage' : ''}`} onClick={() => setActiveFilterCard('overage')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="icon-box" style={{ background: '#faf5ff', color: '#8b5cf6' }}>🌟</div>
+            <div>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: '#1e293b' }}>فوق السن</p>
+              <p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تجديد سنوي</p>
+            </div>
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#8b5cf6' }}>{overAgeContracts.toLocaleString()}</div>
+        </div>
+
+        {/* كارت ينتهي قريباً */}
+        <div className={`stat-card ${activeFilterCard === 'expiring' ? 'active-expiring' : ''}`} onClick={() => setActiveFilterCard('expiring')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="icon-box" style={{ background: '#fff7ed', color: '#ea580c' }}>⏳</div>
+            <div>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: '#1e293b' }}>ينتهي قريباً</p>
+              <p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>خلال 60 يوم</p>
+            </div>
+          </div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>{expiringSoonCount.toLocaleString()}</div>
         </div>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>عقود منتهية المدة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تحتاج تسوية أو تجديد</p></div>
+
+        {/* كارت منتهي المدة */}
+        <div className={`stat-card ${activeFilterCard === 'expired' ? 'active-expired' : ''}`} onClick={() => setActiveFilterCard('expired')}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div className="icon-box" style={{ background: '#fef2f2', color: '#dc2626' }}>🚨</div>
+            <div>
+              <p style={{ margin: 0, fontSize: '12px', fontWeight: '800', color: '#1e293b' }}>منتهي المدة</p>
+              <p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>يحتاج تسوية</p>
+            </div>
+          </div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>{expiredCount.toLocaleString()}</div>
         </div>
+
       </div>
 
       {/* شريط الفلاتر (RTL) */}
@@ -425,7 +522,7 @@ export default function ContractsPage() {
             <option value="expiring_60">ينتهي خلال 60 يوم</option>
             <option value="expired">منتهي الصلاحية</option>
           </select>
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); setActiveFilterCard('all'); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
             إعادة ضبط
           </button>
         </div>
@@ -457,7 +554,9 @@ export default function ContractsPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedContracts.map((emp) => {
+              {sortedContracts.length === 0 ? (
+                <tr><td colSpan={10} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد عقود مطابقة.</td></tr>
+              ) : sortedContracts.map((emp) => {
                 const statusInfo = getRenewalStatusInfo(emp.employee_code);
                 const isTerminated = emp.contract_type === 'إنهاء تعاقد';
                 const daysLeft = getDaysRemaining(emp.contract_end_date);
