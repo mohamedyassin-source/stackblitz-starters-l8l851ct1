@@ -97,6 +97,7 @@ export default function EmployeesPage() {
 
       return matchesSearch && matchesDept && matchesComp && matchesType && matchesAge;
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
   // 3. إحصائيات الكروت الديناميكية
@@ -113,6 +114,7 @@ export default function EmployeesPage() {
     const calcPct = (val: number) => (total > 0 ? ((val / total) * 100).toFixed(1) : '0');
 
     return { total, perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), aboveAge, aboveAgePct: calcPct(aboveAge) };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseFilteredEmployees]);
 
   // 4. القائمة النهائية مع الترتيب والتصفية بالكروت
@@ -127,11 +129,20 @@ export default function EmployeesPage() {
     });
 
     return filtered.sort((a, b) => {
+      // 🌟 تم إضافة هذا الجزء الخاص بترتيب السن
+      if (sortColumn === 'age') {
+        const ageA = getEmployeeAge(a) !== null ? getEmployeeAge(a) : 0;
+        const ageB = getEmployeeAge(b) !== null ? getEmployeeAge(b) : 0;
+        const res = (ageA as number) - (ageB as number);
+        return sortDirection === 'asc' ? res : -res;
+      }
+      
       let valA = String(getField(a, sortColumn, 'employee_code'));
       let valB = String(getField(b, sortColumn, 'employee_code'));
       const res = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
       return sortDirection === 'asc' ? res : -res;
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
   // نتائج البحث لشاشة إنهاء الخدمة
@@ -530,7 +541,10 @@ export default function EmployeesPage() {
                   <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
                   <th onClick={() => handleSort('job_title')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                   <th onClick={() => handleSort('department')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)' }}>السن</th>
+                  
+                  {/* 🌟 تعديل عمود السن ليقبل الترتيب */}
+                  <th onClick={() => handleSort('age')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
+                  
                   <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
                   <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
                   <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('contract_end_date')}</th>
