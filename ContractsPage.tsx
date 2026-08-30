@@ -27,18 +27,18 @@ export default function ContractsPage() {
   const [renewalMonths, setRenewalMonths] = useState<number>(12);
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
-  // حالات نافذة إنشاء عقد جديد
+  // ✅ حالات نافذة إنشاء عقد جديد
   const [isNewContractModalOpen, setIsNewContractModalOpen] = useState(false);
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
+  const [empSearchTerm, setEmpSearchTerm] = useState(''); // خاص بحقل البحث
   const [newContractStartDate, setNewContractStartDate] = useState('');
   const [newContractEndDate, setNewContractEndDate] = useState('');
   const [newContractType, setNewContractType] = useState('محدد المدة');
-  const [empSearchTerm, setEmpSearchTerm] = useState(''); // حالة البحث
-  const [showEmpDropdown, setShowEmpDropdown] = useState(false); // إظهار وإخفاء قائمة البحث
 
-  // حالة نافذة إنهاء التعاقد
+  // ✅ حالة نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
+  const [terminateSearchTerm, setTerminateSearchTerm] = useState(''); // خاص بحقل البحث
 
   // حالة نموذج الـ PDF
   const [createdRequestData, setCreatedRequestData] = useState<any>(null);
@@ -151,13 +151,11 @@ export default function ContractsPage() {
     return daysA - daysB;
   });
 
-  // إحصائيات الكروت العلوية
   const totalFixedContracts = employees.filter(e => e.contract_type?.includes('محدد')).length;
   const overAgeContracts = employees.filter(e => e.contract_type?.includes('فوق السن')).length;
   const expiringSoonCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
   const expiredCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d < 0; }).length;
 
-  // دوال التحديد (Checkboxes)
   const toggleSelection = (code: string) => {
     setSelectedEmpCodes(prev => prev.includes(code) ? prev.filter(c => c !== code) : [...prev, code]);
   };
@@ -188,21 +186,21 @@ export default function ContractsPage() {
   // دالة إنهاء التعاقد
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!terminateEmployeeCode) return alert('يرجى اختيار الموظف.');
+    if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
     const confirmTerm = window.confirm('هل أنت متأكد من إنهاء تعاقد هذا الموظف نهائياً؟');
     if (!confirmTerm) return;
     setActionLoading(true);
     const { error } = await supabase.from('employees').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
     setActionLoading(false);
     if (error) alert('حدث خطأ أثناء إنهاء التعاقد: ' + error.message);
-    else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); fetchData(); }
+    else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); setTerminateSearchTerm(''); fetchData(); }
   };
 
   // دالة إنشاء عقد جديد كلياً
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmployeeCode) return alert('يرجى اختيار الموظف من القائمة.');
-    if (!newContractStartDate || !newContractEndDate) return alert('يرجى استكمال تواريخ العقد.');
+    if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
+    if (!newContractStartDate || !newContractEndDate) return alert('يرجى استكمال جميع البيانات.');
     if (new Date(newContractEndDate) <= new Date(newContractStartDate)) return alert('تاريخ نهاية العقد يجب أن يكون بعد تاريخ البداية.');
     
     setActionLoading(true);
@@ -231,7 +229,6 @@ export default function ContractsPage() {
       return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
     }
 
-    // التحديث التلقائي لنوع العقد وتاريخ النهاية في سجل الموظف
     await supabase.from('employees').update({ 
       contract_type: newContractType, 
       contract_end_date: newContractEndDate 
@@ -319,7 +316,11 @@ export default function ContractsPage() {
         
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
-            onClick={() => { setTerminateEmployeeCode(''); setIsTerminateModalOpen(true); }}
+            onClick={() => { 
+              setTerminateSearchTerm(''); 
+              setTerminateEmployeeCode(''); 
+              setIsTerminateModalOpen(true); 
+            }}
             style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             ❌ إنهاء تعاقد
@@ -328,8 +329,7 @@ export default function ContractsPage() {
           <button
             onClick={() => { 
               setSelectedEmployeeCode(''); 
-              setEmpSearchTerm(''); 
-              setShowEmpDropdown(false);
+              setEmpSearchTerm('');
               setNewContractStartDate(new Date().toISOString().split('T')[0]); 
               setNewContractEndDate(''); 
               setIsNewContractModalOpen(true); 
@@ -369,7 +369,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* شريط الفلاتر (RTL) */}
+      {/* شريط الفلاتر */}
       <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input 
@@ -465,34 +465,60 @@ export default function ContractsPage() {
         )}
       </div>
 
-      {/* نافذة إنهاء التعاقد */}
+      {/* 🔴 نافذة إنهاء التعاقد (محدثة بخاصية البحث) */}
       {isTerminateModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>❌ إنهاء تعاقد موظف</h3>
               <button onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: 0, color: '#475569', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
             <form onSubmit={handleTerminateContract}>
+              
+              {/* شريط البحث لإنهاء التعاقد */}
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>اختر الموظف المراد إنهاء تعاقده *</label>
-                <select required value={terminateEmployeeCode} onChange={(e) => setTerminateEmployeeCode(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
-                  <option value="">-- اضغط لاختيار الموظف --</option>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
+                  ابحث عن الموظف (بالاسم أو الكود) *
+                </label>
+                <input
+                  type="text"
+                  list="terminate-employees"
+                  required
+                  placeholder="🔍 اكتب كود أو اسم الموظف..."
+                  value={terminateSearchTerm}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTerminateSearchTerm(val);
+                    const code = val.split(' - ')[0]; // استخراج الكود من النص المختار
+                    const isValidEmp = employees.some(emp => emp.employee_code === code && emp.contract_type !== 'إنهاء تعاقد');
+                    if (isValidEmp) setTerminateEmployeeCode(code);
+                    else setTerminateEmployeeCode('');
+                  }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}
+                />
+                <datalist id="terminate-employees">
                   {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').map((emp) => (
-                    <option key={emp.employee_code} value={emp.employee_code}>{emp.employee_name} ({emp.employee_code}) - {emp.department}</option>
+                    <option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />
                   ))}
-                </select>
+                </datalist>
+
+                {terminateEmployeeCode && (
+                  <div style={{ marginTop: '6px', fontSize: '11px', color: '#dc2626', fontWeight: 'bold' }}>
+                    ⚠️ سيتم إنهاء تعاقد: {terminateEmployeeCode}
+                  </div>
+                )}
               </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري التنفيذ...' : 'تأكيد الإنهاء'}</button>
+                <button type="submit" disabled={actionLoading || !terminateEmployeeCode} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (actionLoading || !terminateEmployeeCode) ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري التنفيذ...' : 'تأكيد الإنهاء'}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد مع خاصية البحث */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد (محدثة بخاصية البحث) */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -502,60 +528,37 @@ export default function ContractsPage() {
             </div>
             <form onSubmit={handleCreateBrandNewContract}>
               
-              {/* حقل البحث بالاسم أو الكود */}
-              <div style={{ marginBottom: '16px', position: 'relative' }}>
+              {/* شريط البحث لإنشاء عقد جديد */}
+              <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
-                  اختر الموظف (ابحث بالاسم أو الكود) *
+                  ابحث عن الموظف (بالاسم أو الكود) *
                 </label>
                 <input
                   type="text"
+                  list="new-contract-employees"
                   required
-                  placeholder="اكتب اسم الموظف أو الكود..."
+                  placeholder="🔍 اكتب كود أو اسم الموظف هنا..."
                   value={empSearchTerm}
                   onChange={(e) => {
-                    setEmpSearchTerm(e.target.value);
-                    setSelectedEmployeeCode(''); // إعادة تعيين الكود حتى يختار المستخدم بوضوح من القائمة
-                    setShowEmpDropdown(true);
+                    const val = e.target.value;
+                    setEmpSearchTerm(val);
+                    const code = val.split(' - ')[0]; // استخراج الكود من النص المختار
+                    const isValidEmp = employees.some(emp => emp.employee_code === code && emp.contract_type !== 'إنهاء تعاقد');
+                    if (isValidEmp) setSelectedEmployeeCode(code);
+                    else setSelectedEmployeeCode('');
                   }}
-                  onFocus={() => setShowEmpDropdown(true)}
                   style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}
                 />
-
-                {/* القائمة المنسدلة للبحث */}
-                {showEmpDropdown && (
-                  <>
-                    <div style={{ position: 'fixed', inset: 0, zIndex: 9 }} onClick={() => setShowEmpDropdown(false)} />
-                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--line)', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 10, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>
-                      {employees
-                        .filter(emp => emp.contract_type !== 'إنهاء تعاقد')
-                        .filter(emp => 
-                          emp.employee_name.toLowerCase().includes(empSearchTerm.toLowerCase()) || 
-                          String(emp.employee_code).toLowerCase().includes(empSearchTerm.toLowerCase())
-                        )
-                        .map((emp) => (
-                          <div
-                            key={emp.employee_code}
-                            onClick={() => {
-                              setSelectedEmployeeCode(emp.employee_code);
-                              setEmpSearchTerm(`${emp.employee_name} (${emp.employee_code})`);
-                              setShowEmpDropdown(false);
-                            }}
-                            style={{ padding: '10px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold', color: 'var(--navy-950)' }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = '#fff'}
-                          >
-                            {emp.employee_name} ({emp.employee_code}) - [{emp.contract_type || 'دائم'}]
-                          </div>
-                        ))}
-                        
-                      {/* حالة عدم وجود نتائج */}
-                      {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').filter(emp => emp.employee_name.toLowerCase().includes(empSearchTerm.toLowerCase()) || String(emp.employee_code).toLowerCase().includes(empSearchTerm.toLowerCase())).length === 0 && (
-                        <div style={{ padding: '12px', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
-                          لا توجد نتائج مطابقة 🔍
-                        </div>
-                      )}
-                    </div>
-                  </>
+                <datalist id="new-contract-employees">
+                  {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').map((emp) => (
+                    <option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />
+                  ))}
+                </datalist>
+                
+                {selectedEmployeeCode && (
+                  <div style={{ marginTop: '6px', fontSize: '11px', color: '#15803d', fontWeight: 'bold' }}>
+                    ✅ تم اختيار الموظف كود: {selectedEmployeeCode}
+                  </div>
                 )}
               </div>
 
@@ -573,7 +576,7 @@ export default function ContractsPage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء وتحديث العقد 📄'}</button>
+                <button type="submit" disabled={actionLoading || !selectedEmployeeCode} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (actionLoading || !selectedEmployeeCode) ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء وتحديث العقد 📄'}</button>
               </div>
             </form>
           </div>
@@ -647,7 +650,6 @@ export default function ContractsPage() {
                 إلغاء
               </button>
             </div>
-
           </div>
         </div>
       )}
