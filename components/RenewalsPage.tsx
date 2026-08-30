@@ -323,8 +323,9 @@ export default function RenewalsPage() {
               {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
             </h3>
             
+            {/* التعديل تم هنا لإصلاح خطأ ESLint الخاص بعلامات التنصيص */}
             <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
-              سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. وسيتحول الطلب تلقائياً إلى السجلات "المعتمدة" لانتظار توقيع الموظف.
+              سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. وسيتحول الطلب تلقائياً إلى السجلات &quot;المعتمدة&quot; لانتظار توقيع الموظف.
             </p>
 
             <div style={{ marginBottom: '20px' }}>
