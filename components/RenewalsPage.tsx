@@ -190,10 +190,10 @@ export default function RenewalsPage() {
 
       // دمج البيانات
       const mergedData = selectedReqs.map(req => {
-        const empDetails = emps?.find(e => e.employee_code === req.employee_code) || {};
+        const empDetails = emps?.find(e => e.employee_code === req.employee_code);
         return {
           ...req,
-          national_id: empDetails.national_id || '.......................',
+          national_id: empDetails?.national_id || '.......................',
           new_start_date: calculateNewStartDate(req.contract_end_date)
         };
       });
