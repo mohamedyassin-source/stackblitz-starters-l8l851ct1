@@ -40,6 +40,12 @@ export default function ContractsPage() {
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
 
+  // 🌟 حالات نافذة التعديل المباشر للعقد
+  const [editModal, setEditModal] = useState<{ isOpen: boolean; emp?: any }>({ isOpen: false });
+  const [editContractType, setEditContractType] = useState('');
+  const [editStartDate, setEditStartDate] = useState('');
+  const [editEndDate, setEditEndDate] = useState('');
+
   // حالة نموذج الـ PDF
   const [createdRequestData, setCreatedRequestData] = useState<any>(null);
 
@@ -172,12 +178,21 @@ export default function ContractsPage() {
     setCustomEndDate('');
     setModalState({ isOpen: true, type: 'single', emp });
   };
+  
   const openBulkRenewal = () => {
     if (selectedEmpCodes.length === 0) return alert('يرجى تحديد موظفين أولاً');
     setRenewalMode('months');
     setRenewalMonths(12);
     setCustomEndDate('');
     setModalState({ isOpen: true, type: 'bulk' });
+  };
+
+  // 🌟 دالة فتح نافذة التعديل
+  const openEditModal = (emp: any) => {
+    setEditContractType(emp.contract_type || 'محدد المدة');
+    setEditStartDate(emp.contract_start_date || '');
+    setEditEndDate(emp.contract_end_date || '');
+    setEditModal({ isOpen: true, emp });
   };
 
   const getEmpId = (emp: any) => {
@@ -196,6 +211,29 @@ export default function ContractsPage() {
     setActionLoading(false);
     if (error) alert('حدث خطأ أثناء إنهاء التعاقد: ' + error.message);
     else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); fetchData(); }
+  };
+
+  // 🌟 دالة حفظ التعديل المباشر للعقد
+  const handleEditContract = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModal.emp) return;
+    setActionLoading(true);
+
+    const { error } = await supabase.from('employees').update({
+      contract_type: editContractType,
+      contract_start_date: editStartDate,
+      contract_end_date: editEndDate
+    }).eq('employee_code', editModal.emp.employee_code);
+
+    setActionLoading(false);
+
+    if (error) {
+      alert('خطأ أثناء التعديل: ' + error.message);
+    } else {
+      alert('تم تعديل بيانات العقد بنجاح ✅');
+      setEditModal({ isOpen: false });
+      fetchData();
+    }
   };
 
   // دالة إنشاء عقد جديد كلياً
@@ -449,13 +487,23 @@ export default function ContractsPage() {
                     <td style={{ padding: '10px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '10px' }}><span style={{ color: statusInfo.color }}>{statusInfo.text}</span></td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => openSingleRenewal(emp)}
-                        disabled={statusInfo.locked || actionLoading || isTerminated}
-                        style={{ background: statusInfo.locked || isTerminated ? '#e2e8f0' : '#b8934a', color: statusInfo.locked || isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
-                      >
-                        + إنشاء طلب
-                      </button>
+                      {/* 🌟 زر إنشاء الطلب وزر التعديل جنباً إلى جنب */}
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                        <button
+                          onClick={() => openSingleRenewal(emp)}
+                          disabled={statusInfo.locked || actionLoading || isTerminated}
+                          style={{ background: statusInfo.locked || isTerminated ? '#e2e8f0' : '#b8934a', color: statusInfo.locked || isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
+                        >
+                          + إنشاء طلب
+                        </button>
+                        <button
+                          onClick={() => openEditModal(emp)}
+                          disabled={actionLoading || isTerminated}
+                          style={{ background: isTerminated ? '#e2e8f0' : '#3b82f6', color: isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
+                        >
+                          ✏️ تعديل
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -514,7 +562,7 @@ export default function ContractsPage() {
                   value={empSearchTerm}
                   onChange={(e) => {
                     setEmpSearchTerm(e.target.value);
-                    setSelectedEmployeeCode(''); // إعادة تعيين الكود حتى يختار المستخدم بوضوح من القائمة
+                    setSelectedEmployeeCode('');
                     setShowEmpDropdown(true);
                   }}
                   onFocus={() => setShowEmpDropdown(true)}
@@ -526,34 +574,39 @@ export default function ContractsPage() {
                   <>
                     <div style={{ position: 'fixed', inset: 0, zIndex: 9 }} onClick={() => setShowEmpDropdown(false)} />
                     <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid var(--line)', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 10, boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }}>
-                      {employees
-                        .filter(emp => emp.contract_type !== 'إنهاء تعاقد')
-                        .filter(emp => 
-                          emp.employee_name.toLowerCase().includes(empSearchTerm.toLowerCase()) || 
-                          String(emp.employee_code).toLowerCase().includes(empSearchTerm.toLowerCase())
-                        )
-                        .map((emp) => (
-                          <div
-                            key={emp.employee_code}
-                            onClick={() => {
-                              setSelectedEmployeeCode(emp.employee_code);
-                              setEmpSearchTerm(`${emp.employee_name} (${emp.employee_code})`);
-                              setShowEmpDropdown(false);
-                            }}
-                            style={{ padding: '10px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold', color: 'var(--navy-950)' }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
-                            onMouseLeave={(e) => e.currentTarget.style.background = '#fff'}
-                          >
-                            {emp.employee_name} ({emp.employee_code}) - [{emp.contract_type || 'دائم'}]
-                          </div>
-                        ))}
-                        
-                      {/* حالة عدم وجود نتائج */}
-                      {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').filter(emp => emp.employee_name.toLowerCase().includes(empSearchTerm.toLowerCase()) || String(emp.employee_code).toLowerCase().includes(empSearchTerm.toLowerCase())).length === 0 && (
-                        <div style={{ padding: '12px', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
-                          لا توجد نتائج مطابقة 🔍
-                        </div>
-                      )}
+                      {(() => {
+                        const filteredEmps = employees
+                          .filter(emp => emp.contract_type !== 'إنهاء تعاقد')
+                          .filter(emp => 
+                            (emp.employee_name || '').toLowerCase().includes((empSearchTerm || '').toLowerCase()) || 
+                            String(emp.employee_code || '').toLowerCase().includes((empSearchTerm || '').toLowerCase())
+                          );
+
+                        return (
+                          <>
+                            {filteredEmps.map((emp) => (
+                              <div
+                                key={emp.employee_code}
+                                onClick={() => {
+                                  setSelectedEmployeeCode(emp.employee_code);
+                                  setEmpSearchTerm(`${emp.employee_name} (${emp.employee_code})`);
+                                  setShowEmpDropdown(false);
+                                }}
+                                style={{ padding: '10px', fontSize: '12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontWeight: 'bold', color: 'var(--navy-950)' }}
+                                onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                                onMouseLeave={(e) => e.currentTarget.style.background = '#fff'}
+                              >
+                                {emp.employee_name} ({emp.employee_code}) - [{emp.contract_type || 'دائم'}]
+                              </div>
+                            ))}
+                            {filteredEmps.length === 0 && (
+                              <div style={{ padding: '12px', fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
+                                لا توجد نتائج مطابقة 🔍
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </>
                 )}
@@ -648,6 +701,48 @@ export default function ContractsPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 🆕 نافذة تعديل بيانات العقد المباشرة */}
+      {editModal.isOpen && editModal.emp && (
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#3b82f6', fontWeight: '800' }}>✏️ تعديل بيانات العقد</h3>
+              <button onClick={() => setEditModal({ isOpen: false })} style={{ background: '#f1f5f9', border: 0, color: '#475569', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            
+            <div style={{ marginBottom: '16px', fontSize: '12px', color: 'var(--muted)', background: '#f8fafc', padding: '10px', borderRadius: '8px' }}>
+              تعديل بيانات الموظف: <strong style={{ color: '#0f172a' }}>{editModal.emp.employee_name} ({editModal.emp.employee_code})</strong>
+            </div>
+
+            <form onSubmit={handleEditContract}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد *</label>
+                <select value={editContractType} onChange={(e) => setEditContractType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#fff' }}>
+                  <option value="محدد المدة">محدد المدة</option>
+                  <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                  <option value="مهمة/مشروع">عقد مشروع/مهمة محدودة</option>
+                  <option value="دائم">دائم (غير محدد المدة)</option>
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ بداية العقد</label>
+                  <input type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ نهاية العقد</label>
+                  <input type="date" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button type="button" onClick={() => setEditModal({ isOpen: false })} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={actionLoading} style={{ background: '#3b82f6', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
