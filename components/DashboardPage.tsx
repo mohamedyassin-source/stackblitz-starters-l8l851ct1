@@ -12,12 +12,10 @@ export default function DashboardPage() {
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  // حالات النوافذ
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
-  // حالة النافذة المتداخلة (للعقود المؤقتة)
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,6 +53,7 @@ export default function DashboardPage() {
   const companiesList = Array.from(new Set(allEmployees.map((e) => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const dashboardData = useMemo(() => {
     const activeEmployeesOnly = allEmployees.filter(emp => (emp.status || 'Active') === 'Active' && emp.department !== 'تحويلات تحت الاعتماد');
 
@@ -76,6 +75,10 @@ export default function DashboardPage() {
     const turning60List: any[] = [];
     const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
+    
+    // 🌟 مصفوفة الشهور للرسم البياني لتوزيع بدايات العقود
+    const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
     filteredEmps.forEach((emp) => {
       const type = emp.contract_type || '';
@@ -85,6 +88,17 @@ export default function DashboardPage() {
       // 1. نواقص البيانات
       if (!emp.national_id || !emp.mobile) {
         missingDataList.push(emp);
+      }
+
+      // 🌟 2. توزيع العقود على الشهور بناءً على (تاريخ البداية)
+      if (emp.contract_start_date) {
+        const startDate = new Date(emp.contract_start_date);
+        if (!isNaN(startDate.getTime())) {
+          const monthIdx = startDate.getMonth();
+          if (monthIdx >= 0 && monthIdx < 12) {
+            contractsByMonth[monthIdx].count++;
+          }
+        }
       }
 
       if (type === 'دائم') {
@@ -164,32 +178,11 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-    const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
-
-    filteredRens.forEach((req) => {
-      const isApproved = req.status === 'Approved' || req.status === 'معتمد' || req.renewal_status === 'Approved';
-      if (isApproved) {
-        const endDateStr = req.new_contract_end_date || req.contract_end_date;
-        if (endDateStr) {
-          const endDate = new Date(endDateStr);
-          if (!isNaN(endDate.getTime())) {
-            const startDateAfterEnd = new Date(endDate);
-            startDateAfterEnd.setDate(startDateAfterEnd.getDate() + 1);
-            const monthIdx = startDateAfterEnd.getMonth();
-            if (monthIdx >= 0 && monthIdx < 12) {
-              renewalsByMonth[monthIdx].count++;
-            }
-          }
-        }
-      }
-    });
-
-    // 2. تفصيل الطلبات المعلقة
+    // تفصيل الطلبات المعلقة
     const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
     const waitingSign = filteredRens.filter(r => r.status === 'Approved' && r.signature_status !== 'تم التوقيع');
 
-    // 3. شريط أحدث الإجراءات
+    // شريط أحدث الإجراءات
     const recentActivities = [...filteredRens]
       .sort((a, b) => new Date(b.request_date || 0).getTime() - new Date(a.request_date || 0).getTime())
       .slice(0, 5);
@@ -210,7 +203,7 @@ export default function DashboardPage() {
       turning60List,
       topDepts,
       urgentAlerts,
-      renewalsByMonth,
+      contractsByMonth, // 🌟 استخدام اللوجيك الجديد هنا
       shortTermTotal,
       shortTermList
     };
@@ -220,7 +213,9 @@ export default function DashboardPage() {
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeFormatted = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const maxMonthCount = Math.max(...(dashboardData?.renewalsByMonth.map((m) => m.count) || []), 1);
+  
+  // الحد الأقصى للمحور الصادي في الرسم البياني
+  const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
   // حساب نسب الـ Donut Chart
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.aboveAgeCount;
@@ -259,20 +254,18 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* الكروت السريعة المحدثة */}
+      {/* الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard loading={loading} tone="brass" title="إجمالي القوة" value={dashboardData.totalEmps} sub="عرض السجل 👁️" icon="👥" onClick={() => navigateTo('employees')} />
         <KpiCard loading={loading} tone="blue" title="طلبات معلقة" value={dashboardData.pendingCount} sub={`+ ${dashboardData.waitingSignCount} توقيع`} icon="⏳" onClick={() => navigateTo('renewals')} />
         <KpiCard loading={loading} tone="blue" title="عقود مؤقتة" value={dashboardData.shortTermTotal} sub="عرض القائمة ⏱️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
         <KpiCard loading={loading} tone="amber" title="تنتهي قريباً" value={dashboardData.expiringSoonCount} sub="إدارة العقود 👁️" icon="📆" onClick={() => navigateTo('contracts')} />
         <KpiCard loading={loading} tone="red" title="عقود منتهية" value={dashboardData.expiredCount} sub="إدارة العقود 🚨" icon="🚨" onClick={() => navigateTo('contracts')} />
-        
-        {/* 🌟 كارت نواقص البيانات الجديد */}
         <KpiCard loading={loading} tone="red" title="نواقص بيانات" value={dashboardData.missingDataList.length} sub="عرض القائمة ⚠️" icon="⚠️" onClick={() => setShowMissingDataModal(true)} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* 🌟 1. الدونات شارت החדש */}
+        {/* 1. الدونات شارت */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative">
           <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
           
@@ -312,7 +305,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 🌟 3. شريط أحدث الإجراءات */}
+        {/* 3. شريط أحدث الإجراءات */}
         <div className="card px-5 sm:px-6 py-5">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>🔄 أحدث حركة للطلبات</h4>
           <div className="flex flex-col gap-3">
@@ -340,12 +333,14 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
+        
+        {/* 🌟 4. الرسم البياني المحدث لبدايات العقود */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التجديدات المعتمدة (بناءً على بداية العقد الجديد)
+            📈 التوزيع الشهري لبدايات العقود (كثافة التجديدات)
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
-            {dashboardData.renewalsByMonth.map((month, idx) => {
+            {dashboardData.contractsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full">
@@ -398,12 +393,11 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 ⏱️ نافذة العقود المؤقتة وفترات الاختبار - بتصميم مبسط وهيدر ثابت */}
+      {/* نافذة العقود المؤقتة */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: '#fff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
             
-            {/* الهيدر الثابت */}
             <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '800' }}>
@@ -423,10 +417,8 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* جسم النافذة المتحرك */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
               {!selectedShortTermDept ? (
-                // 1. عرض الإدارات
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {dashboardData.shortTermList.length === 0 ? (
                     <div style={{ textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '13px', marginTop: '40px' }}>لا توجد عقود مؤقتة حالياً.</div>
@@ -443,7 +435,6 @@ export default function DashboardPage() {
                   )}
                 </div>
               ) : (
-                // 2. عرض الموظفين بداخل الإدارة المحددة
                 <div className="table-responsive">
                   <h4 style={{ margin: '0 0 16px', color: '#0f172a', fontSize: '14px' }}>إدارة: {selectedShortTermDept}</h4>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
@@ -486,7 +477,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ⚠️ نافذة نواقص البيانات */}
+      {/* نافذة نواقص البيانات */}
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -529,7 +520,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 🎂 نافذة سن الـ 60 */}
+      {/* نافذة سن الـ 60 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -546,7 +537,7 @@ export default function DashboardPage() {
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
                       <th style={{ padding: '10px', color: '#475569' }}>الكود</th>
                       <th style={{ padding: '10px', color: '#475569' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: '#475569' }}>تاريخ بلوغ الـ 60</th>
+                      <th style={{ padding: '10px', color: '#475569' }}>تاريخ البلوغ</th>
                       <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>الحالة</th>
                       <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>إجراء</th>
                     </tr>
