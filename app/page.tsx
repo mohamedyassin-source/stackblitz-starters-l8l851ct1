@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import { onAppNavigate } from '@/lib/navigation';
-import { DataProvider } from '@/lib/DataContext';
 
+// استدعاء الصفحات بشكل ديناميكي لتسريع التحميل
 const LoginPage = dynamic(() => import('@/components/LoginPage'), { ssr: false });
 const DashboardPage = dynamic(() => import('@/components/DashboardPage'), { ssr: false });
 const EmployeesPage = dynamic(() => import('@/components/EmployeesPage'), { ssr: false });
@@ -17,17 +17,17 @@ const SettingsPage = dynamic(() => import('@/components/SettingsPage'), { ssr: f
 const DataSyncPage = dynamic(() => import('@/components/DataSyncPage'), { ssr: false });
 
 const SIDEBAR_GROUPS = [
-  { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
+  { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة القيادة', roles: ['Admin', 'HR', 'Employee'] }] },
   { 
     title: 'شؤون العاملين', 
     items: [
-      { id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] },
+      { id: 'employees_data', icon: '👥', label: 'سجل الموظفين', roles: ['Admin', 'HR'] },
     ] 
   },
   { 
     title: 'إدارة العقود', 
     items: [
-      { id: 'contracts', icon: '📂', label: 'العقود الحالية', roles: ['Admin', 'HR'] },
+      { id: 'contracts', icon: '📑', label: 'العقود السارية', roles: ['Admin', 'HR'] },
       { id: 'renewals', icon: '⏳', label: 'طلبات التجديد', roles: ['Admin', 'HR'] },
       { id: 'signatures', icon: '✍️', label: 'توقيع العقود', roles: ['Admin', 'HR', 'Employee'] },
     ]
@@ -35,24 +35,24 @@ const SIDEBAR_GROUPS = [
   { 
     title: 'المتابعة والتقارير', 
     items: [
-      { id: 'reports', icon: '📈', label: 'التقارير', roles: ['Admin', 'HR'] },
-      { id: 'alerts', icon: '🚨', label: 'التنبيهات', roles: ['Admin', 'HR'] },
-      { id: 'audit', icon: '🕵️‍♂️', label: 'سجل العمليات', roles: ['Admin'] },
+      { id: 'reports', icon: '📈', label: 'التقارير والإحصائيات', roles: ['Admin', 'HR'] },
+      { id: 'alerts', icon: '🚨', label: 'التنبيهات العاجلة', roles: ['Admin', 'HR'] },
+      { id: 'audit', icon: '🕵️‍♂️', label: 'سجل النظام', roles: ['Admin'] },
     ]
   }
 ];
 
 const PAGE_TITLES: Record<string, string> = {
-  dashboard: 'لوحة التحكم',
-  employees_data: 'بيانات الموظفين',
-  data_sync: 'تحديث واستيراد البيانات المجمع',
-  contracts: 'العقود الحالية',
-  renewals: 'طلبات التجديد',
-  signatures: 'توقيع العقود',
-  reports: 'التقارير',
-  alerts: 'التنبيهات',
-  audit: 'سجل العمليات',
-  settings: 'إعدادات النظام',
+  dashboard: 'لوحة القيادة (Dashboard)',
+  employees_data: 'سجل بيانات الموظفين',
+  data_sync: 'تحديث ومزامنة البيانات',
+  contracts: 'إدارة العقود الحالية السارية',
+  renewals: 'دورة اعتماد طلبات التجديد',
+  signatures: 'الاعتماد وتوقيع العقود',
+  reports: 'التقارير التحليلية والإحصائيات',
+  alerts: 'لوحة التنبيهات العاجلة',
+  audit: 'سجل حركات النظام (Audit Log)',
+  settings: 'إعدادات النظام والصلاحيات',
 };
 
 export default function Home() {
@@ -63,6 +63,7 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
+    // التحقق من هوية المستخدم
     const savedUser = localStorage.getItem('session_user');
     if (savedUser) {
       try {
@@ -71,10 +72,17 @@ export default function Home() {
         localStorage.removeItem('session_user');
       }
     }
-    const savedTheme = localStorage.getItem('theme');
-    const dark = savedTheme === 'dark';
-    setIsDarkMode(dark);
-    document.body.classList.toggle('dark', dark);
+    
+    // 🌟 تهيئة الوضع الداكن بناءً على التخزين المحلي
+    const savedTheme = localStorage.getItem('executive-theme');
+    if (savedTheme === 'dark') {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    } else {
+      setIsDarkMode(false);
+      document.documentElement.classList.remove('dark');
+    }
+    
     setCheckingAuth(false);
 
     const unsubscribe = onAppNavigate(({ tab }) => {
@@ -84,11 +92,17 @@ export default function Home() {
     return unsubscribe;
   }, []);
 
+  // 🌟 دالة تبديل الوضع (Light / Dark) متوافقة مع Tailwind
   const toggleTheme = () => {
     const next = !isDarkMode;
     setIsDarkMode(next);
-    document.body.classList.toggle('dark', next);
-    localStorage.setItem('theme', next ? 'dark' : 'light');
+    if (next) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('executive-theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('executive-theme', 'light');
+    }
   };
 
   const handleLogout = () => {
@@ -98,9 +112,9 @@ export default function Home() {
 
   if (checkingAuth) {
     return (
-      <div className="grid place-items-center min-h-screen bg-navy-950 text-white text-sm font-bold gap-3">
-        <div className="w-10 h-10 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
-        جاري التحقق من الصلاحيات والتأمين...
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f172a] text-white text-sm font-bold gap-4">
+        <div className="w-12 h-12 border-4 border-gold border-t-transparent rounded-full animate-spin" />
+        جاري تهيئة النظام والتحقق من الصلاحيات...
       </div>
     );
   }
@@ -117,46 +131,50 @@ export default function Home() {
   }
 
   return (
-    <DataProvider>
-    <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
+    <div className="flex h-screen overflow-hidden bg-background text-primary transition-colors duration-300">
 
+      {/* خلفية القائمة الجانبية للموبايل */}
       {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden transition-opacity" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* الشريط الجانبي */}
+      {/* 🌟 القائمة الجانبية (Sidebar) - تصميم فخم وثابت */}
       <aside
-        className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
+        className={`w-[264px] h-screen bg-[#0f172a] border-l border-white/5 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-300 shadow-2xl lg:shadow-none ${
           sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
         }`}
       >
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 shrink-0">
-          <div className="seal w-10 h-10 text-base">★</div>
+        {/* اللوجو */}
+        <div className="flex items-center gap-3 px-6 py-6 border-b border-white/10 shrink-0 bg-black/20">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-gold to-yellow-600 flex items-center justify-center text-xl shadow-lg shadow-gold/20">
+            ★
+          </div>
           <div>
-            <h3 className="m-0 text-[17px] font-extrabold text-brass-300 leading-tight">المراسم الدولية</h3>
-            <span className="text-[11px] text-slate-400 font-medium">بوابة العقود والتجديدات</span>
+            <h3 className="m-0 text-base font-extrabold text-white tracking-wide">المراسم الدولية</h3>
+            <span className="text-[10px] text-gold font-bold uppercase tracking-wider">بوابة الموارد البشرية</span>
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+        {/* روابط التنقل */}
+        <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
           {SIDEBAR_GROUPS.map((group, index) => {
             const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
             if (visibleItems.length === 0) return null;
             return (
               <div key={index}>
-                <div className="text-[10.5px] text-slate-500 font-extrabold mb-2 px-2 tracking-wide">{group.title}</div>
-                <div className="flex flex-col gap-1">
+                <div className="text-[10px] text-slate-500 font-black mb-3 px-2 uppercase tracking-widest">{group.title}</div>
+                <div className="flex flex-col gap-1.5">
                   {visibleItems.map(item => (
                     <button
                       key={item.id}
                       onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
-                      className={`nav-item w-full text-right px-3.5 py-2.5 rounded-lg text-[13.5px] font-bold flex items-center gap-2.5 transition-all ${
+                      className={`w-full text-right px-4 py-3 rounded-xl text-xs font-bold flex items-center gap-3 transition-all duration-200 ${
                         activeTab === item.id
-                          ? 'bg-gradient-to-l from-brass-600 to-brass-400 text-white shadow-md shadow-brass-600/20'
+                          ? 'bg-gold text-white shadow-lg shadow-gold/20 translate-x-1'
                           : 'text-slate-400 hover:text-white hover:bg-white/5'
                       }`}
                     >
-                      <span>{item.icon}</span>
+                      <span className="text-lg opacity-90">{item.icon}</span>
                       <span>{item.label}</span>
                     </button>
                   ))}
@@ -166,74 +184,75 @@ export default function Home() {
           })}
         </nav>
 
-        {/* الجزء السفلي: زر التحديث المجمع + الإعدادات + الخروج */}
-        <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0 flex flex-col gap-2">
+        {/* الجزء السفلي (الإعدادات والخروج) */}
+        <div className="p-4 bg-black/30 border-t border-white/5 shrink-0 flex flex-col gap-2">
           {['Admin', 'HR'].includes(currentUser.role) && (
             <button
               onClick={() => { setActiveTab('data_sync'); setSidebarOpen(false); }}
-              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors flex items-center gap-2.5 ${
-                activeTab === 'data_sync' ? 'bg-brass-600 border-brass-500 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
+              className={`w-full text-right px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-3 ${
+                activeTab === 'data_sync' ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
               }`}
             >
-              <span>🔄</span>
-              <span>تحديث البيانات المجمع</span>
+              <span className="text-base">🔄</span> مزامنة البيانات
             </button>
           )}
 
           {currentUser.role === 'Admin' && (
             <button
               onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
-              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors ${
-                activeTab === 'settings' ? 'bg-navy-700 border-navy-700 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
+              className={`w-full text-right px-4 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center gap-3 ${
+                activeTab === 'settings' ? 'bg-white/10 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'
               }`}
             >
-              ⚙️ الإعدادات والصلاحيات
+              <span className="text-base">⚙️</span> إعدادات النظام
             </button>
           )}
 
           <button
             onClick={handleLogout}
-            className="w-full px-3.5 py-2.5 rounded-lg text-[12.5px] font-bold bg-red-950/60 text-red-300 border border-red-900 hover:bg-red-950 transition-colors"
+            className="w-full text-right px-4 py-2.5 mt-2 rounded-xl text-xs font-bold bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500 hover:text-white transition-colors flex items-center gap-3"
           >
-            🚪 تسجيل الخروج
+            <span className="text-base">🚪</span> تسجيل الخروج
           </button>
         </div>
       </aside>
 
-      {/* منطقة المحتوى الرئيسية */}
-      <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
-        <header
-          className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
-          style={{ background: 'var(--paper-card)', borderColor: 'var(--line)' }}
-        >
-          <div className="flex items-center gap-3">
+      {/* 🌟 مساحة العرض الرئيسية */}
+      <div className="flex-1 flex flex-col h-screen w-full lg:pr-[264px]">
+        
+        {/* 🌟 الهيدر (Header) */}
+        <header className="h-[72px] bg-card border-b border-border flex items-center justify-between px-5 sm:px-8 sticky top-0 z-30 shrink-0 transition-colors duration-300">
+          <div className="flex items-center gap-4">
             <button
-              className="lg:hidden w-9 h-9 rounded-lg grid place-items-center border"
-              style={{ borderColor: 'var(--line)', color: 'var(--ink)' }}
+              className="lg:hidden w-10 h-10 rounded-xl bg-background border border-border flex items-center justify-center text-primary hover:text-gold transition-colors"
               onClick={() => setSidebarOpen(true)}
             >
               ☰
             </button>
-            <h2 className="m-0 text-[17px] sm:text-[19px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
+            <h2 className="m-0 text-base sm:text-lg font-extrabold text-primary tracking-tight">
               {PAGE_TITLES[activeTab] || 'نظام العقود'}
             </h2>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div
-              className="hidden sm:flex items-center gap-2.5 px-4 py-2 rounded-lg border text-[12px]"
-              style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
-            >
-              <span className="font-extrabold" style={{ color: 'var(--ink)' }}>{currentUser.name}</span>
-              <span style={{ color: 'var(--line)' }}>|</span>
-              <span className="font-extrabold text-brass-600">{currentUser.role}</span>
-              <span style={{ color: 'var(--line)' }}>|</span>
-              <span className="font-mono font-extrabold" style={{ color: 'var(--muted)' }}>{currentUser.code}</span>
+          <div className="flex items-center gap-4 sm:gap-6">
+            
+            {/* معلومات المستخدم */}
+            <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-xl bg-background border border-border">
+              <div className="w-8 h-8 rounded-full bg-gold flex items-center justify-center text-white font-bold text-xs shadow-sm">
+                {currentUser.name.charAt(0)}
+              </div>
+              <div className="flex flex-col text-right">
+                <span className="text-xs font-extrabold text-primary leading-none">{currentUser.name}</span>
+                <span className="text-[10px] font-bold text-muted mt-1">{currentUser.role} | {currentUser.code}</span>
+              </div>
             </div>
+
+            <div className="w-px h-8 bg-border hidden sm:block"></div>
+
+            {/* زر الوضع الداكن */}
             <button
               onClick={toggleTheme}
-              className="w-10 h-10 rounded-full border grid place-items-center text-[17px] transition-colors"
-              style={{ borderColor: 'var(--line)', background: 'var(--paper-card)' }}
+              className="w-10 h-10 rounded-full bg-background border border-border flex items-center justify-center text-lg text-muted hover:text-gold hover:border-gold transition-all duration-300"
               title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
             >
               {isDarkMode ? '☀️' : '🌙'}
@@ -241,20 +260,23 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {activeTab === 'dashboard' && <DashboardPage />}
-          {activeTab === 'employees_data' && <EmployeesPage />}
-          {activeTab === 'data_sync' && <DataSyncPage />}
-          {activeTab === 'contracts' && <ContractsPage />}
-          {activeTab === 'renewals' && <RenewalsPage />}
-          {activeTab === 'signatures' && <SignaturesPage />}
-          {activeTab === 'reports' && <ReportsPage />}
-          {activeTab === 'alerts' && <AlertsPage />}
-          {activeTab === 'audit' && <AuditPage />}
-          {activeTab === 'settings' && <SettingsPage currentUser={currentUser} />}
+        {/* 🌟 محتوى الصفحة المتغير */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 bg-background relative">
+          <div className="max-w-[1400px] mx-auto w-full">
+            {activeTab === 'dashboard' && <DashboardPage />}
+            {activeTab === 'employees_data' && <EmployeesPage />}
+            {activeTab === 'data_sync' && <DataSyncPage />}
+            {activeTab === 'contracts' && <ContractsPage />}
+            {activeTab === 'renewals' && <RenewalsPage />}
+            {activeTab === 'signatures' && <SignaturesPage />}
+            {activeTab === 'reports' && <ReportsPage />}
+            {activeTab === 'alerts' && <AlertsPage />}
+            {activeTab === 'audit' && <AuditPage />}
+            {activeTab === 'settings' && <SettingsPage currentUser={currentUser} />}
+          </div>
         </main>
+        
       </div>
     </div>
-    </DataProvider>
   );
 }
