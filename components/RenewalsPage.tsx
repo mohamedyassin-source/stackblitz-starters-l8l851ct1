@@ -2,8 +2,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
+// 🌟 1. استدعاء الـ DataContext
+import { useAppData } from '@/lib/DataContext';
 
 export default function RenewalsPage() {
+  // 🌟 2. استخراج دالة التحديث المركزية
+  const { refresh: refreshGlobalData } = useAppData();
+
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -15,7 +20,7 @@ export default function RenewalsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState(''); // 🌟 فلتر شهر وسنة بداية التجديد
+  const [selectedMonth, setSelectedMonth] = useState(''); // فلتر شهر وسنة بداية التجديد
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // حالات نافذة الاعتماد
@@ -47,7 +52,7 @@ export default function RenewalsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // 🌟 (إصلاح جذري لحساب التواريخ لتتوافق مع الشهور 28 أو 30 أو 31 يوم)
+  // (إصلاح جذري لحساب التواريخ لتتوافق مع الشهور 28 أو 30 أو 31 يوم)
   const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
     if (!oldEndDateStr) {
       const d = new Date();
@@ -76,7 +81,7 @@ export default function RenewalsPage() {
     const matchesDept = !selectedDept || req.department === selectedDept;
     const matchesComp = !selectedCompany || req.company === selectedCompany;
     
-    // 🌟 فلترة بشهر التجديد الجديد (مثل: 2026-09)
+    // فلترة بشهر التجديد الجديد (مثل: 2026-09)
     let matchesMonth = true;
     if (selectedMonth) {
       const newStart = calculateNewStartDate(req.contract_end_date);
@@ -125,6 +130,8 @@ export default function RenewalsPage() {
         }
 
         alert(`تم اعتماد الطلب وتحديث العقد بنجاح: \n يبدأ في: ${newStartDate} \n ينتهي في: ${newEndDate} ✅`);
+        // 🌟 3. تحديث البيانات المركزية للداشبورد (للاعتماد الفردي)
+        await refreshGlobalData();
         
       } else if (approvalModal.type === 'bulk') {
         const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
@@ -152,6 +159,8 @@ export default function RenewalsPage() {
 
         await Promise.all(updatePromises);
         alert(`تم اعتماد ${reqsToApprove.length} طلب تجديد وتحديث بيانات الموظفين بنجاح ✅`);
+        // 🌟 4. تحديث البيانات المركزية للداشبورد (للاعتماد المجمع)
+        await refreshGlobalData();
       }
 
       setSelectedIds([]);
@@ -178,18 +187,20 @@ export default function RenewalsPage() {
     if (error) alert('حدث خطأ أثناء رفض الطلب: ' + error.message);
     else {
       alert('تم رفض الطلب بنجاح ❌');
+      // 🌟 5. تحديث البيانات المركزية بعد الرفض
+      await refreshGlobalData();
       fetchRequests();
     }
     setActionLoading(false);
   };
 
-  // 🌟 دالة تصدير الإكسيل (محمية ومخصصة للطلبات المعتمدة فقط)
+  // دالة تصدير الإكسيل (محمية ومخصصة للطلبات المعتمدة فقط)
   const handleExportApprovedToExcel = async () => {
     if (selectedIds.length === 0) return alert('يرجى تحديد طلبات أولاً.');
     setActionLoading(true);
 
     try {
-      // 🔒 تأكيد أمني: فلترة الطلبات المحددة للتأكد إن حالتها Approved فقط
+      // تأكيد أمني: فلترة الطلبات المحددة للتأكد إن حالتها Approved فقط
       const selectedReqs = requests.filter(r => selectedIds.includes(r.request_id) && r.status === 'Approved');
       
       if (selectedReqs.length === 0) {
@@ -269,7 +280,7 @@ export default function RenewalsPage() {
               </button>
             )}
 
-            {/* 🌟 زر استخراج الإكسيل */}
+            {/* زر استخراج الإكسيل */}
             {activeTab === 'Approved' && (
               <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#059669', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
                 {actionLoading ? 'جاري التجهيز...' : `📥 تصدير كشف عقود (${selectedIds.length})`}
@@ -306,7 +317,7 @@ export default function RenewalsPage() {
           <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-          {/* 🌟 فلتر شهر وسنة التجديد */}
+          {/* فلتر شهر وسنة التجديد */}
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--muted)', marginLeft: '6px' }}>شهر البداية:</span>
             <input 
