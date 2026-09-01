@@ -12,9 +12,8 @@ export default function DashboardPage() {
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
   
-  // حالات النوافذ المنبثقة (Modals)
   const [showAgeModal, setShowAgeModal] = useState(false);
-  const [showShortTermModal, setShowShortTermModal] = useState(false); // 🌟 نافذة العقود القصيرة
+  const [showShortTermModal, setShowShortTermModal] = useState(false); 
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -81,31 +80,25 @@ export default function DashboardPage() {
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
     const turning60List: any[] = [];
-    const shortTermByDept: Record<string, any[]> = {}; // 🌟 تجميع العقود القصيرة بالإدارات
+    const shortTermByDept: Record<string, any[]> = {}; 
 
     filteredEmps.forEach((emp) => {
       const type = emp.contract_type || '';
-      if (type === 'دائم') perm++;
-      else if (type.includes('فوق السن')) aboveAge++;
-      else fixed++;
-
       const dept = emp.department || 'غير محدد';
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      // حسابات سن الـ 60
       if (type === 'دائم') {
+        perm++;
         const ageInfo = getAge60Info(emp.national_id);
         if (ageInfo && ageInfo.daysUntil60 <= 60) {
-          turning60List.push({
-            ...emp,
-            birthDate: ageInfo.birthDate,
-            age60Date: ageInfo.age60Date,
-            daysLeft: ageInfo.daysUntil60,
-          });
+          turning60List.push({ ...emp, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date, daysLeft: ageInfo.daysUntil60 });
         }
+      } else if (type.includes('فوق السن')) {
+        aboveAge++;
+      } else {
+        fixed++;
       }
 
-      // حسابات الانتهاء
       if (type !== 'دائم') {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
@@ -119,27 +112,44 @@ export default function DashboardPage() {
         }
       }
 
-      // 🌟 اللوجيك الذكي لاصطياد العقود القصيرة (أقل من 360 يوم)
-      if (type !== 'دائم' && emp.contract_start_date && emp.contract_end_date) {
-        const start = new Date(emp.contract_start_date);
-        const end = new Date(emp.contract_end_date);
-        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-          const diffTime = end.getTime() - start.getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          
-          if (diffDays > 0 && diffDays <= 360) {
-            shortTermTotal++;
-            if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
-            
-            // حساب تقريبي للشهور
-            const diffMonths = Math.round(diffDays / 30);
-            
-            shortTermByDept[dept].push({
-              ...emp,
-              diffDays,
-              diffMonths: diffMonths === 0 ? 'أقل من شهر' : `${diffMonths} شهور`
-            });
+      // 🌟 اللوجيك الذكي المبني على "سجل التجديدات" 
+      if (type === 'محدد المدة') {
+        // فلترة طلبات التجديد المعتمدة لهذا الموظف فقط وترتيبها من الأقدم للأحدث
+        const empRens = filteredRens
+          .filter(r => r.employee_code === emp.employee_code && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
+          .sort((a, b) => (new Date(a.request_date).getTime() - new Date(b.request_date).getTime()));
+
+        let isShort = false;
+        let historyDesc = '';
+
+        if (empRens.length > 0) {
+          // الموظف له تاريخ من التجديدات
+          const lastRen = empRens[empRens.length - 1];
+          if (lastRen.renewal_months && Number(lastRen.renewal_months) < 12) {
+            isShort = true;
+            // تجميع النص (مثال: 3 ش + 3 ش + 6 ش)
+            const historyArr = empRens.map(r => `${r.renewal_months} ش`);
+            historyDesc = `سجل التجديدات: (${historyArr.join(' + ')})`;
           }
+        } else {
+          // موظف جديد (أول عقد) ليس له طلبات تجديد بعد
+          if (emp.contract_start_date && emp.contract_end_date) {
+            const start = new Date(emp.contract_start_date);
+            const end = new Date(emp.contract_end_date);
+            const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays > 0 && diffDays <= 360) {
+              isShort = true;
+              const diffMonths = Math.round(diffDays / 30) || 1;
+              historyDesc = `تعيين جديد (${diffMonths} شهور)`;
+            }
+          }
+        }
+
+        if (isShort) {
+          shortTermTotal++;
+          if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
+          shortTermByDept[dept].push({ ...emp, historyDesc });
         }
       }
     });
@@ -147,7 +157,6 @@ export default function DashboardPage() {
     alerts.sort((a, b) => a.days - b.days);
     turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
 
-    // تحويل قاموس العقود القصيرة إلى مصفوفة مرتبة حسب حجم الإدارة
     const shortTermList = Object.entries(shortTermByDept)
       .map(([deptName, emps]) => ({ 
         deptName, 
@@ -165,17 +174,14 @@ export default function DashboardPage() {
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
     filteredRens.forEach((req) => {
-      const isApproved = req.status === 'Approved' || req.status === 'معتمد' || req.renewal_status === 'Approved' || req.renewal_status === 'معتمد';
-
+      const isApproved = req.status === 'Approved' || req.status === 'معتمد' || req.renewal_status === 'Approved';
       if (isApproved) {
         const endDateStr = req.new_contract_end_date || req.contract_end_date;
-
         if (endDateStr) {
           const endDate = new Date(endDateStr);
           if (!isNaN(endDate.getTime())) {
             const startDateAfterEnd = new Date(endDate);
             startDateAfterEnd.setDate(startDateAfterEnd.getDate() + 1);
-
             const monthIdx = startDateAfterEnd.getMonth();
             if (monthIdx >= 0 && monthIdx < 12) {
               renewalsByMonth[monthIdx].count++;
@@ -253,7 +259,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 تعديل الـ Grid ليصبح 3 أعمدة (6 كروت إجمالاً) */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <KpiCard loading={loading} tone="brass" title="إجمالي قوة العمل" value={dashboardData.totalEmps} sub="عرض السجل 👁️" icon="👥" onClick={() => navigateTo('employees')} />
         <KpiCard loading={loading} tone="blue" title="طلبات تجديد معلقة" value={dashboardData.pendingRenewals} sub="الذهاب للطلبات 👁️" icon="⏳" onClick={() => navigateTo('renewals')} />
@@ -261,8 +266,7 @@ export default function DashboardPage() {
         
         <KpiCard loading={loading} tone="red" title="عقود منتهية (تحتاج إجراء)" value={dashboardData.expiredCount} sub="إدارة العقود 🚨" icon="🚨" onClick={() => navigateTo('contracts')} />
         <KpiCard loading={loading} tone="amber" title="سن الـ 60 (يستلزم تسوية)" value={dashboardData.turning60List.length} sub="عرض القائمة 👁️" icon="🎂" onClick={() => setShowAgeModal(true)} />
-        {/* 🌟 الكارت الجديد الخاص بالعقود القصيرة */}
-        <KpiCard loading={loading} tone="blue" title="عقود قصيرة (تحت الاختبار)" value={dashboardData.shortTermTotal} sub="عرض الإدارات 👁️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
+        <KpiCard loading={loading} tone="blue" title="عقود قصيرة (فترات مؤقتة)" value={dashboardData.shortTermTotal} sub="تاريخ التجديدات 👁️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
@@ -437,16 +441,16 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 🌟 ⏱️ نافذة العقود القصيرة وفترات الاختبار الذكية */}
+      {/* 🌟 ⏱️ نافذة العقود القصيرة وفترات الاختبار الذكية المحدثة بالتاريخ */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '800px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  ⏱️ العقود القصيرة وفترات الاختبار (أقل من سنة)
+                  ⏱️ العقود المؤقتة وفترات الاختبار (أقل من سنة)
                 </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>تم تجميعهم وعرضهم بناءً على كل إدارة ليسهل عليك مراجعتهم وتقييمهم.</p>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>عرض تفصيلي بناءً على "سجل التجديدات" لكل موظف وليس تاريخ النهاية فقط.</p>
               </div>
               <button onClick={() => setShowShortTermModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
                 إغلاق ✕
@@ -455,7 +459,7 @@ export default function DashboardPage() {
 
             {dashboardData.shortTermList.length === 0 ? (
               <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '13px' }}>
-                لا توجد أي عقود قصيرة أو فترات اختبار مسجلة حالياً.
+                لا توجد أي عقود مؤقتة أو فترات اختبار مسجلة حالياً.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -470,16 +474,16 @@ export default function DashboardPage() {
                       </span>
                     </div>
 
-                    {/* جدول الموظفين بداخل هذه الإدارة */}
                     <div className="table-responsive">
                       <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
                         <thead>
                           <tr style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
                             <th style={{ padding: '10px', color: '#64748b', width: '80px' }}>الكود</th>
                             <th style={{ padding: '10px', color: '#64748b' }}>اسم الموظف</th>
-                            <th style={{ padding: '10px', color: '#64748b' }}>مدة العقد المُسجلة</th>
+                            {/* 🌟 العمود الجديد لسجل التجديدات */}
+                            <th style={{ padding: '10px', color: '#64748b' }}>تحليل مدة التعاقد (السجل)</th>
                             <th style={{ padding: '10px', color: '#64748b' }}>تاريخ الانتهاء</th>
-                            <th style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>إجراء سريع</th>
+                            <th style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>إجراء</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -492,16 +496,17 @@ export default function DashboardPage() {
                                 <td style={{ padding: '10px', fontWeight: 'bold', color: '#0d9488', fontFamily: 'monospace' }}>{emp.employee_code}</td>
                                 <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                                 
+                                {/* 🌟 عرض تحليل السجل */}
                                 <td style={{ padding: '10px' }}>
-                                  <span style={{ background: '#f1f5f9', color: '#475569', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
-                                    {emp.diffMonths}
+                                  <span style={{ background: '#f8fafc', color: '#334155', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10.5px', border: '1px dashed #cbd5e1' }}>
+                                    {emp.historyDesc}
                                   </span>
                                 </td>
 
                                 <td style={{ padding: '10px' }}>
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: isExpired ? '#dc2626' : '#0f172a' }}>
-                                      {emp.contract_end_date}
+                                      {emp.contract_end_date || 'غير مسجل'}
                                     </span>
                                     {daysLeft !== null && (
                                       <span style={{ fontSize: '9px', color: isExpired ? '#dc2626' : '#d97706', fontWeight: 'bold' }}>
