@@ -1,7 +1,7 @@
-import type { Config } from 'tailwindcss';
+import type { Config } from 'tailwindcss'
 
 const config: Config = {
-  darkMode: 'class',
+  darkMode: 'class', // 🌟 تفعيل الوضع الداكن بناءً على الكلاس
   content: [
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -10,47 +10,34 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // 🌟 ربط ألوان Tailwind بالمتغيرات التي أنشأناها في CSS
+        background: 'var(--bg-color)',
+        card: 'var(--card-bg)',
+        primary: 'var(--text-main)',
+        muted: 'var(--text-muted)',
+        border: 'var(--border-color)',
+        gold: {
+          DEFAULT: 'var(--accent-gold)',
+          hover: 'var(--accent-gold-hover)',
+        },
         navy: {
-          950: '#0a0f1c',
-          900: '#101828',
-          800: '#182238',
-          700: '#232f4a',
+          DEFAULT: 'var(--accent-navy)',
         },
-        brass: {
-          300: '#e3c689',
-          400: '#d1ab63',
-          500: '#b8934a',
-          600: '#9c7a2e',
-          700: '#7c611f',
+        danger: {
+          bg: 'var(--danger-bg)',
+          text: 'var(--danger-text)',
         },
-        paper: {
-          DEFAULT: '#f6f3ea',
-          card: '#fffdf8',
-          line: '#e6dfc9',
+        success: {
+          bg: 'var(--success-bg)',
+          text: 'var(--success-text)',
         },
-        ink: {
-          DEFAULT: '#1b1f2a',
-          muted: '#6b7280',
-        },
-        stamp: {
-          green: '#1f5c3a',
-          amber: '#8a5a12',
-          red: '#8f2323',
-          blue: '#1f3f66',
-        },
-      },
-      fontFamily: {
-        display: ['Cairo', 'sans-serif'],
-        body: ['Cairo', 'sans-serif'],
-        mono: ['"IBM Plex Mono"', 'monospace'],
-      },
-      backgroundImage: {
-        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-conic':
-          'conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))',
+        warning: {
+          bg: 'var(--warning-bg)',
+          text: 'var(--warning-text)',
+        }
       },
     },
   },
   plugins: [],
-};
-export default config;
+}
+export default config
