@@ -10,44 +10,39 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
-  // 1. تحميل تمبلت Excel فاضي يحتوي فقط على الهيدر الموضح بالصورة
+  // دالة تحويل تواريخ Excel النصية أو التسلسلية إلى YYYY-MM-DD
+  const parseExcelDate = (val: any): string | null => {
+    if (!val) return null;
+    if (typeof val === 'number') {
+      const date = XLSX.SSF.parse_date_code(val);
+      if (date) {
+        const m = String(date.m).padStart(2, '0');
+        const d = String(date.d).padStart(2, '0');
+        return `${date.y}-${m}-${d}`;
+      }
+    }
+    const str = String(val).trim();
+    return str ? str : null;
+  };
+
+  // 1. تحميل تمبلت Excel متوافق
   const handleDownloadTemplate = () => {
     const headers = [
-      'employee_id',
-      'employee_code',
-      'employee_name',
-      'department',
-      'job_title',
-      'company',
-      'hiring_date',
-      'national_id',
-      'birth_date',
-      'age',
-      'age_60_date',
-      'age_status',
-      'status',
-      'email',
-      'mobile',
-      'manager',
-      'contract_type',
-      'contract_start_date',
-      'contract_end_date',
-      'created_at',
-      'updated_at',
-      'password',
-      'role',
-      'must_change_password'
+      'employee_id', 'employee_code', 'employee_name', 'department',
+      'job_title', 'company', 'hiring_date', 'national_id',
+      'birth_date', 'age', 'age_60_date', 'age_status',
+      'status', 'email', 'mobile', 'manager',
+      'contract_type', 'contract_start_date', 'contract_end_date',
+      'password', 'role', 'must_change_password'
     ];
 
-    // إنشاء شيت فاضي يحتوي على الصف الأول فقط (العناوين)
     const ws = XLSX.utils.aoa_to_sheet([headers]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Employees_Template');
-
     XLSX.writeFile(wb, 'قالب_تحديث_بيانات_الموظفين_المجمع.xlsx');
   };
 
-  // 2. معالجة ورفع شيت البيانات المكتمل إلى Supabase
+  // 2. معالجة وتدفيق البيانات بأسلوب الخانات (Batches)
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -57,19 +52,18 @@ export default function DataSyncPage() {
 
     try {
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array' });
+      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const sheet = workbook.Sheets[sheetName];
       const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
       if (jsonData.length === 0) {
         setLoading(false);
-        return alert('الملف المرفوع فاضي! يرجى ملء البيانات أولاً.');
+        return alert('الملف المرفوع فارغ! يرجى ملء البيانات أولاً.');
       }
 
       setLogs(prev => [...prev, `تم استخراج ${jsonData.length} صف من الملف.`]);
 
-      // تجهيز البيانات المطابقة للجدول
       const preparedData = jsonData.map((row) => ({
         employee_id: String(row.employee_id || row.employee_code || '').trim(),
         employee_code: String(row.employee_code || '').trim(),
@@ -77,34 +71,41 @@ export default function DataSyncPage() {
         department: String(row.department || '').trim(),
         job_title: String(row.job_title || '').trim(),
         company: String(row.company || '').trim(),
-        hiring_date: row.hiring_date ? String(row.hiring_date).trim() : null,
+        hiring_date: parseExcelDate(row.hiring_date),
         national_id: String(row.national_id || '').trim(),
-        birth_date: row.birth_date ? String(row.birth_date).trim() : null,
+        birth_date: parseExcelDate(row.birth_date),
         age: row.age ? Number(row.age) : null,
-        age_60_date: row.age_60_date ? String(row.age_60_date).trim() : null,
+        age_60_date: parseExcelDate(row.age_60_date),
         age_status: String(row.age_status || '').trim(),
         status: String(row.status || 'Active').trim(),
         email: String(row.email || '').trim(),
         mobile: String(row.mobile || '').trim(),
         manager: String(row.manager || '').trim(),
         contract_type: String(row.contract_type || 'محدد المدة').trim(),
-        contract_start_date: row.contract_start_date ? String(row.contract_start_date).trim() : null,
-        contract_end_date: row.contract_end_date ? String(row.contract_end_date).trim() : null,
+        contract_start_date: parseExcelDate(row.contract_start_date),
+        contract_end_date: parseExcelDate(row.contract_end_date),
         password: String(row.password || '123456').trim(),
         role: String(row.role || 'Employee').trim(),
         must_change_password: String(row.must_change_password).toLowerCase() === 'true',
-      }));
+      })).filter(emp => emp.employee_code); // استبعاد الصفوف بدون كود
 
-      // تحديث البيانات أو إدراجها المجمع (Upsert)
-      const { error } = await supabase
-        .from('employees')
-        .upsert(preparedData, { onConflict: 'employee_code' });
+      // تقسيم البيانات على دفعات (Batching by 500)
+      const BATCH_SIZE = 500;
+      for (let i = 0; i < preparedData.length; i += BATCH_SIZE) {
+        const batch = preparedData.slice(i, i + BATCH_SIZE);
+        setLogs(prev => [...prev, `جاري رفع الدفعة من ${i + 1} إلى ${Math.min(i + BATCH_SIZE, preparedData.length)}...`]);
 
-      if (error) throw error;
+        const { error } = await supabase
+          .from('employees')
+          .upsert(batch, { onConflict: 'employee_code' });
+
+        if (error) throw error;
+      }
 
       setLogs(prev => [...prev, '✅ تم رفع وتحديث جميع البيانات بنجاح!']);
       alert('تم تحديث البيانات المجمعة بنجاح ✅');
       await refresh();
+      setFile(null);
     } catch (err: any) {
       setLogs(prev => [...prev, `❌ خطأ: ${err.message}`]);
       alert('حدث خطأ أثناء الرفع: ' + err.message);
@@ -114,38 +115,38 @@ export default function DataSyncPage() {
   };
 
   return (
-    <div style={{ direction: 'rtl', paddingBottom: '30px' }}>
-      <div style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', padding: '24px', marginBottom: '20px' }}>
-        <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>🔄 تحديث واستيراد البيانات المجمع</h3>
-        <p style={{ margin: '4px 0 20px', fontSize: '12px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
-          قم بتنزيل القالب الفاضي، امشِ على نفس هيكل الأعمدة، ثم أعد رفعه لتحديث أو إضافة الموظفين جملة واحدة.
+    <div className="flex flex-col gap-6 pb-10">
+      <div className="executive-card p-6">
+        <h3 className="m-0 text-lg font-extrabold text-primary">🔄 تحديث واستيراد البيانات المجمع</h3>
+        <p className="mt-1 text-xs text-muted font-bold">
+          قم بتنزيل القالب الفارغ، ادخل البيانات بنفس التنسيق، ثم أعد رفعه لتحديث أو إضافة الموظفين جملة واحدة.
         </p>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', marginBottom: '24px' }}>
+        <div className="my-6">
           <button
             onClick={handleDownloadTemplate}
-            style={{ background: '#059669', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+            className="bg-[var(--success-text)] hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-bold text-xs transition-opacity flex items-center gap-2 shadow-sm"
           >
-            📥 تحميل تمبلت فارغ (Template)
+            📥 تحميل تمبلت فارغ (Excel Template)
           </button>
         </div>
 
-        <form onSubmit={handleFileUpload} style={{ border: '2px dashed var(--line, #cbd5e1)', borderRadius: '12px', padding: '30px', textAlign: 'center', background: '#f8fafc' }}>
-          <div style={{ fontSize: '32px', marginBottom: '10px' }}>📁</div>
-          <p style={{ margin: '0 0 12px', fontSize: '13px', fontWeight: 'bold', color: 'var(--ink, #0f172a)' }}>اختر ملف Excel المكتمل لرفعه إلى النظام</p>
+        <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border rounded-xl p-8 text-center bg-background">
+          <div className="text-4xl mb-3">📁</div>
+          <p className="m-0 mb-4 text-xs font-bold text-primary">اختر ملف Excel المكتمل لرفعه إلى النظام</p>
           
           <input
             type="file"
             accept=".xlsx, .xls"
             onChange={(e) => setFile(e.target.files?.[0] || null)}
-            style={{ marginBottom: '20px', fontSize: '12px' }}
+            className="mb-6 text-xs text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary file:text-card hover:file:opacity-80"
           />
 
           <div>
             <button
               type="submit"
               disabled={loading || !file}
-              style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 24px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (loading || !file) ? 'not-allowed' : 'pointer', opacity: (loading || !file) ? 0.6 : 1 }}
+              className="bg-gold hover:bg-gold-hover text-white font-bold text-xs px-8 py-3 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? 'جاري المعالجة والرفع...' : 'رفع وتحديث قاعدة البيانات 🚀'}
             </button>
@@ -154,10 +155,10 @@ export default function DataSyncPage() {
       </div>
 
       {logs.length > 0 && (
-        <div style={{ background: '#0f172a', color: '#38bdf8', padding: '16px', borderRadius: '10px', fontFamily: 'monospace', fontSize: '11px', maxHeight: '200px', overflowY: 'auto' }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px', color: '#fff' }}>سجل المعالجة (System Log):</div>
+        <div className="bg-[#0f172a] text-[#38bdf8] p-5 rounded-xl font-mono text-xs max-h-52 overflow-y-auto border border-border">
+          <div className="font-bold mb-2 text-white">سجل المعالجة (System Log):</div>
           {logs.map((log, idx) => (
-            <div key={idx} style={{ marginBottom: '4px' }}>{log}</div>
+            <div key={idx} className="mb-1">{log}</div>
           ))}
         </div>
       )}
