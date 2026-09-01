@@ -1,4 +1,6 @@
+```tsx
 'use client';
+
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
@@ -6,162 +8,620 @@ import * as XLSX from 'xlsx';
 
 export default function DataSyncPage() {
   const { refresh } = useAppData();
+
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
-  // دالة تحويل تواريخ Excel النصية أو التسلسلية إلى YYYY-MM-DD
+  // =========================================================
+  // تحويل تواريخ Excel إلى YYYY-MM-DD
+  // =========================================================
   const parseExcelDate = (val: any): string | null => {
-    if (!val) return null;
+    if (val === null || val === undefined || val === '') {
+      return null;
+    }
+
+    if (val instanceof Date && !isNaN(val.getTime())) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, '0');
+      const d = String(val.getDate()).padStart(2, '0');
+
+      return `${y}-${m}-${d}`;
+    }
+
     if (typeof val === 'number') {
       const date = XLSX.SSF.parse_date_code(val);
+
       if (date) {
         const m = String(date.m).padStart(2, '0');
         const d = String(date.d).padStart(2, '0');
+
         return `${date.y}-${m}-${d}`;
       }
     }
+
     const str = String(val).trim();
-    return str ? str : null;
+
+    if (!str) {
+      return null;
+    }
+
+    // محاولة التعامل مع التاريخ بصيغة DD/MM/YYYY
+    const slashMatch = str.match(
+      /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/
+    );
+
+    if (slashMatch) {
+      const day = slashMatch[1].padStart(2, '0');
+      const month = slashMatch[2].padStart(2, '0');
+      const year = slashMatch[3];
+
+      return `${year}-${month}-${day}`;
+    }
+
+    return str;
   };
 
-  // 1. تحميل تمبلت Excel متوافق
+  // =========================================================
+  // تحميل Template
+  // =========================================================
   const handleDownloadTemplate = () => {
     const headers = [
-      'employee_id', 'employee_code', 'employee_name', 'department',
-      'job_title', 'company', 'hiring_date', 'national_id',
-      'birth_date', 'age', 'age_60_date', 'age_status',
-      'status', 'email', 'mobile', 'manager',
-      'contract_type', 'contract_start_date', 'contract_end_date',
-      'password', 'role', 'must_change_password'
+      'employee_id',
+      'employee_code',
+      'employee_name',
+      'department',
+      'job_title',
+      'company',
+      'hiring_date',
+      'national_id',
+      'birth_date',
+      'age',
+      'age_60_date',
+      'age_status',
+      'status',
+      'email',
+      'mobile',
+      'manager',
+      'contract_type',
+      'contract_start_date',
+      'contract_end_date',
+      'password',
+      'role',
+      'must_change_password',
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([headers]);
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Employees_Template');
-    XLSX.writeFile(wb, 'قالب_تحديث_بيانات_الموظفين_المجمع.xlsx');
+
+    XLSX.utils.book_append_sheet(
+      wb,
+      ws,
+      'Employees_Template'
+    );
+
+    XLSX.writeFile(
+      wb,
+      'قالب_تحديث_بيانات_الموظفين_المجمع.xlsx'
+    );
   };
 
-  // 2. معالجة وتدفيق البيانات بأسلوب الخانات (Batches)
-  const handleFileUpload = async (e: React.FormEvent) => {
+  // =========================================================
+  // قراءة الموظفين الموجودين حالياً في قاعدة البيانات
+  // =========================================================
+  const getExistingEmployees = async () => {
+    const allEmployees: any[] = [];
+
+    const PAGE_SIZE = 1000;
+
+    let from = 0;
+
+    while (true) {
+      const to = from + PAGE_SIZE - 1;
+
+      const { data, error } = await supabase
+        .from('employees')
+        .select('employee_code, employee_id')
+        .range(from, to);
+
+      if (error) {
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        break;
+      }
+
+      allEmployees.push(...data);
+
+      if (data.length < PAGE_SIZE) {
+        break;
+      }
+
+      from += PAGE_SIZE;
+    }
+
+    return allEmployees;
+  };
+
+  // =========================================================
+  // حذف الموظفين الموجودين في قاعدة البيانات
+  // وغير الموجودين في ملف Excel
+  // =========================================================
+  const deleteMissingEmployees = async (
+    uploadedEmployees: any[]
+  ) => {
+    setLogs(prev => [
+      ...prev,
+      '🔍 جاري مقارنة الموظفين الموجودين في قاعدة البيانات مع الملف...',
+    ]);
+
+    const existingEmployees = await getExistingEmployees();
+
+    setLogs(prev => [
+      ...prev,
+      `📊 عدد الموظفين الحالي في قاعدة البيانات: ${existingEmployees.length}`,
+    ]);
+
+    // Set بكل الأكواد الموجودة في الملف
+    const uploadedCodes = new Set(
+      uploadedEmployees
+        .map(emp => String(emp.employee_code || '').trim())
+        .filter(Boolean)
+    );
+
+    // الموظفون الموجودون في DB وغير موجودين في الملف
+    const employeesToDelete = existingEmployees.filter(
+      emp => {
+        const code = String(emp.employee_code || '').trim();
+
+        return code && !uploadedCodes.has(code);
+      }
+    );
+
+    if (employeesToDelete.length === 0) {
+      setLogs(prev => [
+        ...prev,
+        '✅ لا يوجد موظفون مطلوب حذفهم.',
+      ]);
+
+      return 0;
+    }
+
+    setLogs(prev => [
+      ...prev,
+      `🗑️ سيتم حذف ${employeesToDelete.length} موظف غير موجودين في الملف...`,
+    ]);
+
+    const DELETE_BATCH_SIZE = 500;
+
+    for (
+      let i = 0;
+      i < employeesToDelete.length;
+      i += DELETE_BATCH_SIZE
+    ) {
+      const batch = employeesToDelete.slice(
+        i,
+        i + DELETE_BATCH_SIZE
+      );
+
+      const codes = batch
+        .map(emp => emp.employee_code)
+        .filter(Boolean);
+
+      const { error } = await supabase
+        .from('employees')
+        .delete()
+        .in('employee_code', codes);
+
+      if (error) {
+        throw error;
+      }
+
+      setLogs(prev => [
+        ...prev,
+        `🗑️ تم حذف الدفعة ${i + 1} إلى ${Math.min(
+          i + DELETE_BATCH_SIZE,
+          employeesToDelete.length
+        )}`,
+      ]);
+    }
+
+    return employeesToDelete.length;
+  };
+
+  // =========================================================
+  // رفع ومزامنة البيانات
+  // =========================================================
+  const handleFileUpload = async (
+    e: React.FormEvent
+  ) => {
     e.preventDefault();
-    if (!file) return alert('يرجى اختيار ملف Excel أولاً');
+
+    if (!file) {
+      return alert('يرجى اختيار ملف Excel أولاً');
+    }
 
     setLoading(true);
-    setLogs(['بدء قراءة الملف... ⏳']);
+
+    setLogs([
+      '🚀 بدء عملية مزامنة بيانات الموظفين...',
+    ]);
 
     try {
+      // -----------------------------------------------------
+      // قراءة الملف
+      // -----------------------------------------------------
       const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+      const workbook = XLSX.read(data, {
+        type: 'array',
+        cellDates: true,
+      });
+
       const sheetName = workbook.SheetNames[0];
+
       const sheet = workbook.Sheets[sheetName];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      const jsonData: any[] =
+        XLSX.utils.sheet_to_json(sheet, {
+          defval: '',
+        });
 
       if (jsonData.length === 0) {
         setLoading(false);
-        return alert('الملف المرفوع فارغ! يرجى ملء البيانات أولاً.');
+
+        return alert(
+          'الملف المرفوع فارغ! يرجى ملء البيانات أولاً.'
+        );
       }
 
-      setLogs(prev => [...prev, `تم استخراج ${jsonData.length} صف من الملف.`]);
+      setLogs(prev => [
+        ...prev,
+        `📄 تم استخراج ${jsonData.length} صف من الملف.`,
+      ]);
 
-      const preparedData = jsonData.map((row) => ({
-        employee_id: String(row.employee_id || row.employee_code || '').trim(),
-        employee_code: String(row.employee_code || '').trim(),
-        employee_name: String(row.employee_name || '').trim(),
-        department: String(row.department || '').trim(),
-        job_title: String(row.job_title || '').trim(),
-        company: String(row.company || '').trim(),
-        hiring_date: parseExcelDate(row.hiring_date),
-        national_id: String(row.national_id || '').trim(),
-        birth_date: parseExcelDate(row.birth_date),
-        age: row.age ? Number(row.age) : null,
-        age_60_date: parseExcelDate(row.age_60_date),
-        age_status: String(row.age_status || '').trim(),
-        status: String(row.status || 'Active').trim(),
-        email: String(row.email || '').trim(),
-        mobile: String(row.mobile || '').trim(),
-        manager: String(row.manager || '').trim(),
-        contract_type: String(row.contract_type || 'محدد المدة').trim(),
-        contract_start_date: parseExcelDate(row.contract_start_date),
-        contract_end_date: parseExcelDate(row.contract_end_date),
-        password: String(row.password || '123456').trim(),
-        role: String(row.role || 'Employee').trim(),
-        must_change_password: String(row.must_change_password).toLowerCase() === 'true',
-      })).filter(emp => emp.employee_code); // استبعاد الصفوف بدون كود
+      // -----------------------------------------------------
+      // تجهيز البيانات
+      // -----------------------------------------------------
+      const preparedData = jsonData
+        .map(row => ({
+          employee_id: String(
+            row.employee_id ||
+            row.employee_code ||
+            ''
+          ).trim(),
 
-      // تقسيم البيانات على دفعات (Batching by 500)
+          employee_code: String(
+            row.employee_code || ''
+          ).trim(),
+
+          employee_name: String(
+            row.employee_name || ''
+          ).trim(),
+
+          department: String(
+            row.department || ''
+          ).trim(),
+
+          job_title: String(
+            row.job_title || ''
+          ).trim(),
+
+          company: String(
+            row.company || ''
+          ).trim(),
+
+          hiring_date: parseExcelDate(
+            row.hiring_date
+          ),
+
+          national_id: String(
+            row.national_id || ''
+          ).trim(),
+
+          birth_date: parseExcelDate(
+            row.birth_date
+          ),
+
+          age: row.age
+            ? Number(row.age)
+            : null,
+
+          age_60_date: parseExcelDate(
+            row.age_60_date
+          ),
+
+          age_status: String(
+            row.age_status || ''
+          ).trim(),
+
+          status: String(
+            row.status || 'Active'
+          ).trim(),
+
+          email: String(
+            row.email || ''
+          ).trim(),
+
+          mobile: String(
+            row.mobile || ''
+          ).trim(),
+
+          manager: String(
+            row.manager || ''
+          ).trim(),
+
+          contract_type: String(
+            row.contract_type || 'محدد المدة'
+          ).trim(),
+
+          contract_start_date:
+            parseExcelDate(
+              row.contract_start_date
+            ),
+
+          contract_end_date:
+            parseExcelDate(
+              row.contract_end_date
+            ),
+
+          password: String(
+            row.password || '123456'
+          ).trim(),
+
+          role: String(
+            row.role || 'Employee'
+          ).trim(),
+
+          must_change_password:
+            String(
+              row.must_change_password
+            ).toLowerCase() === 'true',
+        }))
+        .filter(
+          emp => emp.employee_code
+        );
+
+      if (preparedData.length === 0) {
+        throw new Error(
+          'لم يتم العثور على أي موظفين لديهم employee_code صالح في الملف.'
+        );
+      }
+
+      // -----------------------------------------------------
+      // منع تكرار الموظف داخل نفس ملف Excel
+      // -----------------------------------------------------
+      const employeeCodes = new Set<string>();
+
+      const duplicateCodes: string[] = [];
+
+      for (const employee of preparedData) {
+        if (
+          employeeCodes.has(
+            employee.employee_code
+          )
+        ) {
+          duplicateCodes.push(
+            employee.employee_code
+          );
+        }
+
+        employeeCodes.add(
+          employee.employee_code
+        );
+      }
+
+      if (duplicateCodes.length > 0) {
+        throw new Error(
+          `يوجد تكرار في employee_code داخل الملف: ${duplicateCodes
+            .slice(0, 20)
+            .join(', ')}${
+            duplicateCodes.length > 20
+              ? ' ...'
+              : ''
+          }`
+        );
+      }
+
+      setLogs(prev => [
+        ...prev,
+        `✅ تم تجهيز ${preparedData.length} موظف للمزامنة.`,
+      ]);
+
+      // -----------------------------------------------------
+      // أولاً: إضافة وتحديث الموظفين
+      // -----------------------------------------------------
       const BATCH_SIZE = 500;
-      for (let i = 0; i < preparedData.length; i += BATCH_SIZE) {
-        const batch = preparedData.slice(i, i + BATCH_SIZE);
-        setLogs(prev => [...prev, `جاري رفع الدفعة من ${i + 1} إلى ${Math.min(i + BATCH_SIZE, preparedData.length)}...`]);
+
+      for (
+        let i = 0;
+        i < preparedData.length;
+        i += BATCH_SIZE
+      ) {
+        const batch = preparedData.slice(
+          i,
+          i + BATCH_SIZE
+        );
+
+        setLogs(prev => [
+          ...prev,
+          `🔄 جاري تحديث الدفعة من ${
+            i + 1
+          } إلى ${Math.min(
+            i + BATCH_SIZE,
+            preparedData.length
+          )}...`,
+        ]);
 
         const { error } = await supabase
           .from('employees')
-          .upsert(batch, { onConflict: 'employee_code' });
+          .upsert(batch, {
+            onConflict: 'employee_code',
+          });
 
-        if (error) throw error;
+        if (error) {
+          throw error;
+        }
       }
 
-      setLogs(prev => [...prev, '✅ تم رفع وتحديث جميع البيانات بنجاح!']);
-      alert('تم تحديث البيانات المجمعة بنجاح ✅');
+      setLogs(prev => [
+        ...prev,
+        '✅ تم إضافة وتحديث جميع الموظفين.',
+      ]);
+
+      // -----------------------------------------------------
+      // ثانياً: حذف الموظفين المختفين من الملف
+      // -----------------------------------------------------
+      const deletedCount =
+        await deleteMissingEmployees(
+          preparedData
+        );
+
+      // -----------------------------------------------------
+      // النتيجة النهائية
+      // -----------------------------------------------------
+      setLogs(prev => [
+        ...prev,
+        '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+        '🎉 تمت عملية المزامنة بنجاح!',
+        `👥 عدد الموظفين في الملف: ${preparedData.length}`,
+        `🗑️ عدد الموظفين المحذوفين: ${deletedCount}`,
+        `📌 عدد الموظفين النهائي المفترض: ${
+          preparedData.length
+        }`,
+      ]);
+
+      alert(
+        `تمت مزامنة بيانات الموظفين بنجاح ✅\n\n` +
+        `الموظفين في الملف: ${preparedData.length}\n` +
+        `الموظفين المحذوفين: ${deletedCount}`
+      );
+
       await refresh();
+
       setFile(null);
     } catch (err: any) {
-      setLogs(prev => [...prev, `❌ خطأ: ${err.message}`]);
-      alert('حدث خطأ أثناء الرفع: ' + err.message);
+      console.error(err);
+
+      setLogs(prev => [
+        ...prev,
+        `❌ خطأ: ${err.message}`,
+      ]);
+
+      alert(
+        'حدث خطأ أثناء المزامنة: ' +
+          err.message
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  // =========================================================
+  // UI
+  // =========================================================
   return (
     <div className="flex flex-col gap-6 pb-10">
+
       <div className="executive-card p-6">
-        <h3 className="m-0 text-lg font-extrabold text-primary">🔄 تحديث واستيراد البيانات المجمع</h3>
+
+        <h3 className="m-0 text-lg font-extrabold text-primary">
+          🔄 تحديث ومزامنة بيانات الموظفين
+        </h3>
+
         <p className="mt-1 text-xs text-muted font-bold">
-          قم بتنزيل القالب الفارغ، ادخل البيانات بنفس التنسيق، ثم أعد رفعه لتحديث أو إضافة الموظفين جملة واحدة.
+          سيتم إضافة الموظفين الجدد، تحديث بيانات الموظفين
+          الموجودين، وحذف أي موظف غير موجود في ملف Excel.
         </p>
 
         <div className="my-6">
+
           <button
             onClick={handleDownloadTemplate}
-            className="bg-[var(--success-text)] hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-bold text-xs transition-opacity flex items-center gap-2 shadow-sm"
+            disabled={loading}
+            className="bg-[var(--success-text)] hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-bold text-xs transition-opacity flex items-center gap-2 shadow-sm disabled:opacity-50"
           >
             📥 تحميل تمبلت فارغ (Excel Template)
           </button>
+
         </div>
 
-        <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border rounded-xl p-8 text-center bg-background">
-          <div className="text-4xl mb-3">📁</div>
-          <p className="m-0 mb-4 text-xs font-bold text-primary">اختر ملف Excel المكتمل لرفعه إلى النظام</p>
-          
+        <form
+          onSubmit={handleFileUpload}
+          className="border-2 border-dashed border-border rounded-xl p-8 text-center bg-background"
+        >
+
+          <div className="text-4xl mb-3">
+            📁
+          </div>
+
+          <p className="m-0 mb-4 text-xs font-bold text-primary">
+            اختر ملف Excel الكامل للموظفين
+          </p>
+
           <input
             type="file"
             accept=".xlsx, .xls"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            className="mb-6 text-xs text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary file:text-card hover:file:opacity-80"
+            disabled={loading}
+            onChange={e =>
+              setFile(
+                e.target.files?.[0] ||
+                  null
+              )
+            }
+            className="mb-6 text-xs text-muted file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-primary file:text-card hover:file:opacity-80 disabled:opacity-50"
           />
 
+          {file && (
+            <div className="mb-5 text-xs font-bold text-primary">
+              📄 الملف المختار: {file.name}
+            </div>
+          )}
+
           <div>
+
             <button
               type="submit"
-              disabled={loading || !file}
+              disabled={
+                loading || !file
+              }
               className="bg-gold hover:bg-gold-hover text-white font-bold text-xs px-8 py-3 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {loading ? 'جاري المعالجة والرفع...' : 'رفع وتحديث قاعدة البيانات 🚀'}
+              {loading
+                ? 'جاري المزامنة... ⏳'
+                : 'مزامنة قاعدة البيانات 🚀'}
             </button>
+
           </div>
+
         </form>
+
       </div>
 
       {logs.length > 0 && (
-        <div className="bg-[#0f172a] text-[#38bdf8] p-5 rounded-xl font-mono text-xs max-h-52 overflow-y-auto border border-border">
-          <div className="font-bold mb-2 text-white">سجل المعالجة (System Log):</div>
-          {logs.map((log, idx) => (
-            <div key={idx} className="mb-1">{log}</div>
-          ))}
+        <div className="bg-[#0f172a] text-[#38bdf8] p-5 rounded-xl font-mono text-xs max-h-72 overflow-y-auto border border-border">
+
+          <div className="font-bold mb-2 text-white">
+            سجل المعالجة (System Log):
+          </div>
+
+          {logs.map(
+            (log, idx) => (
+              <div
+                key={idx}
+                className="mb-1"
+              >
+                {log}
+              </div>
+            )
+          )}
+
         </div>
       )}
+
     </div>
   );
 }
+```
