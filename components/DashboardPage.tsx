@@ -88,9 +88,9 @@ export default function DashboardPage() {
       const dept = emp.department || 'غير محدد';
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      if (!type.includes('فوق السن')) {
+      // 🌟 التعديل هنا: إنذار السن يعمل فقط للموظفين أصحاب العقد (دائم)
+      if (type === 'دائم') {
         const ageInfo = getAge60Info(emp.national_id);
-        // 🌟 التعديل هنا: سيعرض من يتبقى له 60 يوم أو من تجاوز السن (الأيام بالسالب)
         if (ageInfo && ageInfo.daysUntil60 <= 60) {
           turning60List.push({
             ...emp,
@@ -116,8 +116,7 @@ export default function DashboardPage() {
     });
 
     alerts.sort((a, b) => a.days - b.days);
-    // ترتيب بحيث يظهر المتجاوزين (الأيام بالسالب) في أعلى القائمة
-    turning60List.sort((a, b) => a.daysLeft - b.daysLeft);
+    turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
 
     const urgentAlerts = alerts.slice(0, 20);
     const topDepts = Object.entries(deptsCount)
@@ -202,10 +201,10 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-        <KpiCard loading={loading} tone="brass" title="إجمالي قوة العمل" value={dashboardData.totalEmps} sub="موظف نشط" icon="👥" />
-        <KpiCard loading={loading} tone="blue" title="طلبات تجديد معلقة" value={dashboardData.pendingRenewals} sub="طلب" icon="⏳" onClick={() => navigateTo('renewals')} />
-        <KpiCard loading={loading} tone="amber" title="عقود تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub="عقد" icon="📆" />
-        <KpiCard loading={loading} tone="red" title="عقود منتهية (تحتاج إجراء)" value={dashboardData.expiredCount} sub="عقد" icon="🚨" />
+        <KpiCard loading={loading} tone="brass" title="إجمالي قوة العمل" value={dashboardData.totalEmps} sub="عرض السجل 👁️" icon="👥" onClick={() => navigateTo('employees')} />
+        <KpiCard loading={loading} tone="blue" title="طلبات تجديد معلقة" value={dashboardData.pendingRenewals} sub="الذهاب للطلبات 👁️" icon="⏳" onClick={() => navigateTo('renewals')} />
+        <KpiCard loading={loading} tone="amber" title="عقود تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub="إدارة العقود 👁️" icon="📆" onClick={() => navigateTo('contracts')} />
+        <KpiCard loading={loading} tone="red" title="عقود منتهية (تحتاج إجراء)" value={dashboardData.expiredCount} sub="إدارة العقود 🚨" icon="🚨" onClick={() => navigateTo('contracts')} />
         <KpiCard loading={loading} tone="amber" title="سن الـ 60 (يستلزم إجراء)" value={dashboardData.turning60List.length} sub="عرض القائمة 👁️" icon="🎂" onClick={() => setShowAgeModal(true)} />
       </div>
 
@@ -321,7 +320,7 @@ export default function DashboardPage() {
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#856404', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🎂 موظفون بلغوا سن الـ 60 (ولم يتم تسوية عقودهم)
+                🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60 (يستلزم تسوية)
               </h3>
               <button onClick={() => setShowAgeModal(false)} style={{ background: '#f1f5f9', border: 0, color: '#475569', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
                 إغلاق ✕
@@ -330,7 +329,7 @@ export default function DashboardPage() {
 
             {dashboardData.turning60List.length === 0 ? (
               <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '13px' }}>
-                لا يوجد موظفون يبلغون سن الـ 60 خلال الـ 60 يوماً القادمة. 🎉
+                لا يوجد موظفون (بعقود دائمة) يبلغون سن الـ 60 خلال الـ 60 يوماً القادمة. 🎉
               </div>
             ) : (
               <div className="table-responsive">
