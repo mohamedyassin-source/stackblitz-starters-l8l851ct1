@@ -25,7 +25,7 @@ type PreviewData = {
   totalInDatabase: number;
   newEmployees: Employee[];
   updatedEmployees: EmployeeChange[];
-  deletedEmployees: Employee[];
+  inactiveEmployees: Employee[];
   unchangedCount: number;
 };
 
@@ -78,7 +78,9 @@ const COMPARE_FIELDS = [
 ];
 
 function normalizeValue(value: any): string {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) {
+    return '';
+  }
 
   if (typeof value === 'boolean') {
     return value ? 'true' : 'false';
@@ -88,7 +90,11 @@ function normalizeValue(value: any): string {
 }
 
 function parseExcelDate(value: any): string | null {
-  if (value === null || value === undefined || value === '') {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
     return null;
   }
 
@@ -118,10 +124,13 @@ function parseExcelDate(value: any): string | null {
 
   const str = String(value).trim();
 
-  if (!str) return null;
+  if (!str) {
+    return null;
+  }
 
-  // YYYY-MM-DD
-  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const isoMatch = str.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})/
+  );
 
   if (isoMatch) {
     const year = isoMatch[1];
@@ -131,8 +140,9 @@ function parseExcelDate(value: any): string | null {
     return `${year}-${month}-${day}`;
   }
 
-  // DD/MM/YYYY or DD-MM-YYYY
-  const dmyMatch = str.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/);
+  const dmyMatch = str.match(
+    /^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})/
+  );
 
   if (dmyMatch) {
     const day = String(Number(dmyMatch[1])).padStart(2, '0');
@@ -148,7 +158,8 @@ function parseExcelDate(value: any): string | null {
 function prepareEmployee(row: any): Employee {
   return {
     employee_id:
-      row.employee_id !== undefined && row.employee_id !== ''
+      row.employee_id !== undefined &&
+      row.employee_id !== ''
         ? row.employee_id
         : null,
 
@@ -169,7 +180,9 @@ function prepareEmployee(row: any): Employee {
     birth_date: parseExcelDate(row.birth_date),
 
     age:
-      row.age === '' || row.age === null || row.age === undefined
+      row.age === '' ||
+      row.age === null ||
+      row.age === undefined
         ? null
         : Number(row.age),
 
@@ -177,7 +190,10 @@ function prepareEmployee(row: any): Employee {
 
     age_status: String(row.age_status ?? '').trim(),
 
-    status: String(row.status ?? 'Active').trim(),
+    status:
+      row.status !== undefined && row.status !== ''
+        ? String(row.status).trim()
+        : 'Active',
 
     email: String(row.email ?? '').trim(),
 
@@ -185,31 +201,44 @@ function prepareEmployee(row: any): Employee {
 
     manager: String(row.manager ?? '').trim(),
 
-    contract_type: String(
-      row.contract_type ?? 'محدد المدة'
-    ).trim(),
+    contract_type:
+      row.contract_type !== undefined &&
+      row.contract_type !== ''
+        ? String(row.contract_type).trim()
+        : 'محدد المدة',
 
-    contract_start_date: parseExcelDate(row.contract_start_date),
+    contract_start_date: parseExcelDate(
+      row.contract_start_date
+    ),
 
-    contract_end_date: parseExcelDate(row.contract_end_date),
+    contract_end_date: parseExcelDate(
+      row.contract_end_date
+    ),
 
     password:
-      row.password !== undefined && row.password !== ''
+      row.password !== undefined &&
+      row.password !== ''
         ? String(row.password)
         : '123456',
 
     role:
-      row.role !== undefined && row.role !== ''
+      row.role !== undefined &&
+      row.role !== ''
         ? String(row.role)
         : 'Employee',
 
     must_change_password:
-      String(row.must_change_password ?? '').toLowerCase() === 'true',
+      String(row.must_change_password ?? '').toLowerCase() ===
+      'true',
   };
 }
 
 function displayValue(value: any): string {
-  if (value === null || value === undefined || value === '') {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
     return '—';
   }
 
@@ -224,23 +253,31 @@ export default function DataSyncPage() {
   const { refresh } = useAppData();
 
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<PreviewData | null>(null);
+
+  const [preview, setPreview] = useState<PreviewData | null>(
+    null
+  );
 
   const [loading, setLoading] = useState(false);
+
   const [applying, setApplying] = useState(false);
 
   const [message, setMessage] = useState('');
+
   const [error, setError] = useState('');
 
-  const [showUpdated, setShowUpdated] = useState(false);
-  const [showDeleted, setShowDeleted] = useState(false);
   const [showNew, setShowNew] = useState(false);
+
+  const [showUpdated, setShowUpdated] = useState(false);
+
+  const [showInactive, setShowInactive] = useState(false);
 
   async function getExistingEmployees(): Promise<Employee[]> {
     const allEmployees: Employee[] = [];
 
-    let from = 0;
     const pageSize = 1000;
+
+    let from = 0;
 
     while (true) {
       const { data, error } = await supabase
@@ -287,6 +324,7 @@ export default function DataSyncPage() {
     }
 
     const sheetName = workbook.SheetNames[0];
+
     const worksheet = workbook.Sheets[sheetName];
 
     const rows = XLSX.utils.sheet_to_json(worksheet, {
@@ -299,7 +337,10 @@ export default function DataSyncPage() {
 
     const employees = rows
       .map((row: any) => prepareEmployee(row))
-      .filter((employee) => employee.employee_code !== '');
+      .filter(
+        (employee) =>
+          normalizeValue(employee.employee_code) !== ''
+      );
 
     if (!employees.length) {
       throw new Error(
@@ -312,6 +353,7 @@ export default function DataSyncPage() {
 
   function validateDuplicates(employees: Employee[]) {
     const codes = new Set<string>();
+
     const duplicates = new Set<string>();
 
     for (const employee of employees) {
@@ -341,9 +383,11 @@ export default function DataSyncPage() {
 
     for (const field of COMPARE_FIELDS) {
       const oldValue = oldEmployee[field];
+
       const newValue = newEmployee[field];
 
       const oldNormalized = normalizeValue(oldValue);
+
       const newNormalized = normalizeValue(newValue);
 
       if (oldNormalized !== newNormalized) {
@@ -387,12 +431,15 @@ export default function DataSyncPage() {
       const excelCodes = new Set<string>();
 
       const newEmployees: Employee[] = [];
+
       const updatedEmployees: EmployeeChange[] = [];
 
       let unchangedCount = 0;
 
       for (const excelEmployee of excelEmployees) {
-        const code = normalizeValue(excelEmployee.employee_code);
+        const code = normalizeValue(
+          excelEmployee.employee_code
+        );
 
         excelCodes.add(code);
 
@@ -422,27 +469,35 @@ export default function DataSyncPage() {
         }
       }
 
-      const deletedEmployees = databaseEmployees.filter(
+      const inactiveEmployees = databaseEmployees.filter(
         (employee) => {
-          const code = normalizeValue(employee.employee_code);
+          const code = normalizeValue(
+            employee.employee_code
+          );
 
-          return code && !excelCodes.has(code);
+          const status = normalizeValue(
+            employee.status
+          ).toLowerCase();
+
+          return (
+            code &&
+            !excelCodes.has(code) &&
+            status !== 'inactive'
+          );
         }
       );
 
-      const result: PreviewData = {
+      setPreview({
         totalInFile: excelEmployees.length,
         totalInDatabase: databaseEmployees.length,
         newEmployees,
         updatedEmployees,
-        deletedEmployees,
+        inactiveEmployees,
         unchangedCount,
-      };
-
-      setPreview(result);
+      });
 
       setMessage(
-        `تم فحص الملف بنجاح. لم يتم تعديل أي بيانات حتى الآن.`
+        'تم فحص الملف بنجاح. لم يتم تعديل أي بيانات.'
       );
     } catch (err: any) {
       console.error(err);
@@ -458,36 +513,30 @@ export default function DataSyncPage() {
 
   async function handleApplySync() {
     if (!preview || !file) {
-      setError('لا توجد معاينة جاهزة للتنفيذ');
+      setError(
+        'لا توجد معاينة جاهزة للتنفيذ'
+      );
       return;
     }
 
-    const hasDeletes =
-      preview.deletedEmployees.length > 0;
-
     let confirmationMessage =
-      `سيتم تنفيذ المزامنة فعلياً:\n\n` +
-      `إجمالي الملف: ${preview.totalInFile}\n` +
+      `سيتم تنفيذ المزامنة:\n\n` +
+      `إجمالي Excel: ${preview.totalInFile}\n` +
       `إضافة: ${preview.newEmployees.length}\n` +
       `تعديل: ${preview.updatedEmployees.length}\n` +
       `بدون تغيير: ${preview.unchangedCount}\n` +
-      `حذف: ${preview.deletedEmployees.length}\n\n`;
+      `تحويل إلى Inactive: ${preview.inactiveEmployees.length}\n\n`;
 
-    if (hasDeletes) {
+    if (preview.inactiveEmployees.length > 0) {
       confirmationMessage +=
-        `⚠️ تحذير مهم:\n` +
-        `سيتم حذف ${preview.deletedEmployees.length} موظف من جدول employees ` +
-        `لأنهم غير موجودين في ملف Excel.\n\n`;
+        `⚠️ لن يتم حذف أي موظف.\n` +
+        `سيتم فقط تحويل ${preview.inactiveEmployees.length} موظف إلى Inactive.\n\n`;
     }
 
     confirmationMessage +=
-      `هل أنت متأكد من اعتماد وتنفيذ المزامنة؟`;
+      'هل تريد اعتماد وتنفيذ المزامنة؟';
 
-    const confirmed = window.confirm(
-      confirmationMessage
-    );
-
-    if (!confirmed) {
+    if (!window.confirm(confirmationMessage)) {
       return;
     }
 
@@ -496,16 +545,17 @@ export default function DataSyncPage() {
       setError('');
       setMessage('');
 
-      setMessage('جاري قراءة الملف مرة أخرى...');
+      setMessage('جاري قراءة ملف Excel...');
 
       const excelEmployees = await readExcelFile();
 
       validateDuplicates(excelEmployees);
 
-      setMessage('جاري تحميل البيانات الحالية...');
+      setMessage(
+        'جاري تحميل بيانات الموظفين الحالية...'
+      );
 
-      const databaseEmployees =
-        await getExistingEmployees();
+      const databaseEmployees = await getExistingEmployees();
 
       const databaseMap = new Map<string, Employee>();
 
@@ -518,25 +568,21 @@ export default function DataSyncPage() {
       }
 
       /*
-       * مهم:
-       * الموظف الموجود بالفعل يحتفظ بنفس EmployeeID.
-       * الموظف الجديد يأخذ EmployeeID القادم من ملف Excel
-       * إذا كان موجوداً.
+       * الموظف الموجود بالفعل يحتفظ
+       * بنفس EmployeeID الموجود في قاعدة البيانات.
        */
-      const preparedEmployees = excelEmployees.map(
+      const employeesToSave = excelEmployees.map(
         (employee) => {
           const code = normalizeValue(
             employee.employee_code
           );
 
-          const existing =
-            databaseMap.get(code);
+          const existingEmployee = databaseMap.get(code);
 
-          if (existing) {
+          if (existingEmployee) {
             return {
               ...employee,
-              employee_id:
-                existing.employee_id,
+              employee_id: existingEmployee.employee_id,
             };
           }
 
@@ -544,27 +590,27 @@ export default function DataSyncPage() {
         }
       );
 
-      /*
-       * Upsert على دفعات
-       */
       const batchSize = 500;
 
+      /*
+       * إضافة الموظفين الجدد
+       * وتحديث الموظفين الموجودين
+       */
       for (
         let i = 0;
-        i < preparedEmployees.length;
+        i < employeesToSave.length;
         i += batchSize
       ) {
-        const batch =
-          preparedEmployees.slice(
-            i,
-            i + batchSize
-          );
+        const batch = employeesToSave.slice(
+          i,
+          i + batchSize
+        );
 
         setMessage(
           `جاري حفظ الموظفين... ${Math.min(
             i + batch.length,
-            preparedEmployees.length
-          )} / ${preparedEmployees.length}`
+            employeesToSave.length
+          )} / ${employeesToSave.length}`
         );
 
         const { error: upsertError } =
@@ -582,82 +628,92 @@ export default function DataSyncPage() {
       }
 
       /*
-       * حذف الموظفين غير الموجودين في Excel
+       * تحديد الموظفين الموجودين في DB
+       * وغير الموجودين في Excel.
        */
-      const currentExcelCodes = new Set(
-        preparedEmployees.map((employee) =>
-          normalizeValue(
-            employee.employee_code
-          )
+      const excelCodes = new Set(
+        employeesToSave.map((employee) =>
+          normalizeValue(employee.employee_code)
         )
       );
 
-      const employeesToDelete =
-        databaseEmployees.filter(
-          (employee) => {
-            const code = normalizeValue(
-              employee.employee_code
-            );
-
-            return (
-              code &&
-              !currentExcelCodes.has(code)
-            );
-          }
-        );
-
-      if (employeesToDelete.length > 0) {
-        setMessage(
-          `جاري حذف ${employeesToDelete.length} موظف غير موجودين في الملف...`
-        );
-
-        for (
-          let i = 0;
-          i < employeesToDelete.length;
-          i += batchSize
-        ) {
-          const batch =
-            employeesToDelete.slice(
-              i,
-              i + batchSize
-            );
-
-          const codes = batch.map(
-            (employee) =>
-              employee.employee_code
+      const employeesToInactive =
+        databaseEmployees.filter((employee) => {
+          const code = normalizeValue(
+            employee.employee_code
           );
 
-          const { error: deleteError } =
-            await supabase
-              .from('employees')
-              .delete()
-              .in('employee_code', codes);
+          const status = normalizeValue(
+            employee.status
+          ).toLowerCase();
 
-          if (deleteError) {
-            throw new Error(
-              `خطأ أثناء حذف الموظفين: ${deleteError.message}`
-            );
-          }
+          return (
+            code &&
+            !excelCodes.has(code) &&
+            status !== 'inactive'
+          );
+        });
+
+      /*
+       * تحويل الموظفين إلى Inactive
+       * بدلاً من حذفهم.
+       */
+      for (
+        let i = 0;
+        i < employeesToInactive.length;
+        i += batchSize
+      ) {
+        const batch = employeesToInactive.slice(
+          i,
+          i + batchSize
+        );
+
+        const codes = batch.map(
+          (employee) => employee.employee_code
+        );
+
+        setMessage(
+          `جاري تحويل الموظفين إلى Inactive... ${Math.min(
+            i + batch.length,
+            employeesToInactive.length
+          )} / ${employeesToInactive.length}`
+        );
+
+        const { error: inactiveError } =
+          await supabase
+            .from('employees')
+            .update({
+              status: 'Inactive',
+            })
+            .in('employee_code', codes);
+
+        if (inactiveError) {
+          throw new Error(
+            `خطأ أثناء تحويل الموظفين إلى Inactive: ${inactiveError.message}`
+          );
         }
       }
 
-      setMessage(
-        `تم تنفيذ المزامنة بنجاح. تمت إضافة ${preview.newEmployees.length}، وتعديل ${preview.updatedEmployees.length}، وحذف ${employeesToDelete.length}.`
-      );
-
       await refresh();
+
+      setMessage(
+        `تمت المزامنة بنجاح. إضافة: ${preview.newEmployees.length} | تعديل: ${preview.updatedEmployees.length} | Inactive: ${employeesToInactive.length}`
+      );
 
       setPreview(null);
       setFile(null);
 
-      const fileInput =
-        document.getElementById(
-          'employee-excel-file'
-        ) as HTMLInputElement | null;
+      const input = document.getElementById(
+        'employee-excel-file'
+      ) as HTMLInputElement | null;
 
-      if (fileInput) {
-        fileInput.value = '';
+      if (input) {
+        input.value = '';
       }
+
+      setShowNew(false);
+      setShowUpdated(false);
+      setShowInactive(false);
     } catch (err: any) {
       console.error(err);
 
@@ -674,9 +730,9 @@ export default function DataSyncPage() {
     setPreview(null);
     setMessage('');
     setError('');
-    setShowUpdated(false);
-    setShowDeleted(false);
     setShowNew(false);
+    setShowUpdated(false);
+    setShowInactive(false);
   }
 
   function handleDownloadTemplate() {
@@ -705,11 +761,11 @@ export default function DataSyncPage() {
       'must_change_password',
     ];
 
-    const worksheet =
-      XLSX.utils.aoa_to_sheet([headers]);
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      headers,
+    ]);
 
-    const workbook =
-      XLSX.utils.book_new();
+    const workbook = XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(
       workbook,
@@ -734,7 +790,7 @@ export default function DataSyncPage() {
     >
       <div
         style={{
-          background: '#fff',
+          background: '#ffffff',
           borderRadius: '16px',
           padding: '24px',
           boxShadow:
@@ -768,8 +824,9 @@ export default function DataSyncPage() {
                 color: '#666',
               }}
             >
-              ارفع ملف Excel لمراجعة الإضافات
-              والتعديلات والحذف قبل التنفيذ.
+              مراجعة الإضافات والتعديلات
+              وتحويل الموظفين غير الموجودين
+              إلى Inactive قبل التنفيذ.
             </p>
           </div>
 
@@ -837,11 +894,14 @@ export default function DataSyncPage() {
                 fontSize: '14px',
               }}
             >
-              ⚠️ يجب أن يحتوي ملف Excel على
-              جميع الموظفين الحاليين. أي موظف
-              موجود في قاعدة البيانات وغير موجود
-              في الملف سيظهر في المعاينة كموظف
-              سيتم حذفه.
+              ⚠️ يجب أن يحتوي ملف Excel
+              على جميع الموظفين الحاليين.
+              <br />
+              أي موظف موجود في قاعدة
+              البيانات وغير موجود في الملف
+              سيتم تحويله إلى
+              <strong> Inactive </strong>
+              ولن يتم حذفه.
             </div>
 
             <button
@@ -904,18 +964,14 @@ export default function DataSyncPage() {
 
               <SummaryCard
                 title="موظفون سيتم تعديلهم"
-                value={
-                  preview.updatedEmployees.length
-                }
+                value={preview.updatedEmployees.length}
                 icon="✏️"
               />
 
               <SummaryCard
-                title="موظفون سيتم حذفهم"
-                value={
-                  preview.deletedEmployees.length
-                }
-                icon="🗑️"
+                title="سيتم تحويلهم Inactive"
+                value={preview.inactiveEmployees.length}
+                icon="🟠"
               />
 
               <SummaryCard
@@ -925,8 +981,7 @@ export default function DataSyncPage() {
               />
             </div>
 
-            {preview.newEmployees.length >
-              0 && (
+            {preview.newEmployees.length > 0 && (
               <section
                 style={{
                   marginBottom: '20px',
@@ -976,8 +1031,8 @@ export default function DataSyncPage() {
                               marginTop: '4px',
                             }}
                           >
-                            {employee.department} —
-                            {' '}
+                            {employee.department}
+                            {' — '}
                             {employee.job_title}
                           </div>
                         </div>
@@ -988,8 +1043,7 @@ export default function DataSyncPage() {
               </section>
             )}
 
-            {preview.updatedEmployees.length >
-              0 && (
+            {preview.updatedEmployees.length > 0 && (
               <section
                 style={{
                   marginBottom: '20px',
@@ -1098,25 +1152,24 @@ export default function DataSyncPage() {
               </section>
             )}
 
-            {preview.deletedEmployees.length >
-              0 && (
+            {preview.inactiveEmployees.length > 0 && (
               <section
                 style={{
                   marginBottom: '20px',
-                  border: '1px solid #fecaca',
+                  border: '1px solid #fed7aa',
                   borderRadius: '12px',
                   overflow: 'hidden',
                 }}
               >
                 <SectionHeader
-                  title={`الموظفون الذين سيتم حذفهم (${preview.deletedEmployees.length})`}
-                  open={showDeleted}
+                  title={`الموظفون الذين سيتم تحويلهم إلى Inactive (${preview.inactiveEmployees.length})`}
+                  open={showInactive}
                   onClick={() =>
-                    setShowDeleted(!showDeleted)
+                    setShowInactive(!showInactive)
                   }
                 />
 
-                {showDeleted && (
+                {showInactive && (
                   <div
                     style={{
                       padding: '16px',
@@ -1124,7 +1177,7 @@ export default function DataSyncPage() {
                       overflow: 'auto',
                     }}
                   >
-                    {preview.deletedEmployees.map(
+                    {preview.inactiveEmployees.map(
                       (employee, index) => (
                         <div
                           key={`${employee.employee_code}-${index}`}
@@ -1149,8 +1202,8 @@ export default function DataSyncPage() {
                               marginTop: '4px',
                             }}
                           >
-                            {employee.department} —
-                            {' '}
+                            {employee.department}
+                            {' — '}
                             {employee.job_title}
                           </div>
                         </div>
@@ -1172,8 +1225,12 @@ export default function DataSyncPage() {
             >
               🔍 تمت المعاينة فقط.
               <br />
-              لم يتم تعديل أو حذف أي بيانات
-              حتى الآن.
+              لم يتم تعديل أي بيانات حتى الآن.
+              <br />
+              الموظفون غير الموجودين في Excel
+              سيتم تحويلهم إلى
+              <strong> Inactive </strong>
+              ولن يتم حذفهم.
             </div>
 
             <div
@@ -1343,7 +1400,6 @@ function SectionHeader({
       }}
     >
       <span>{title}</span>
-
       <span>{open ? '▲' : '▼'}</span>
     </button>
   );
