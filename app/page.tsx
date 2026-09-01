@@ -17,11 +17,11 @@ const SettingsPage = dynamic(() => import('@/components/SettingsPage'), { ssr: f
 const DataSyncPage = dynamic(() => import('@/components/DataSyncPage'), { ssr: false });
 
 const SIDEBAR_GROUPS = [
-  { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة القيادة', roles: ['Admin', 'HR', 'Employee'] }] },
+  { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
   { 
     title: 'شؤون العاملين', 
     items: [
-      { id: 'employees_data', icon: '👥', label: 'سجل الموظفين', roles: ['Admin', 'HR'] },
+      { id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] },
     ] 
   },
   { 
