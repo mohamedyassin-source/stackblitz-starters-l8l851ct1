@@ -8,13 +8,13 @@ export default function ContractsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // الفلاتر
+  // הפلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedType, setSelectedType] = useState('');
-  const [expiryStatus, setExpiryStatus] = useState('');
+  const [expiryMonth, setExpiryMonth] = useState(''); // 🌟 فلتر شهر وسنة الانتهاء
   
-  // 🌟 فلتر الكروت العلوية (Active Card)
+  // فلتر الكروت العلوية (Active Card)
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'expired'>('all');
 
   // حالة التحديد المجمع (Checkboxes)
@@ -39,9 +39,11 @@ export default function ContractsPage() {
   const [empSearchTerm, setEmpSearchTerm] = useState(''); 
   const [showEmpDropdown, setShowEmpDropdown] = useState(false); 
 
-  // حالة نافذة إنهاء التعاقد
+  // 🌟 حالات نافذة إنهاء التعاقد المحدثة
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
+  const [termSearchTerm, setTermSearchTerm] = useState(''); 
+  const [terminateDate, setTerminateDate] = useState('');
 
   // حالات نافذة التعديل المباشر للعقد
   const [editModal, setEditModal] = useState<{ isOpen: boolean; emp?: any }>({ isOpen: false });
@@ -148,18 +150,21 @@ export default function ContractsPage() {
     const matchesSearch = !term || String(emp.employee_code).toLowerCase().includes(term) || String(emp.employee_name).toLowerCase().includes(term) || String(emp.department).toLowerCase().includes(term);
     const matchesDept = !selectedDept || emp.department === selectedDept;
     const matchesType = !selectedType || emp.contract_type === selectedType;
-    let matchesExpiry = true;
-    if (expiryStatus === 'expiring_60') matchesExpiry = days !== null && days <= 60 && days >= 0;
-    if (expiryStatus === 'expired') matchesExpiry = days !== null && days < 0;
+    
+    // 🌟 فلتر شهر الانتهاء الدقيق (مثل: أكتوبر 2026)
+    let matchesExpiryMonth = true;
+    if (expiryMonth) {
+      matchesExpiryMonth = emp.contract_end_date && emp.contract_end_date.startsWith(expiryMonth);
+    }
 
-    // 🌟 فلاتر الكروت التفاعلية
+    // فلاتر الكروت التفاعلية
     let matchesCard = true;
     if (activeFilterCard === 'fixed') matchesCard = emp.contract_type?.includes('محدد');
     if (activeFilterCard === 'overage') matchesCard = emp.contract_type?.includes('فوق السن');
     if (activeFilterCard === 'expiring') matchesCard = days !== null && days <= 60 && days >= 0;
     if (activeFilterCard === 'expired') matchesCard = days !== null && days < 0;
 
-    return matchesSearch && matchesDept && matchesType && matchesExpiry && matchesCard;
+    return matchesSearch && matchesDept && matchesType && matchesExpiryMonth && matchesCard;
   });
 
   const sortedContracts = [...filteredContracts].sort((a, b) => {
@@ -213,16 +218,32 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
+  // 🌟 دالة إنهاء التعاقد المحدثة
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى اختيار الموظف.');
+    if (!terminateDate) return alert('يرجى التأكد من تاريخ الإنهاء.');
     const confirmTerm = window.confirm('هل أنت متأكد من إنهاء تعاقد هذا الموظف نهائياً؟');
     if (!confirmTerm) return;
+    
     setActionLoading(true);
-    const { error } = await supabase.from('employees').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    const { error } = await supabase.from('employees').update({ 
+      contract_type: 'إنهاء تعاقد', 
+      status: 'Terminated',
+      contract_end_date: terminateDate, // تحديث نهاية العقد لتاريخ الإنهاء الفعلي
+      termination_date: terminateDate 
+    }).eq('employee_code', terminateEmployeeCode);
+    
     setActionLoading(false);
     if (error) alert('حدث خطأ أثناء إنهاء التعاقد: ' + error.message);
-    else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); fetchData(); }
+    else { 
+      alert('تم إنهاء التعاقد بنجاح ✅'); 
+      setIsTerminateModalOpen(false); 
+      setTerminateEmployeeCode(''); 
+      setTermSearchTerm('');
+      setTerminateDate('');
+      fetchData(); 
+    }
   };
 
   const handleEditContract = async (e: React.FormEvent) => {
@@ -265,7 +286,7 @@ export default function ContractsPage() {
       department: emp.department,
       job_title: emp.job_title,
       company: emp.company,
-      contract_end_date: newContractStartDate, // استخدام تاريخ البداية هنا للعرض في PDF
+      contract_end_date: newContractStartDate, // العرض في PDF
       new_contract_end_date: newContractEndDate,
       status: 'Pending',
       signature_status: 'قيد التوقيع',
@@ -356,7 +377,7 @@ export default function ContractsPage() {
           .no-print { display: none !important; }
         }
 
-        /* 🌟 تنسيقات الكروت الجديدة */
+        /* تنسيقات الكروت الجديدة */
         .stat-card {
           background: #fff;
           padding: 18px 20px;
@@ -404,7 +425,12 @@ export default function ContractsPage() {
         
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
-            onClick={() => { setTerminateEmployeeCode(''); setIsTerminateModalOpen(true); }}
+            onClick={() => { 
+              setTerminateEmployeeCode(''); 
+              setTermSearchTerm('');
+              setTerminateDate('');
+              setIsTerminateModalOpen(true); 
+            }}
             style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             ❌ إنهاء تعاقد
@@ -434,10 +460,9 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت التفاعلية الجديدة المفلترة */}
+      {/* الكروت التفاعلية الجديدة المفلترة */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px', direction: 'rtl' }}>
         
-        {/* كارت الكل */}
         <div className={`stat-card ${activeFilterCard === 'all' ? 'active-all' : ''}`} onClick={() => setActiveFilterCard('all')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className="icon-box" style={{ background: '#f1f5f9' }}>🌍</div>
@@ -449,7 +474,6 @@ export default function ContractsPage() {
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#334155' }}>{totalAll.toLocaleString()}</div>
         </div>
 
-        {/* كارت العقود المحددة */}
         <div className={`stat-card ${activeFilterCard === 'fixed' ? 'active-fixed' : ''}`} onClick={() => setActiveFilterCard('fixed')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className="icon-box" style={{ background: '#eff6ff', color: '#2563eb' }}>📑</div>
@@ -461,7 +485,6 @@ export default function ContractsPage() {
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb' }}>{totalFixedContracts.toLocaleString()}</div>
         </div>
 
-        {/* كارت فوق السن */}
         <div className={`stat-card ${activeFilterCard === 'overage' ? 'active-overage' : ''}`} onClick={() => setActiveFilterCard('overage')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className="icon-box" style={{ background: '#faf5ff', color: '#8b5cf6' }}>🌟</div>
@@ -473,7 +496,6 @@ export default function ContractsPage() {
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#8b5cf6' }}>{overAgeContracts.toLocaleString()}</div>
         </div>
 
-        {/* كارت ينتهي قريباً */}
         <div className={`stat-card ${activeFilterCard === 'expiring' ? 'active-expiring' : ''}`} onClick={() => setActiveFilterCard('expiring')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className="icon-box" style={{ background: '#fff7ed', color: '#ea580c' }}>⏳</div>
@@ -485,7 +507,6 @@ export default function ContractsPage() {
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>{expiringSoonCount.toLocaleString()}</div>
         </div>
 
-        {/* كارت منتهي المدة */}
         <div className={`stat-card ${activeFilterCard === 'expired' ? 'active-expired' : ''}`} onClick={() => setActiveFilterCard('expired')}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div className="icon-box" style={{ background: '#fef2f2', color: '#dc2626' }}>🚨</div>
@@ -507,9 +528,9 @@ export default function ContractsPage() {
             placeholder="بحث بالاسم، الكود، الإدارة..." 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)} 
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '250px' }} 
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '200px' }} 
           />
-          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px' }}>
+          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '130px' }}>
             <option value="">الإدارة (الكل)</option>
             {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
           </select>
@@ -517,12 +538,19 @@ export default function ContractsPage() {
             <option value="">كل أنواع العقود</option>
             {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
           </select>
-          <select value={expiryStatus} onChange={(e) => setExpiryStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
-            <option value="">حالة الانتهاء (الكل)</option>
-            <option value="expiring_60">ينتهي خلال 60 يوم</option>
-            <option value="expired">منتهي الصلاحية</option>
-          </select>
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); setActiveFilterCard('all'); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+
+          {/* 🌟 فلتر شهر الانتهاء الجديد المطور */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)', marginLeft: '6px' }}>شهر الانتهاء:</span>
+            <input 
+              type="month" 
+              value={expiryMonth} 
+              onChange={e => setExpiryMonth(e.target.value)} 
+              style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} 
+            />
+          </div>
+
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryMonth(''); setActiveFilterCard('all'); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
             إعادة ضبط
           </button>
         </div>
@@ -577,7 +605,7 @@ export default function ContractsPage() {
                     <td style={{ padding: '10px', color: 'var(--muted)' }}>{emp.department || '—'}</td>
                     <td style={{ padding: '10px', color: 'var(--muted)' }}>{emp.job_title || '—'}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', color: isTerminated ? '#dc2626' : '#2563eb' }}>{emp.contract_type || '—'}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_end_date || '—'}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace' }}>{emp.contract_end_date || '—'}</td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '10px' }}><span style={{ color: statusInfo.color }}>{statusInfo.text}</span></td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -606,27 +634,73 @@ export default function ContractsPage() {
         )}
       </div>
 
-      {/* نافذة إنهاء التعاقد */}
+      {/* 🌟 نافذة إنهاء التعاقد המحدثة بالبحث التلقائي وسحب التاريخ */}
       {isTerminateModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>❌ إنهاء تعاقد موظف</h3>
               <button onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: 0, color: '#475569', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
+            
             <form onSubmit={handleTerminateContract}>
-              <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>اختر الموظف المراد إنهاء تعاقده *</label>
-                <select required value={terminateEmployeeCode} onChange={(e) => setTerminateEmployeeCode(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
-                  <option value="">-- اضغط لاختيار الموظف --</option>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
+                  البحث عن الموظف (بالكود أو الاسم) *
+                </label>
+                <input
+                  type="text"
+                  list="term-employees-list"
+                  required
+                  placeholder="🔍 اكتب كود أو اسم الموظف..."
+                  value={termSearchTerm}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setTermSearchTerm(val);
+                    const code = val.split(' - ')[0];
+                    const emp = employees.find(e => e.employee_code === code && e.contract_type !== 'إنهاء تعاقد');
+                    if (emp) {
+                      setTerminateEmployeeCode(code);
+                      setTerminateDate(emp.contract_end_date || new Date().toISOString().split('T')[0]);
+                    } else {
+                      setTerminateEmployeeCode('');
+                      setTerminateDate('');
+                    }
+                  }}
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}
+                />
+                <datalist id="term-employees-list">
                   {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').map((emp) => (
-                    <option key={emp.employee_code} value={emp.employee_code}>{emp.employee_name} ({emp.employee_code}) - {emp.department}</option>
+                    <option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />
                   ))}
-                </select>
+                </datalist>
+                
+                {terminateEmployeeCode && (
+                  <div style={{ marginTop: '8px', fontSize: '11px', color: '#dc2626', fontWeight: 'bold', background: '#fef2f2', padding: '8px', borderRadius: '6px', border: '1px solid #fecaca' }}>
+                    ⚠️ سيتم إنهاء تعاقد الموظف المختار نهائياً.
+                  </div>
+                )}
               </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
+                  تاريخ الإنهاء الفعلي (تلقائي من العقد) *
+                </label>
+                <input 
+                  type="date" 
+                  required 
+                  value={terminateDate} 
+                  onChange={e => setTerminateDate(e.target.value)} 
+                  style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} 
+                />
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري التنفيذ...' : 'تأكيد الإنهاء'}</button>
+                <button type="submit" disabled={actionLoading || !terminateEmployeeCode} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (actionLoading || !terminateEmployeeCode) ? 'not-allowed' : 'pointer' }}>
+                  {actionLoading ? 'جاري التنفيذ...' : 'تأكيد الإنهاء'}
+                </button>
               </div>
             </form>
           </div>
@@ -796,7 +870,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 نافذة تعديل بيانات العقد المباشرة */}
+      {/* نافذة التعديل المباشرة */}
       {editModal.isOpen && editModal.emp && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -834,42 +908,6 @@ export default function ContractsPage() {
                 <button type="submit" disabled={actionLoading} style={{ background: '#3b82f6', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* نافذة الـ PDF للطباعة */}
-      {createdRequestData && (
-        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ background: '#fff', borderRadius: '12px', width: '750px', maxHeight: '90vh', overflowY: 'auto', padding: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.4)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#15803d' }}>🎉 تم إنشاء العقد بنجاح!</h3>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={handlePrintPDF} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>🖨️ طباعة / حفظ كـ PDF</button>
-                <button onClick={() => setCreatedRequestData(null)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إغلاق</button>
-              </div>
-            </div>
-            <div id="pdf-print-area" style={{ border: '2px solid #0f172a', padding: '30px', borderRadius: '8px', background: '#fff', direction: 'rtl', fontFamily: 'serif' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #b8934a', paddingBottom: '16px', marginBottom: '20px' }}>
-                <div><h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2><p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>قطاع الموارد البشرية والشؤون الإدارية</p></div>
-                <div style={{ textAlign: 'left', fontSize: '11px', fontFamily: 'monospace' }}><div>رقم العقد/الطلب: <strong>{createdRequestData.request_id}</strong></div><div>التاريخ: <strong>{createdRequestData.request_date}</strong></div></div>
-              </div>
-              <div style={{ textAlign: 'center', margin: '20px 0' }}><h3 style={{ margin: 0, fontSize: '18px', textDecoration: 'underline', color: '#0f172a' }}>نموذج عقد عمل محدد المدة</h3></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '13px', lineHeight: '2.2', marginBottom: '24px' }}>
-                <div>اسم الموظف: <strong>{createdRequestData.employee_name}</strong></div>
-                <div>كود الموظف: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.employee_code}</strong></div>
-                <div>الإدارة / القسم: <strong>{createdRequestData.department || '—'}</strong></div>
-                <div>المسمى الوظيفي: <strong>{createdRequestData.job_title || '—'}</strong></div>
-                <div>تاريخ بداية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.contract_end_date}</strong></div>
-                <div>تاريخ نهاية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.new_contract_end_date}</strong></div>
-              </div>
-              <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}><strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '50px', textAlign: 'center', fontSize: '12px' }}>
-                <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>توقيع الموظف</div><div>التوقيع: .....................</div></div>
-                <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>مراجعة الموارد البشرية</div><div>التوقيع: .....................</div></div>
-                <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>اعتماد إدارة الشركة</div><div>التوقيع: .....................</div></div>
-              </div>
-            </div>
           </div>
         </div>
       )}
