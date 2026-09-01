@@ -90,7 +90,8 @@ export default function DashboardPage() {
 
       if (!type.includes('فوق السن')) {
         const ageInfo = getAge60Info(emp.national_id);
-        if (ageInfo && ageInfo.daysUntil60 >= 0 && ageInfo.daysUntil60 <= 60) {
+        // 🌟 التعديل هنا: سيعرض من يتبقى له 60 يوم أو من تجاوز السن (الأيام بالسالب)
+        if (ageInfo && ageInfo.daysUntil60 <= 60) {
           turning60List.push({
             ...emp,
             birthDate: ageInfo.birthDate,
@@ -115,6 +116,7 @@ export default function DashboardPage() {
     });
 
     alerts.sort((a, b) => a.days - b.days);
+    // ترتيب بحيث يظهر المتجاوزين (الأيام بالسالب) في أعلى القائمة
     turning60List.sort((a, b) => a.daysLeft - b.daysLeft);
 
     const urgentAlerts = alerts.slice(0, 20);
@@ -123,26 +125,22 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    // 🌟 🎯 اللوجيك الدقيق: قراءة طلبات التجديد المعتمدة فقط من new_contract_end_date + 1 يوم
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const renewalsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
     filteredRens.forEach((req) => {
-      // 1. التثبت من أن الطلب معتمد صراحة (Approved)
       const isApproved = req.status === 'Approved' || req.status === 'معتمد' || req.renewal_status === 'Approved' || req.renewal_status === 'معتمد';
 
       if (isApproved) {
-        // 2. قراءة العمود new_contract_end_date
         const endDateStr = req.new_contract_end_date || req.contract_end_date;
 
         if (endDateStr) {
           const endDate = new Date(endDateStr);
           if (!isNaN(endDate.getTime())) {
-            // 3. إضافة يوم واحد (+1 Day)
             const startDateAfterEnd = new Date(endDate);
             startDateAfterEnd.setDate(startDateAfterEnd.getDate() + 1);
 
-            const monthIdx = startDateAfterEnd.getMonth(); // 0 لـ 11
+            const monthIdx = startDateAfterEnd.getMonth();
             if (monthIdx >= 0 && monthIdx < 12) {
               renewalsByMonth[monthIdx].count++;
             }
@@ -208,7 +206,7 @@ export default function DashboardPage() {
         <KpiCard loading={loading} tone="blue" title="طلبات تجديد معلقة" value={dashboardData.pendingRenewals} sub="طلب" icon="⏳" onClick={() => navigateTo('renewals')} />
         <KpiCard loading={loading} tone="amber" title="عقود تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub="عقد" icon="📆" />
         <KpiCard loading={loading} tone="red" title="عقود منتهية (تحتاج إجراء)" value={dashboardData.expiredCount} sub="عقد" icon="🚨" />
-        <KpiCard loading={loading} tone="amber" title="سن الـ 60 قريباً (خلال 60 يوم)" value={dashboardData.turning60List.length} sub="عرض القائمة 👁️" icon="🎂" onClick={() => setShowAgeModal(true)} />
+        <KpiCard loading={loading} tone="amber" title="سن الـ 60 (يستلزم إجراء)" value={dashboardData.turning60List.length} sub="عرض القائمة 👁️" icon="🎂" onClick={() => setShowAgeModal(true)} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
@@ -233,10 +231,9 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 الشارت المطور لقراءة الطلبات المعتمدة (Approved) بناءً على new_contract_end_date + 1 يوم */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التجديدات المعتمدة (بناءً على نهاية العقد الجديد + 1 يوم)
+            📈 التجديدات المعتمدة (بناءً على بداية العقد الجديد)
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.renewalsByMonth.map((month, idx) => {
@@ -324,7 +321,7 @@ export default function DashboardPage() {
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#856404', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                🎂 الموظفون القادمين لسن الـ 60 (خلال 60 يوم)
+                🎂 موظفون بلغوا سن الـ 60 (ولم يتم تسوية عقودهم)
               </h3>
               <button onClick={() => setShowAgeModal(false)} style={{ background: '#f1f5f9', border: 0, color: '#475569', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
                 إغلاق ✕
@@ -344,25 +341,33 @@ export default function DashboardPage() {
                       <th style={{ padding: '10px', color: '#475569' }}>الموظف</th>
                       <th style={{ padding: '10px', color: '#475569' }}>الإدارة</th>
                       <th style={{ padding: '10px', color: '#475569' }}>تاريخ بلوغ الـ 60</th>
-                      <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>المتبقي</th>
+                      <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>الحالة / المتبقي</th>
                       <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>إجراء</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dashboardData.turning60List.map((emp) => (
-                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9', background: emp.daysLeft < 0 ? '#fff5f5' : 'transparent' }}>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0d9488', fontFamily: 'monospace' }}>{emp.employee_code}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.age60Date}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: emp.daysLeft < 0 ? '#dc2626' : 'inherit' }}>{emp.age60Date}</td>
+                        
                         <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <span style={{ background: '#fef3c7', color: '#d97706', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
-                            متبقي {emp.daysLeft.toLocaleString('en-US')} يوم
-                          </span>
+                          {emp.daysLeft < 0 ? (
+                            <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>
+                              🚨 تجاوز بـ {Math.abs(emp.daysLeft).toLocaleString('en-US')} يوم
+                            </span>
+                          ) : (
+                            <span style={{ background: '#fef3c7', color: '#d97706', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
+                              ⏳ متبقي {emp.daysLeft.toLocaleString('en-US')} يوم
+                            </span>
+                          )}
                         </td>
+
                         <td style={{ padding: '10px', textAlign: 'center' }}>
                           <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-                            تحويل لعقد فوق السن 🔄
+                            تعديل العقد ✏️
                           </button>
                         </td>
                       </tr>
