@@ -22,7 +22,7 @@ export default function Header({ activePage }: { activePage?: string }) {
   };
 
   let pageTitle = 'لوحة القيادة';
-  if (activePage === 'employees') pageTitle = 'سجل الموظفين';
+  if (activePage === 'employees') pageTitle = 'بيانات الموظفين';
   if (activePage === 'contracts') pageTitle = 'إدارة العقود';
   if (activePage === 'renewals') pageTitle = 'طلبات التجديد';
   if (activePage === 'signatures') pageTitle = 'توقيعات العقود';
