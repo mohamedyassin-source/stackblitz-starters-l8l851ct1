@@ -87,7 +87,36 @@ export default function SignaturesPage() {
     }
   };
 
-  // 🌟 دالة توليد الـ PDF بنظام الإحداثيات (Coordinates) فوق الصورة الأصلية
+  // 🌟 دالة الحذف الجديدة (للحذف الفردي والمجمع)
+  const handleDelete = async (reqId?: string) => {
+    const idsToDelete = reqId ? [reqId] : selectedIds;
+    if (idsToDelete.length === 0) return alert('يرجى تحديد طلب واحد على الأقل للحذف.');
+
+    const confirmDelete = window.confirm(`هل أنت متأكد من حذف عدد (${idsToDelete.length}) طلب تجديد نهائياً؟\n\nتنبيه: سيتم مسح الطلب وكأنه لم يكن!`);
+    if (!confirmDelete) return;
+
+    setActionLoading(true);
+    try {
+      // تنفيذ أمر الحذف من قاعدة البيانات باستخدام .in() للمسح المجمع
+      const { error } = await supabase
+        .from('renewal_requests')
+        .delete()
+        .in('request_id', idsToDelete);
+
+      if (error) throw error;
+
+      alert('تم حذف الطلبات بنجاح 🗑️✅');
+      
+      setSelectedIds([]);
+      await fetchApprovedRequests(); // تحديث القائمة فوراً
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الحذف: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // دالة توليد الـ PDF بنظام الإحداثيات (Coordinates) فوق الصورة الأصلية
   const handleGeneratePDF = async (req: any) => {
     try {
       setActionLoading(true);
@@ -106,51 +135,24 @@ export default function SignaturesPage() {
       element.innerHTML = `
         <div style="position: relative; width: 210mm; height: 297mm; background: #fff; overflow: hidden; font-family: Arial, sans-serif; font-size: 15px; font-weight: bold; color: #000; direction: rtl;">
             
-            <!-- صورة النموذج الأصلي كخلفية (تأكد من وجودها في مجلد public) -->
+            <!-- صورة النموذج الأصلي كخلفية -->
             <img src="/contract-bg.jpg" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;" />
             
             <!-- طبقة النصوص (الإحداثيات) -->
             <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;">
-                
-                <!-- اليوم -->
                 <span style="position: absolute; top: 11.5%; right: 30%; width: 120px; text-align: center;">${dayName}</span>
-                
-                <!-- التاريخ -->
                 <span style="position: absolute; top: 11.5%; right: 65%; width: 120px; text-align: center;">${todayStr}</span>
-
-                <!-- اسم الموظف -->
                 <span style="position: absolute; top: 25.5%; right: 28%; width: 300px; text-align: center;">${req.employee_name || ''}</span>
-
-                <!-- العنوان -->
                 <span style="position: absolute; top: 28%; right: 18%; width: 400px; text-align: right;">${emp?.address || ''}</span>
-
-                <!-- رقم البطاقة -->
                 <span style="position: absolute; top: 30.5%; right: 23%; width: 200px; text-align: center;">${emp?.national_id || ''}</span>
-
-                <!-- محافظة الميلاد -->
                 <span style="position: absolute; top: 30.5%; right: 68%; width: 120px; text-align: center;">${emp?.birth_gov || ''}</span>
-
-                <!-- الإدارة / المشروع -->
                 <span style="position: absolute; top: 37.5%; right: 53%; width: 250px; text-align: center;">${req.department || ''}</span>
-
-                <!-- تاريخ بداية العقد -->
                 <span style="position: absolute; top: 49%; right: 35%; width: 120px; text-align: center;">${startDate}</span>
-
-                <!-- تاريخ نهاية العقد -->
                 <span style="position: absolute; top: 49%; right: 68%; width: 120px; text-align: center;">${endDate}</span>
-
-                <!-- المهنة -->
                 <span style="position: absolute; top: 56.5%; right: 33%; width: 180px; text-align: center;">${emp?.job_title || ''}</span>
-
-                <!-- المرتب رقماً -->
                 <span style="position: absolute; top: 56.5%; right: 68%; width: 120px; text-align: center;">${req.salary || ''}</span>
-
-                <!-- المرتب بالحروف -->
                 <span style="position: absolute; top: 59%; right: 18%; width: 400px; text-align: right;">${req.salary_in_words || ''}</span>
-
-                <!-- كود الموظف (أسفل الورقة) -->
                 <span style="position: absolute; top: 93%; right: 23%; width: 100px; text-align: center;">${req.employee_code || ''}</span>
-                
             </div>
         </div>
       `;
@@ -180,9 +182,16 @@ export default function SignaturesPage() {
           <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>توقيعات العقود المعتمدة</h3>
           <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>إدارة العقود التي تم اعتمادها وتنتظر توقيع الموظفين</p>
         </div>
-        <button onClick={() => handleSign()} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
-          ✍️ توقيع مجمع ({selectedIds.length})
-        </button>
+        
+        {/* 🌟 أزرار العمليات المجمعة (حذف وتوقيع) */}
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => handleDelete()} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+            🗑️ حذف مجمع ({selectedIds.length})
+          </button>
+          <button onClick={() => handleSign()} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+            ✍️ توقيع مجمع ({selectedIds.length})
+          </button>
+        </div>
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
@@ -218,11 +227,11 @@ export default function SignaturesPage() {
                   <input 
                     type="checkbox" 
                     onChange={e => {
-                      const selectableIds = filteredRequests.filter(r => r.signature_status !== 'تم التوقيع').map(r => r.request_id);
+                      // 🌟 تمكين التحديد الشامل لجميع الطلبات المعروضة لسهولة الحذف
+                      const selectableIds = filteredRequests.map(r => r.request_id);
                       setSelectedIds(e.target.checked ? selectableIds : []);
                     }} 
-                    checked={selectedIds.length > 0 && selectedIds.length === filteredRequests.filter(r => r.signature_status !== 'تم التوقيع').length}
-                    disabled={activeTab === 'Signed'} 
+                    checked={selectedIds.length > 0 && selectedIds.length === filteredRequests.length}
                   />
                 </th>
                 <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>رقم الطلب</th>
@@ -243,7 +252,6 @@ export default function SignaturesPage() {
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     <input 
                       type="checkbox" 
-                      disabled={req.signature_status === 'تم التوقيع'} 
                       checked={selectedIds.includes(req.request_id)} 
                       onChange={e => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter(id => id !== req.request_id))} 
                     />
@@ -270,17 +278,27 @@ export default function SignaturesPage() {
                   </td>
                   
                   <td style={{ padding: '8px 10px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
+                    
+                    {/* 🌟 زر الحذف الفردي */}
+                    <button 
+                      onClick={() => handleDelete(req.request_id)} 
+                      disabled={actionLoading}
+                      style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}
+                    >
+                      حذف 🗑️
+                    </button>
+
                     <button 
                       onClick={() => handleGeneratePDF(req)} 
                       disabled={actionLoading}
                       style={{ background: '#0284c7', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}
                     >
-                      📄 تصدير العقد PDF
+                      📄 تصدير
                     </button>
 
                     {req.signature_status !== 'تم التوقيع' ? (
                       <button onClick={() => handleSign(req.request_id)} disabled={actionLoading} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>
-                        تأكيد التوقيع ✍️
+                        توقيع ✍️
                       </button>
                     ) : null}
                   </td>
