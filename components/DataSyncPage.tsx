@@ -21,23 +21,31 @@ export default function DataSyncPage() {
       return null;
     }
 
-    if (val instanceof Date && !isNaN(val.getTime())) {
-      const y = val.getFullYear();
-      const m = String(val.getMonth() + 1).padStart(2, '0');
-      const d = String(val.getDate()).padStart(2, '0');
+    // Excel Date object
+    if (val instanceof Date) {
+      if (isNaN(val.getTime())) {
+        return null;
+      }
 
-      return `${y}-${m}-${d}`;
+      const year = val.getFullYear();
+      const month = String(val.getMonth() + 1).padStart(2, '0');
+      const day = String(val.getDate()).padStart(2, '0');
+
+      return `${year}-${month}-${day}`;
     }
 
+    // Excel serial number
     if (typeof val === 'number') {
       const date = XLSX.SSF.parse_date_code(val);
 
       if (date) {
-        const m = String(date.m).padStart(2, '0');
-        const d = String(date.d).padStart(2, '0');
+        const month = String(date.m).padStart(2, '0');
+        const day = String(date.d).padStart(2, '0');
 
-        return `${date.y}-${m}-${d}`;
+        return `${date.y}-${month}-${day}`;
       }
+
+      return null;
     }
 
     const str = String(val).trim();
@@ -46,20 +54,34 @@ export default function DataSyncPage() {
       return null;
     }
 
-    // محاولة التعامل مع التاريخ بصيغة DD/MM/YYYY
-    const slashMatch = str.match(
-      /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/
+    // YYYY-MM-DD / YYYY/MM/DD
+    // ويتجاهل أي وقت أو GMT+0300 بعد التاريخ
+    const isoMatch = str.match(
+      /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/
     );
 
-    if (slashMatch) {
-      const day = slashMatch[1].padStart(2, '0');
-      const month = slashMatch[2].padStart(2, '0');
-      const year = slashMatch[3];
+    if (isoMatch) {
+      const year = isoMatch[1];
+      const month = isoMatch[2].padStart(2, '0');
+      const day = isoMatch[3].padStart(2, '0');
 
       return `${year}-${month}-${day}`;
     }
 
-    return str;
+    // DD/MM/YYYY أو DD-MM-YYYY
+    const dmyMatch = str.match(
+      /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/
+    );
+
+    if (dmyMatch) {
+      const day = dmyMatch[1].padStart(2, '0');
+      const month = dmyMatch[2].padStart(2, '0');
+      const year = dmyMatch[3];
+
+      return `${year}-${month}-${day}`;
+    }
+
+    return null;
   };
 
   // =========================================================
@@ -108,7 +130,7 @@ export default function DataSyncPage() {
   };
 
   // =========================================================
-  // قراءة الموظفين الموجودين حالياً في قاعدة البيانات
+  // جلب الموظفين الموجودين حالياً في قاعدة البيانات
   // =========================================================
   const getExistingEmployees = async () => {
     const allEmployees: any[] = [];
@@ -146,39 +168,47 @@ export default function DataSyncPage() {
   };
 
   // =========================================================
-  // حذف الموظفين الموجودين في قاعدة البيانات
-  // وغير الموجودين في ملف Excel
+  // حذف الموظفين غير الموجودين في الملف
   // =========================================================
   const deleteMissingEmployees = async (
     uploadedEmployees: any[]
   ) => {
     setLogs(prev => [
       ...prev,
-      '🔍 جاري مقارنة الموظفين الموجودين في قاعدة البيانات مع الملف...',
+      '🔍 جاري مقارنة بيانات الملف بقاعدة البيانات...',
     ]);
 
-    const existingEmployees = await getExistingEmployees();
+    const existingEmployees =
+      await getExistingEmployees();
 
     setLogs(prev => [
       ...prev,
       `📊 عدد الموظفين الحالي في قاعدة البيانات: ${existingEmployees.length}`,
     ]);
 
-    // Set بكل الأكواد الموجودة في الملف
+    // جميع أكواد الموظفين الموجودة في الملف
     const uploadedCodes = new Set(
       uploadedEmployees
-        .map(emp => String(emp.employee_code || '').trim())
+        .map(emp =>
+          String(
+            emp.employee_code || ''
+          ).trim()
+        )
         .filter(Boolean)
     );
 
     // الموظفون الموجودون في DB وغير موجودين في الملف
-    const employeesToDelete = existingEmployees.filter(
-      emp => {
-        const code = String(emp.employee_code || '').trim();
+    const employeesToDelete =
+      existingEmployees.filter(emp => {
+        const code = String(
+          emp.employee_code || ''
+        ).trim();
 
-        return code && !uploadedCodes.has(code);
-      }
-    );
+        return (
+          code &&
+          !uploadedCodes.has(code)
+        );
+      });
 
     if (employeesToDelete.length === 0) {
       setLogs(prev => [
@@ -191,7 +221,7 @@ export default function DataSyncPage() {
 
     setLogs(prev => [
       ...prev,
-      `🗑️ سيتم حذف ${employeesToDelete.length} موظف غير موجودين في الملف...`,
+      `🗑️ عدد الموظفين غير الموجودين في الملف: ${employeesToDelete.length}`,
     ]);
 
     const DELETE_BATCH_SIZE = 500;
@@ -201,14 +231,23 @@ export default function DataSyncPage() {
       i < employeesToDelete.length;
       i += DELETE_BATCH_SIZE
     ) {
-      const batch = employeesToDelete.slice(
-        i,
-        i + DELETE_BATCH_SIZE
-      );
+      const batch =
+        employeesToDelete.slice(
+          i,
+          i + DELETE_BATCH_SIZE
+        );
 
       const codes = batch
         .map(emp => emp.employee_code)
         .filter(Boolean);
+
+      setLogs(prev => [
+        ...prev,
+        `🗑️ جاري حذف الموظفين من ${i + 1} إلى ${Math.min(
+          i + DELETE_BATCH_SIZE,
+          employeesToDelete.length
+        )}...`,
+      ]);
 
       const { error } = await supabase
         .from('employees')
@@ -218,21 +257,18 @@ export default function DataSyncPage() {
       if (error) {
         throw error;
       }
-
-      setLogs(prev => [
-        ...prev,
-        `🗑️ تم حذف الدفعة ${i + 1} إلى ${Math.min(
-          i + DELETE_BATCH_SIZE,
-          employeesToDelete.length
-        )}`,
-      ]);
     }
+
+    setLogs(prev => [
+      ...prev,
+      `✅ تم حذف ${employeesToDelete.length} موظف.`,
+    ]);
 
     return employeesToDelete.length;
   };
 
   // =========================================================
-  // رفع ومزامنة البيانات
+  // معالجة ملف Excel
   // =========================================================
   const handleFileUpload = async (
     e: React.FormEvent
@@ -240,7 +276,10 @@ export default function DataSyncPage() {
     e.preventDefault();
 
     if (!file) {
-      return alert('يرجى اختيار ملف Excel أولاً');
+      alert(
+        'يرجى اختيار ملف Excel أولاً'
+      );
+      return;
     }
 
     setLoading(true);
@@ -251,29 +290,33 @@ export default function DataSyncPage() {
 
     try {
       // -----------------------------------------------------
-      // قراءة الملف
+      // قراءة ملف Excel
       // -----------------------------------------------------
-      const data = await file.arrayBuffer();
+      const data =
+        await file.arrayBuffer();
 
       const workbook = XLSX.read(data, {
         type: 'array',
         cellDates: true,
       });
 
-      const sheetName = workbook.SheetNames[0];
+      const sheetName =
+        workbook.SheetNames[0];
 
-      const sheet = workbook.Sheets[sheetName];
+      const sheet =
+        workbook.Sheets[sheetName];
 
       const jsonData: any[] =
-        XLSX.utils.sheet_to_json(sheet, {
-          defval: '',
-        });
+        XLSX.utils.sheet_to_json(
+          sheet,
+          {
+            defval: '',
+          }
+        );
 
       if (jsonData.length === 0) {
-        setLoading(false);
-
-        return alert(
-          'الملف المرفوع فارغ! يرجى ملء البيانات أولاً.'
+        throw new Error(
+          'الملف المرفوع فارغ!'
         );
       }
 
@@ -285,117 +328,138 @@ export default function DataSyncPage() {
       // -----------------------------------------------------
       // تجهيز البيانات
       // -----------------------------------------------------
-      const preparedData = jsonData
-        .map(row => ({
-          employee_id: String(
-            row.employee_id ||
-            row.employee_code ||
-            ''
-          ).trim(),
+      const preparedData =
+        jsonData
+          .map(row => ({
+            employee_id: String(
+              row.employee_id ||
+                row.employee_code ||
+                ''
+            ).trim(),
 
-          employee_code: String(
-            row.employee_code || ''
-          ).trim(),
+            employee_code: String(
+              row.employee_code || ''
+            ).trim(),
 
-          employee_name: String(
-            row.employee_name || ''
-          ).trim(),
+            employee_name: String(
+              row.employee_name || ''
+            ).trim(),
 
-          department: String(
-            row.department || ''
-          ).trim(),
+            department: String(
+              row.department || ''
+            ).trim(),
 
-          job_title: String(
-            row.job_title || ''
-          ).trim(),
+            job_title: String(
+              row.job_title || ''
+            ).trim(),
 
-          company: String(
-            row.company || ''
-          ).trim(),
+            company: String(
+              row.company || ''
+            ).trim(),
 
-          hiring_date: parseExcelDate(
-            row.hiring_date
-          ),
+            hiring_date:
+              parseExcelDate(
+                row.hiring_date
+              ),
 
-          national_id: String(
-            row.national_id || ''
-          ).trim(),
+            national_id: String(
+              row.national_id || ''
+            ).trim(),
 
-          birth_date: parseExcelDate(
-            row.birth_date
-          ),
+            birth_date:
+              parseExcelDate(
+                row.birth_date
+              ),
 
-          age: row.age
-            ? Number(row.age)
-            : null,
+            age: row.age
+              ? Number(row.age)
+              : null,
 
-          age_60_date: parseExcelDate(
-            row.age_60_date
-          ),
+            age_60_date:
+              parseExcelDate(
+                row.age_60_date
+              ),
 
-          age_status: String(
-            row.age_status || ''
-          ).trim(),
+            age_status: String(
+              row.age_status || ''
+            ).trim(),
 
-          status: String(
-            row.status || 'Active'
-          ).trim(),
+            status: String(
+              row.status || 'Active'
+            ).trim(),
 
-          email: String(
-            row.email || ''
-          ).trim(),
+            email: String(
+              row.email || ''
+            ).trim(),
 
-          mobile: String(
-            row.mobile || ''
-          ).trim(),
+            mobile: String(
+              row.mobile || ''
+            ).trim(),
 
-          manager: String(
-            row.manager || ''
-          ).trim(),
+            manager: String(
+              row.manager || ''
+            ).trim(),
 
-          contract_type: String(
-            row.contract_type || 'محدد المدة'
-          ).trim(),
+            contract_type: String(
+              row.contract_type ||
+                'محدد المدة'
+            ).trim(),
 
-          contract_start_date:
-            parseExcelDate(
-              row.contract_start_date
-            ),
+            contract_start_date:
+              parseExcelDate(
+                row.contract_start_date
+              ),
 
-          contract_end_date:
-            parseExcelDate(
-              row.contract_end_date
-            ),
+            contract_end_date:
+              parseExcelDate(
+                row.contract_end_date
+              ),
 
-          password: String(
-            row.password || '123456'
-          ).trim(),
+            password: String(
+              row.password ||
+                '123456'
+            ).trim(),
 
-          role: String(
-            row.role || 'Employee'
-          ).trim(),
+            role: String(
+              row.role ||
+                'Employee'
+            ).trim(),
 
-          must_change_password:
-            String(
-              row.must_change_password
-            ).toLowerCase() === 'true',
-        }))
-        .filter(
-          emp => emp.employee_code
-        );
+            must_change_password:
+              String(
+                row.must_change_password
+              ).toLowerCase() ===
+              'true',
+          }))
+          .filter(
+            emp =>
+              emp.employee_code
+          );
 
-      if (preparedData.length === 0) {
+      // -----------------------------------------------------
+      // التأكد من وجود موظفين صالحين
+      // -----------------------------------------------------
+      if (
+        preparedData.length === 0
+      ) {
         throw new Error(
-          'لم يتم العثور على أي موظفين لديهم employee_code صالح في الملف.'
+          'لم يتم العثور على أي موظف لديه employee_code صالح.'
         );
       }
 
-      // -----------------------------------------------------
-      // منع تكرار الموظف داخل نفس ملف Excel
-      // -----------------------------------------------------
-      const employeeCodes = new Set<string>();
+      setLogs(prev => [
+        ...prev,
+        `✅ تم تجهيز ${preparedData.length} موظف للمزامنة.`,
+      ]);
 
-      const duplicateCodes: string[] = [];
+      // -----------------------------------------------------
+      // منع تكرار employee_code داخل الملف
+      // -----------------------------------------------------
+      const employeeCodes =
+        new Set<string>();
+
+      const duplicateCodes: string[] =
+        [];
 
       for (const employee of preparedData) {
         if (
@@ -413,25 +477,23 @@ export default function DataSyncPage() {
         );
       }
 
-      if (duplicateCodes.length > 0) {
+      if (
+        duplicateCodes.length > 0
+      ) {
         throw new Error(
           `يوجد تكرار في employee_code داخل الملف: ${duplicateCodes
             .slice(0, 20)
             .join(', ')}${
-            duplicateCodes.length > 20
+            duplicateCodes.length >
+            20
               ? ' ...'
               : ''
           }`
         );
       }
 
-      setLogs(prev => [
-        ...prev,
-        `✅ تم تجهيز ${preparedData.length} موظف للمزامنة.`,
-      ]);
-
       // -----------------------------------------------------
-      // أولاً: إضافة وتحديث الموظفين
+      // إضافة + تحديث
       // -----------------------------------------------------
       const BATCH_SIZE = 500;
 
@@ -440,10 +502,11 @@ export default function DataSyncPage() {
         i < preparedData.length;
         i += BATCH_SIZE
       ) {
-        const batch = preparedData.slice(
-          i,
-          i + BATCH_SIZE
-        );
+        const batch =
+          preparedData.slice(
+            i,
+            i + BATCH_SIZE
+          );
 
         setLogs(prev => [
           ...prev,
@@ -455,11 +518,16 @@ export default function DataSyncPage() {
           )}...`,
         ]);
 
-        const { error } = await supabase
-          .from('employees')
-          .upsert(batch, {
-            onConflict: 'employee_code',
-          });
+        const { error } =
+          await supabase
+            .from('employees')
+            .upsert(
+              batch,
+              {
+                onConflict:
+                  'employee_code',
+              }
+            );
 
         if (error) {
           throw error;
@@ -468,11 +536,11 @@ export default function DataSyncPage() {
 
       setLogs(prev => [
         ...prev,
-        '✅ تم إضافة وتحديث جميع الموظفين.',
+        '✅ تم إضافة وتحديث جميع الموظفين بنجاح.',
       ]);
 
       // -----------------------------------------------------
-      // ثانياً: حذف الموظفين المختفين من الملف
+      // حذف الموظفين المختفين من الملف
       // -----------------------------------------------------
       const deletedCount =
         await deleteMissingEmployees(
@@ -486,33 +554,38 @@ export default function DataSyncPage() {
         ...prev,
         '━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
         '🎉 تمت عملية المزامنة بنجاح!',
-        `👥 عدد الموظفين في الملف: ${preparedData.length}`,
-        `🗑️ عدد الموظفين المحذوفين: ${deletedCount}`,
-        `📌 عدد الموظفين النهائي المفترض: ${
-          preparedData.length
-        }`,
+        `👥 الموظفين في ملف Excel: ${preparedData.length}`,
+        `🗑️ الموظفين المحذوفين: ${deletedCount}`,
+        `📌 العدد النهائي المتوقع: ${preparedData.length}`,
       ]);
 
       alert(
         `تمت مزامنة بيانات الموظفين بنجاح ✅\n\n` +
-        `الموظفين في الملف: ${preparedData.length}\n` +
-        `الموظفين المحذوفين: ${deletedCount}`
+          `الموظفين في الملف: ${preparedData.length}\n` +
+          `الموظفين المحذوفين: ${deletedCount}`
       );
 
       await refresh();
 
       setFile(null);
     } catch (err: any) {
-      console.error(err);
+      console.error(
+        'Employee Sync Error:',
+        err
+      );
 
       setLogs(prev => [
         ...prev,
-        `❌ خطأ: ${err.message}`,
+        `❌ خطأ: ${
+          err?.message ||
+          'حدث خطأ غير معروف'
+        }`,
       ]);
 
       alert(
         'حدث خطأ أثناء المزامنة: ' +
-          err.message
+          (err?.message ||
+            'خطأ غير معروف')
       );
     } finally {
       setLoading(false);
@@ -520,7 +593,7 @@ export default function DataSyncPage() {
   };
 
   // =========================================================
-  // UI
+  // الواجهة
   // =========================================================
   return (
     <div className="flex flex-col gap-6 pb-10">
@@ -539,7 +612,9 @@ export default function DataSyncPage() {
         <div className="my-6">
 
           <button
-            onClick={handleDownloadTemplate}
+            onClick={
+              handleDownloadTemplate
+            }
             disabled={loading}
             className="bg-[var(--success-text)] hover:opacity-90 text-white px-5 py-2.5 rounded-lg font-bold text-xs transition-opacity flex items-center gap-2 shadow-sm disabled:opacity-50"
           >
@@ -549,7 +624,9 @@ export default function DataSyncPage() {
         </div>
 
         <form
-          onSubmit={handleFileUpload}
+          onSubmit={
+            handleFileUpload
+          }
           className="border-2 border-dashed border-border rounded-xl p-8 text-center bg-background"
         >
 
@@ -563,7 +640,7 @@ export default function DataSyncPage() {
 
           <input
             type="file"
-            accept=".xlsx, .xls"
+            accept=".xlsx,.xls"
             disabled={loading}
             onChange={e =>
               setFile(
@@ -576,7 +653,8 @@ export default function DataSyncPage() {
 
           {file && (
             <div className="mb-5 text-xs font-bold text-primary">
-              📄 الملف المختار: {file.name}
+              📄 الملف المختار:{' '}
+              {file.name}
             </div>
           )}
 
