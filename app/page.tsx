@@ -43,8 +43,8 @@ const SIDEBAR_GROUPS = [
 ];
 
 const PAGE_TITLES: Record<string, string> = {
-  dashboard: 'لوحة القيادة (Dashboard)',
-  employees_data: 'سجل بيانات الموظفين',
+  dashboard: 'لوحة التحكم (Dashboard)',
+  employees_data: ' بيانات الموظفين',
   data_sync: 'تحديث ومزامنة البيانات',
   contracts: 'إدارة العقود الحالية السارية',
   renewals: 'دورة اعتماد طلبات التجديد',
