@@ -1,18 +1,23 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+// 🌟 1. استدعاء الـ DataContext
+import { useAppData } from '@/lib/DataContext';
 
 export default function ContractsPage() {
+  // 🌟 2. استخراج دالة التحديث المركزية
+  const { refresh: refreshGlobalData } = useAppData();
+
   const [employees, setEmployees] = useState<any[]>([]);
   const [renewals, setRenewals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // הפلاتر
+  // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedType, setSelectedType] = useState('');
-  const [expiryMonth, setExpiryMonth] = useState(''); // 🌟 فلتر شهر وسنة الانتهاء
+  const [expiryMonth, setExpiryMonth] = useState(''); // فلتر شهر وسنة الانتهاء
   
   // فلتر الكروت العلوية (Active Card)
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'expired'>('all');
@@ -39,7 +44,7 @@ export default function ContractsPage() {
   const [empSearchTerm, setEmpSearchTerm] = useState(''); 
   const [showEmpDropdown, setShowEmpDropdown] = useState(false); 
 
-  // 🌟 حالات نافذة إنهاء التعاقد المحدثة
+  // حالات نافذة إنهاء التعاقد المحدثة
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
   const [termSearchTerm, setTermSearchTerm] = useState(''); 
@@ -151,7 +156,7 @@ export default function ContractsPage() {
     const matchesDept = !selectedDept || emp.department === selectedDept;
     const matchesType = !selectedType || emp.contract_type === selectedType;
     
-    // 🌟 فلتر شهر الانتهاء الدقيق (مثل: أكتوبر 2026)
+    // فلتر شهر الانتهاء الدقيق (مثل: أكتوبر 2026)
     let matchesExpiryMonth = true;
     if (expiryMonth) {
       matchesExpiryMonth = emp.contract_end_date && emp.contract_end_date.startsWith(expiryMonth);
@@ -218,7 +223,6 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
-  // 🌟 دالة إنهاء التعاقد المحدثة
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى اختيار الموظف.');
@@ -230,7 +234,7 @@ export default function ContractsPage() {
     const { error } = await supabase.from('employees').update({ 
       contract_type: 'إنهاء تعاقد', 
       status: 'Terminated',
-      contract_end_date: terminateDate, // تحديث نهاية العقد لتاريخ الإنهاء الفعلي
+      contract_end_date: terminateDate, 
       termination_date: terminateDate 
     }).eq('employee_code', terminateEmployeeCode);
     
@@ -242,6 +246,8 @@ export default function ContractsPage() {
       setTerminateEmployeeCode(''); 
       setTermSearchTerm('');
       setTerminateDate('');
+      // 🌟 3. تحديث البيانات المركزية للداشبورد
+      await refreshGlobalData();
       fetchData(); 
     }
   };
@@ -264,6 +270,8 @@ export default function ContractsPage() {
     } else {
       alert('تم تعديل بيانات العقد بنجاح ✅');
       setEditModal({ isOpen: false });
+      // 🌟 4. تحديث البيانات المركزية للداشبورد
+      await refreshGlobalData();
       fetchData();
     }
   };
@@ -286,7 +294,7 @@ export default function ContractsPage() {
       department: emp.department,
       job_title: emp.job_title,
       company: emp.company,
-      contract_end_date: newContractStartDate, // العرض في PDF
+      contract_end_date: newContractStartDate, 
       new_contract_end_date: newContractEndDate,
       status: 'Pending',
       signature_status: 'قيد التوقيع',
@@ -309,6 +317,8 @@ export default function ContractsPage() {
     setIsNewContractModalOpen(false);
     setCreatedRequestData(payload);
     alert(`تم إنشاء العقد الجديد بنجاح وتحويل نوع العقد إلى (${newContractType}) ✅`);
+    // 🌟 5. تحديث البيانات المركزية للداشبورد
+    await refreshGlobalData();
     fetchData();
   };
 
@@ -337,7 +347,12 @@ export default function ContractsPage() {
       };
       const { error } = await supabase.from('renewal_requests').insert([payload]);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { setCreatedRequestData(payload); fetchData(); }
+      if (error) alert('خطأ: ' + error.message); else { 
+        setCreatedRequestData(payload); 
+        // 🌟 6. تحديث البيانات المركزية للداشبورد
+        await refreshGlobalData();
+        fetchData(); 
+      }
     } else if (modalState.type === 'bulk') {
       const selectedEmps = employees.filter(e => selectedEmpCodes.includes(e.employee_code));
       const reqIds = generateSequentialIds(selectedEmps.length);
@@ -361,7 +376,13 @@ export default function ContractsPage() {
       });
       const { error } = await supabase.from('renewal_requests').insert(payloads);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); setSelectedEmpCodes([]); fetchData(); }
+      if (error) alert('خطأ: ' + error.message); else { 
+        alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); 
+        setSelectedEmpCodes([]); 
+        // 🌟 7. تحديث البيانات المركزية للداشبورد
+        await refreshGlobalData();
+        fetchData(); 
+      }
     }
   };
 
