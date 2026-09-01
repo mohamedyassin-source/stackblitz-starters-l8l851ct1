@@ -76,7 +76,6 @@ export default function DashboardPage() {
     const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
     
-    // 🌟 مصفوفة الشهور للرسم البياني لتوزيع بدايات العقود
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
@@ -85,12 +84,10 @@ export default function DashboardPage() {
       const dept = emp.department || 'غير محدد';
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      // 1. نواقص البيانات
       if (!emp.national_id || !emp.mobile) {
         missingDataList.push(emp);
       }
 
-      // 🌟 2. توزيع العقود على الشهور بناءً على (تاريخ البداية)
       if (emp.contract_start_date) {
         const startDate = new Date(emp.contract_start_date);
         if (!isNaN(startDate.getTime())) {
@@ -178,14 +175,8 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    // تفصيل الطلبات المعلقة
     const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
     const waitingSign = filteredRens.filter(r => r.status === 'Approved' && r.signature_status !== 'تم التوقيع');
-
-    // شريط أحدث الإجراءات
-    const recentActivities = [...filteredRens]
-      .sort((a, b) => new Date(b.request_date || 0).getTime() - new Date(a.request_date || 0).getTime())
-      .slice(0, 5);
 
     return {
       totalEmps: filteredEmps.length,
@@ -194,16 +185,13 @@ export default function DashboardPage() {
       aboveAgeCount: aboveAge,
       expiredCount: expired,
       expiringSoonCount: expiring,
-      
       pendingCount: pendingRequests.length,
       waitingSignCount: waitingSign.length,
-      recentActivities,
       missingDataList,
-
       turning60List,
       topDepts,
       urgentAlerts,
-      contractsByMonth, // 🌟 استخدام اللوجيك الجديد هنا
+      contractsByMonth,
       shortTermTotal,
       shortTermList
     };
@@ -214,10 +202,8 @@ export default function DashboardPage() {
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeFormatted = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   
-  // الحد الأقصى للمحور الصادي في الرسم البياني
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // حساب نسب الـ Donut Chart
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.aboveAgeCount;
   const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
   const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
@@ -264,26 +250,9 @@ export default function DashboardPage() {
         <KpiCard loading={loading} tone="red" title="نواقص بيانات" value={dashboardData.missingDataList.length} sub="عرض القائمة ⚠️" icon="⚠️" onClick={() => setShowMissingDataModal(true)} />
       </div>
 
+      {/* 🌟 الصف الأول من الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* 1. الدونات شارت */}
-        <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative">
-          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
-          
-          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-            <div style={{ width: '110px', height: '110px', background: '#fff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الإجمالي</span>
-              <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
-            </div>
-          </div>
-
-          <div className="w-full flex justify-between mt-8 text-[11px] font-bold">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#15803d]" />دائم ({dashboardData.permCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#2563eb]" />محدد ({dashboardData.fixedCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#d97706]" />فوق السن ({dashboardData.aboveAgeCount})</div>
-          </div>
-        </div>
-
-        {/* 2. الإدارات */}
+        {/* 1. الإدارات (ثلث المساحة) */}
         <div className="card px-5 sm:px-6 py-5">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>📊 أكبر 5 إدارات (كثافة)</h4>
           <div className="flex flex-col gap-4">
@@ -305,37 +274,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 3. شريط أحدث الإجراءات */}
-        <div className="card px-5 sm:px-6 py-5">
-          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>🔄 أحدث حركة للطلبات</h4>
-          <div className="flex flex-col gap-3">
-            {dashboardData.recentActivities.length === 0 ? (
-              <div className="text-center text-xs text-slate-400 font-bold py-6">لا توجد تحركات حديثة.</div>
-            ) : (
-              dashboardData.recentActivities.map((act, idx) => (
-                <div key={idx} className="flex items-start gap-3 pb-3 border-b border-slate-100 last:border-0 last:pb-0">
-                  <div className="mt-1" style={{ fontSize: '14px' }}>
-                    {act.status === 'Approved' ? '✅' : act.status === 'Rejected' ? '❌' : '⏳'}
-                  </div>
-                  <div>
-                    <div className="text-[12px] font-bold" style={{ color: 'var(--navy-950)' }}>تجديد: {act.employee_name}</div>
-                    <div className="text-[10px] font-bold mt-1" style={{ color: 'var(--muted)' }}>
-                      حالة الطلب: {act.status === 'Approved' ? 'معتمد' : act.status === 'Rejected' ? 'مرفوض' : 'قيد المعالجة'}
-                      <span className="mx-2">|</span> 
-                      {act.request_date}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-5">
-        
-        {/* 🌟 4. الرسم البياني المحدث لبدايات العقود */}
-        <div className="card px-5 sm:px-6 py-5 flex flex-col">
+        {/* 2. الرسم البياني للشهور (يأخذ ثلثي المساحة براحته) */}
+        <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
             📈 التوزيع الشهري لبدايات العقود (كثافة التجديدات)
           </h4>
@@ -347,15 +287,37 @@ export default function DashboardPage() {
                   <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? 'var(--stamp-green)' : 'transparent' }}>
                     {month.count.toLocaleString('en-US')}
                   </span>
-                  <div className="w-full max-w-[24px] rounded-t-md transition-all duration-700" style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--paper)' }} />
-                  <span className="text-[9px] font-bold mt-2" style={{ color: 'var(--muted)' }}>{month.name}</span>
+                  <div className="w-full max-w-[32px] rounded-t-md transition-all duration-700" style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--paper)' }} />
+                  <span className="text-[10px] font-bold mt-2" style={{ color: 'var(--muted)' }}>{month.name}</span>
                 </div>
               );
             })}
           </div>
         </div>
+      </div>
 
-        <div className="card px-5 sm:px-6 py-5">
+      {/* 🌟 الصف الثاني من الرسوم البيانية */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        {/* 3. الدونات شارت (ثلث المساحة) */}
+        <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1">
+          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
+          
+          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+            <div style={{ width: '110px', height: '110px', background: '#fff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الإجمالي</span>
+              <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
+            </div>
+          </div>
+
+          <div className="w-full flex justify-between mt-8 text-[11px] font-bold px-2">
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#15803d]" />دائم ({dashboardData.permCount})</div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#2563eb]" />محدد ({dashboardData.fixedCount})</div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#d97706]" />فوق السن ({dashboardData.aboveAgeCount})</div>
+          </div>
+        </div>
+
+        {/* 4. المهام العاجلة (يأخذ ثلثي المساحة لجدول عريض ومريح) */}
+        <div className="card px-5 sm:px-6 py-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: 'var(--stamp-red)' }}>
               <span className="text-base">🚨</span> مهام عاجلة (اضغط للتجديد)
@@ -367,15 +329,16 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="overflow-y-auto max-h-[220px]">
-              <table className="data-table">
+              <table className="data-table" style={{ width: '100%' }}>
                 <thead>
-                  <tr><th>الكود</th><th>الموظف</th><th>الانتهاء</th><th>الحالة</th></tr>
+                  <tr><th>الكود</th><th>الموظف</th><th>الإدارة</th><th>الانتهاء</th><th>الحالة</th></tr>
                 </thead>
                 <tbody>
                   {dashboardData.urgentAlerts.map((alert) => (
-                    <tr key={alert.id} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer">
+                    <tr key={alert.id} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer hover:bg-slate-50 transition-colors">
                       <td className="font-mono font-bold" style={{ color: 'var(--brass-600)' }}>{alert.employee_code}</td>
                       <td className="font-bold">{alert.employee_name}</td>
+                      <td style={{ color: 'var(--muted)', fontSize: '11px' }}>{alert.department || '—'}</td>
                       <td className="font-mono font-bold">{alert.contract_end_date}</td>
                       <td>
                         {alert.status === 'expired' ? (
@@ -393,7 +356,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* نافذة العقود المؤقتة */}
+      {/* 🌟 النوافذ المنبثقة (Modals) */}
+      
+      {/* نافذة العقود المؤقتة (ذات الهيدر الثابت) */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: '#fff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -537,7 +502,7 @@ export default function DashboardPage() {
                     <tr style={{ background: '#f8fafc', borderBottom: '1px solid #cbd5e1' }}>
                       <th style={{ padding: '10px', color: '#475569' }}>الكود</th>
                       <th style={{ padding: '10px', color: '#475569' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: '#475569' }}>تاريخ البلوغ</th>
+                      <th style={{ padding: '10px', color: '#475569' }}>تاريخ بلوغ الـ 60</th>
                       <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>الحالة</th>
                       <th style={{ padding: '10px', color: '#475569', textAlign: 'center' }}>إجراء</th>
                     </tr>
