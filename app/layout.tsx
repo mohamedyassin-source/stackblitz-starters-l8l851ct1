@@ -1,13 +1,13 @@
 'use client';
 import './globals.css'
-import { Inter } from 'next/font/google'
-import { DataProvider } from '@/lib/DataContext'
-import Sidebar from '@/components/Sidebar'
-import Header from '@/components/Header'
+import { Cairo } from 'next/font/google' // 🌟 استخدمنا خط Cairo الفخم والداعم للعربية
+import { DataProvider } from '../lib/DataContext' // 🌟 تعديل المسار
+import Sidebar from '../Sidebar' // 🌟 تعديل المسار ليقرأ من المجلد الرئيسي
+import Header from '../Header' // 🌟 تعديل المسار ليقرأ من المجلد الرئيسي
 import { useState, useEffect } from 'react';
 
-// استخدام خط ناعم واحترافي
-const inter = Inter({ subsets: ['latin', 'arabic'], display: 'swap' })
+// تجهيز الخط بجميع الأوزان
+const cairo = Cairo({ subsets: ['latin', 'arabic'], display: 'swap' })
 
 export default function RootLayout({
   children,
@@ -41,7 +41,7 @@ export default function RootLayout({
   };
 
   // لتفادي مشاكل الـ Hydration في Next.js
-  if (!mounted) return <html lang="ar" dir="rtl"><body className="bg-slate-50"></body></html>;
+  if (!mounted) return <html lang="ar" dir="rtl"><body className="bg-[var(--bg-color)]"></body></html>;
 
   return (
     <html lang="ar" dir="rtl" className={isDarkMode ? 'dark' : ''}>
@@ -49,14 +49,14 @@ export default function RootLayout({
         <title>نظام إدارة الموارد البشرية | المراسم</title>
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
       </head>
-      <body className={`${inter.className} antialiased selection:bg-gold selection:text-white`}>
+      <body className={`${cairo.className} antialiased selection:bg-[var(--accent-gold)] selection:text-white`}>
         <DataProvider>
           <div className="flex h-screen overflow-hidden">
             {/* القائمة الجانبية */}
             <Sidebar />
             
             <div className="flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300">
-              {/* 🌟 تمرير دالة تغيير الثيم للهيدر لربطها بزر هناك لاحقاً */}
+              {/* 🌟 تمرير دالة تغيير الثيم للهيدر */}
               <Header toggleTheme={toggleTheme} isDarkMode={isDarkMode} />
               
               <main className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8">
