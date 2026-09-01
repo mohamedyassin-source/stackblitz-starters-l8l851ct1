@@ -11,7 +11,10 @@ export default function DashboardPage() {
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // حالات النوافذ المنبثقة (Modals)
   const [showAgeModal, setShowAgeModal] = useState(false);
+  const [showShortTermModal, setShowShortTermModal] = useState(false); // 🌟 نافذة العقود القصيرة
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -62,7 +65,6 @@ export default function DashboardPage() {
       return status === 'Active' && dept !== 'تحويلات تحت الاعتماد';
     });
 
-    // 🌟 تحديث اللوجيك ليدعم البحث الجزئي بالكلمة (Includes)
     const filteredEmps = activeEmployeesOnly.filter((emp) => {
       const matchesComp = !filterCompany || String(emp.company || '').toLowerCase().includes(filterCompany.toLowerCase());
       const matchesDept = !filterDept || String(emp.department || '').toLowerCase().includes(filterDept.toLowerCase());
@@ -75,10 +77,11 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0;
+    let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
     const turning60List: any[] = [];
+    const shortTermByDept: Record<string, any[]> = {}; // 🌟 تجميع العقود القصيرة بالإدارات
 
     filteredEmps.forEach((emp) => {
       const type = emp.contract_type || '';
@@ -89,6 +92,7 @@ export default function DashboardPage() {
       const dept = emp.department || 'غير محدد';
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
+      // حسابات سن الـ 60
       if (type === 'دائم') {
         const ageInfo = getAge60Info(emp.national_id);
         if (ageInfo && ageInfo.daysUntil60 <= 60) {
@@ -101,6 +105,7 @@ export default function DashboardPage() {
         }
       }
 
+      // حسابات الانتهاء
       if (type !== 'دائم') {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
@@ -113,10 +118,42 @@ export default function DashboardPage() {
           }
         }
       }
+
+      // 🌟 اللوجيك الذكي لاصطياد العقود القصيرة (أقل من 360 يوم)
+      if (type !== 'دائم' && emp.contract_start_date && emp.contract_end_date) {
+        const start = new Date(emp.contract_start_date);
+        const end = new Date(emp.contract_end_date);
+        if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+          const diffTime = end.getTime() - start.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays > 0 && diffDays <= 360) {
+            shortTermTotal++;
+            if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
+            
+            // حساب تقريبي للشهور
+            const diffMonths = Math.round(diffDays / 30);
+            
+            shortTermByDept[dept].push({
+              ...emp,
+              diffDays,
+              diffMonths: diffMonths === 0 ? 'أقل من شهر' : `${diffMonths} شهور`
+            });
+          }
+        }
+      }
     });
 
     alerts.sort((a, b) => a.days - b.days);
     turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
+
+    // تحويل قاموس العقود القصيرة إلى مصفوفة مرتبة حسب حجم الإدارة
+    const shortTermList = Object.entries(shortTermByDept)
+      .map(([deptName, emps]) => ({ 
+        deptName, 
+        emps: emps.sort((a, b) => getDaysRemaining(a.contract_end_date)! - getDaysRemaining(b.contract_end_date)!) 
+      }))
+      .sort((a, b) => b.emps.length - a.emps.length);
 
     const urgentAlerts = alerts.slice(0, 20);
     const topDepts = Object.entries(deptsCount)
@@ -160,6 +197,8 @@ export default function DashboardPage() {
       topDepts,
       urgentAlerts,
       renewalsByMonth,
+      shortTermTotal,
+      shortTermList
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -170,7 +209,7 @@ export default function DashboardPage() {
   const maxMonthCount = Math.max(...(dashboardData?.renewalsByMonth.map((m) => m.count) || []), 1);
 
   return (
-    <div className="flex flex-col gap-5" style={{ direction: 'rtl' }}>
+    <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px' }}>
       <div className="card flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 sm:px-6 py-5">
         <div>
           <h2 className="m-0 text-lg sm:text-xl font-extrabold tracking-tight" style={{ color: 'var(--navy-950)' }}>
@@ -184,7 +223,6 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* 🌟 تحويل الشركة إلى مربع بحث ذكي */}
           <input 
             list="dashCompList"
             className="field" 
@@ -196,7 +234,6 @@ export default function DashboardPage() {
             {companiesList.map((c: any, i) => <option key={i} value={c} />)}
           </datalist>
 
-          {/* 🌟 تحويل الإدارة إلى مربع بحث ذكي */}
           <input 
             list="dashDeptList"
             className="field" 
@@ -216,12 +253,16 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* 🌟 تعديل الـ Grid ليصبح 3 أعمدة (6 كروت إجمالاً) */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <KpiCard loading={loading} tone="brass" title="إجمالي قوة العمل" value={dashboardData.totalEmps} sub="عرض السجل 👁️" icon="👥" onClick={() => navigateTo('employees')} />
         <KpiCard loading={loading} tone="blue" title="طلبات تجديد معلقة" value={dashboardData.pendingRenewals} sub="الذهاب للطلبات 👁️" icon="⏳" onClick={() => navigateTo('renewals')} />
         <KpiCard loading={loading} tone="amber" title="عقود تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub="إدارة العقود 👁️" icon="📆" onClick={() => navigateTo('contracts')} />
+        
         <KpiCard loading={loading} tone="red" title="عقود منتهية (تحتاج إجراء)" value={dashboardData.expiredCount} sub="إدارة العقود 🚨" icon="🚨" onClick={() => navigateTo('contracts')} />
-        <KpiCard loading={loading} tone="amber" title="سن الـ 60 (يستلزم إجراء)" value={dashboardData.turning60List.length} sub="عرض القائمة 👁️" icon="🎂" onClick={() => setShowAgeModal(true)} />
+        <KpiCard loading={loading} tone="amber" title="سن الـ 60 (يستلزم تسوية)" value={dashboardData.turning60List.length} sub="عرض القائمة 👁️" icon="🎂" onClick={() => setShowAgeModal(true)} />
+        {/* 🌟 الكارت الجديد الخاص بالعقود القصيرة */}
+        <KpiCard loading={loading} tone="blue" title="عقود قصيرة (تحت الاختبار)" value={dashboardData.shortTermTotal} sub="عرض الإدارات 👁️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
@@ -331,6 +372,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* 🎂 نافذة سن الـ 60 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -394,6 +436,100 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* 🌟 ⏱️ نافذة العقود القصيرة وفترات الاختبار الذكية */}
+      {showShortTermModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '800px', maxHeight: '85vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  ⏱️ العقود القصيرة وفترات الاختبار (أقل من سنة)
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>تم تجميعهم وعرضهم بناءً على كل إدارة ليسهل عليك مراجعتهم وتقييمهم.</p>
+              </div>
+              <button onClick={() => setShowShortTermModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                إغلاق ✕
+              </button>
+            </div>
+
+            {dashboardData.shortTermList.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '13px' }}>
+                لا توجد أي عقود قصيرة أو فترات اختبار مسجلة حالياً.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {dashboardData.shortTermList.map((group, gIdx) => (
+                  <div key={gIdx} style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                    
+                    {/* رأس الإدارة */}
+                    <div style={{ background: '#f8fafc', padding: '12px 16px', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a' }}>🏢 {group.deptName}</span>
+                      <span style={{ background: '#e0e7ff', color: '#1d4ed8', padding: '2px 8px', borderRadius: '100px', fontSize: '10px', fontWeight: 'bold' }}>
+                        {group.emps.length} موظفين
+                      </span>
+                    </div>
+
+                    {/* جدول الموظفين بداخل هذه الإدارة */}
+                    <div className="table-responsive">
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        <thead>
+                          <tr style={{ background: '#fff', borderBottom: '1px solid #f1f5f9' }}>
+                            <th style={{ padding: '10px', color: '#64748b', width: '80px' }}>الكود</th>
+                            <th style={{ padding: '10px', color: '#64748b' }}>اسم الموظف</th>
+                            <th style={{ padding: '10px', color: '#64748b' }}>مدة العقد المُسجلة</th>
+                            <th style={{ padding: '10px', color: '#64748b' }}>تاريخ الانتهاء</th>
+                            <th style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>إجراء سريع</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.emps.map((emp) => {
+                            const daysLeft = getDaysRemaining(emp.contract_end_date);
+                            const isExpired = daysLeft !== null && daysLeft < 0;
+                            
+                            return (
+                              <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9', background: isExpired ? '#fff5f5' : '#fff' }}>
+                                <td style={{ padding: '10px', fontWeight: 'bold', color: '#0d9488', fontFamily: 'monospace' }}>{emp.employee_code}</td>
+                                <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
+                                
+                                <td style={{ padding: '10px' }}>
+                                  <span style={{ background: '#f1f5f9', color: '#475569', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>
+                                    {emp.diffMonths}
+                                  </span>
+                                </td>
+
+                                <td style={{ padding: '10px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: isExpired ? '#dc2626' : '#0f172a' }}>
+                                      {emp.contract_end_date}
+                                    </span>
+                                    {daysLeft !== null && (
+                                      <span style={{ fontSize: '9px', color: isExpired ? '#dc2626' : '#d97706', fontWeight: 'bold' }}>
+                                        {isExpired ? `منتهي منذ ${Math.abs(daysLeft)} يوم` : `متبقي ${daysLeft} يوم`}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '10px', textAlign: 'center' }}>
+                                  <button onClick={() => { setShowShortTermModal(false); handleRowClick(emp.employee_code); }} style={{ background: '#fff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+                                    إدارة العقد ↗️
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
