@@ -62,15 +62,16 @@ export default function DashboardPage() {
       return status === 'Active' && dept !== 'تحويلات تحت الاعتماد';
     });
 
+    // 🌟 تحديث اللوجيك ليدعم البحث الجزئي بالكلمة (Includes)
     const filteredEmps = activeEmployeesOnly.filter((emp) => {
-      const matchesComp = !filterCompany || emp.company === filterCompany;
-      const matchesDept = !filterDept || emp.department === filterDept;
+      const matchesComp = !filterCompany || String(emp.company || '').toLowerCase().includes(filterCompany.toLowerCase());
+      const matchesDept = !filterDept || String(emp.department || '').toLowerCase().includes(filterDept.toLowerCase());
       return matchesComp && matchesDept;
     });
 
     const filteredRens = allRenewals.filter((req) => {
-      const matchesComp = !filterCompany || req.company === filterCompany;
-      const matchesDept = !filterDept || req.department === filterDept;
+      const matchesComp = !filterCompany || String(req.company || '').toLowerCase().includes(filterCompany.toLowerCase());
+      const matchesDept = !filterDept || String(req.department || '').toLowerCase().includes(filterDept.toLowerCase());
       return matchesComp && matchesDept;
     });
 
@@ -88,7 +89,6 @@ export default function DashboardPage() {
       const dept = emp.department || 'غير محدد';
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      // 🌟 التعديل هنا: إنذار السن يعمل فقط للموظفين أصحاب العقد (دائم)
       if (type === 'دائم') {
         const ageInfo = getAge60Info(emp.national_id);
         if (ageInfo && ageInfo.daysUntil60 <= 60) {
@@ -184,14 +184,30 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <select className="field" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)}>
-            <option value="">🏢 كل الشركات</option>
-            {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
-          </select>
-          <select className="field" value={filterDept} onChange={(e) => setFilterDept(e.target.value)}>
-            <option value="">💼 كل الإدارات</option>
-            {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
-          </select>
+          {/* 🌟 تحويل الشركة إلى مربع بحث ذكي */}
+          <input 
+            list="dashCompList"
+            className="field" 
+            placeholder="🏢 كل الشركات (ابحث...)"
+            value={filterCompany} 
+            onChange={(e) => setFilterCompany(e.target.value)} 
+          />
+          <datalist id="dashCompList">
+            {companiesList.map((c: any, i) => <option key={i} value={c} />)}
+          </datalist>
+
+          {/* 🌟 تحويل الإدارة إلى مربع بحث ذكي */}
+          <input 
+            list="dashDeptList"
+            className="field" 
+            placeholder="💼 كل الإدارات (ابحث...)"
+            value={filterDept} 
+            onChange={(e) => setFilterDept(e.target.value)} 
+          />
+          <datalist id="dashDeptList">
+            {deptsList.map((d: any, i) => <option key={i} value={d} />)}
+          </datalist>
+
           {(filterCompany || filterDept) && (
             <button className="field font-bold" style={{ background: 'var(--paper)', cursor: 'pointer' }} onClick={() => { setFilterCompany(''); setFilterDept(''); }}>
               إعادة ضبط
