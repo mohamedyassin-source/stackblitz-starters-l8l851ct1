@@ -53,7 +53,6 @@ export default function DataSyncPage() {
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // هنا مش هنحط defval عشان نتجاهل الخانات والأعمدة الفاضية تماماً
       const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
 
       if (rawData.length === 0) {
@@ -61,15 +60,17 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
-      // بناء البيانات للتحديث الجزئي (اللي موجود في الشيت بس هو اللي هيتحدث)
       const payload = rawData
         .map((row) => {
           const empCode = sanitizeString(row.employee_code);
           if (!empCode) return null;
 
-          const updateItem: any = { employee_code: empCode };
+          // 🌟 إجبار الكود على إرسال employee_id لترضية قاعدة البيانات
+          const updateItem: any = { 
+            employee_code: empCode,
+            employee_id: row.employee_id !== undefined ? (sanitizeString(row.employee_id) || empCode) : empCode
+          };
 
-          // 🚀 لو العمود موجود في الإكسيل، ضيفه للتحديث.. لو مش موجود تجاهله تماماً للحفاظ على الداتا القديمة
           if (row.hiring_date !== undefined) updateItem.hiring_date = sanitizeDate(row.hiring_date);
           if (row.employee_name !== undefined) updateItem.employee_name = sanitizeString(row.employee_name);
           if (row.department !== undefined) updateItem.department = sanitizeString(row.department);
@@ -103,7 +104,7 @@ export default function DataSyncPage() {
         if (error) throw error;
       }
 
-      alert('تم تحديث تاريخ التعيين (أو الأعمدة المرفقة) بنجاح وأمان تام! ✅');
+      alert('تم تحديث تاريخ التعيين بنجاح وأمان تام! ✅');
       await refresh();
       setFile(null);
     } catch (err: any) {
