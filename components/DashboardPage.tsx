@@ -79,10 +79,15 @@ export default function DashboardPage() {
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
+    const monthMap: Record<string, number> = {
+      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
+
     filteredEmps.forEach((emp) => {
       const type = emp.contract_type || '';
       const dept = emp.department || 'غير محدد';
-      const contractStatus = emp.contract_status || 'Active'; // قراءة حالة العقد النشط
+      const contractStatus = emp.contract_status || 'Active';
       
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
@@ -90,14 +95,30 @@ export default function DashboardPage() {
         missingDataList.push(emp);
       }
 
-      // إضافة إحصائيات الشهور فقط للعقود النشطة الحالية
-      if (emp.contract_start_date && contractStatus === 'Active') {
-        const startDate = new Date(emp.contract_start_date);
-        if (!isNaN(startDate.getTime())) {
-          const monthIdx = startDate.getMonth();
-          if (monthIdx >= 0 && monthIdx < 12) {
-            contractsByMonth[monthIdx].count++;
+      // 🌟 المعالجة المرنة لتاريخ بداية العقد بكل صيغه (DD/MMM/YYYY أو YYYY-MM-DD)
+      if (emp.contract_start_date && (contractStatus === 'Active' || !emp.contract_status)) {
+        const dateStr = String(emp.contract_start_date).trim();
+        let monthIdx = -1;
+
+        // 1. فحص الصيغ النصية (مثل 03/Apr/2026 أو 01-May-2026)
+        const parts = dateStr.split(/[\/\-\s]/);
+        if (parts.length >= 2) {
+          const monthPart = parts[1].toLowerCase();
+          if (monthMap[monthPart] !== undefined) {
+            monthIdx = monthMap[monthPart];
           }
+        }
+
+        // 2. إذا كان تاريخ قياسي (YYYY-MM-DD)
+        if (monthIdx === -1) {
+          const startDate = new Date(dateStr);
+          if (!isNaN(startDate.getTime())) {
+            monthIdx = startDate.getMonth();
+          }
+        }
+
+        if (monthIdx >= 0 && monthIdx < 12) {
+          contractsByMonth[monthIdx].count++;
         }
       }
 
@@ -113,8 +134,7 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      // فحص التنبيهات للعقود غير الدائمة بشرط أن تكون حية (Active) وغير تجديد قديم (Renewed)
-      if (type !== 'دائم' && contractStatus === 'Active') {
+      if (type !== 'دائم' && (contractStatus === 'Active' || !emp.contract_status)) {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
           if (days < 0) {
@@ -127,7 +147,7 @@ export default function DashboardPage() {
         }
       }
 
-      if (type === 'محدد المدة' && contractStatus === 'Active') {
+      if (type === 'محدد المدة' && (contractStatus === 'Active' || !emp.contract_status)) {
         const empRens = filteredRens
           .filter(r => r.employee_code === emp.employee_code && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
           .sort((a, b) => (new Date(a.request_date).getTime() - new Date(b.request_date).getTime()));
