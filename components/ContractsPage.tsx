@@ -63,10 +63,7 @@ export default function ContractsPage() {
       setSearchTerm(jumpCode);
       setTimeout(() => localStorage.removeItem('jumpSearch'), 1000);
     }
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+   const fetchData = async () => {
     setLoading(true);
     let allEmps: any[] = [];
     let allContracts: any[] = [];
@@ -103,17 +100,24 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 🌟 دمج بيانات العقد النشط مع بيانات الموظف
+    // 🌟 دمج بيانات العقد النشط مع بيانات الموظف (مع تأمين المطابقة النصية 100%)
     const mergedEmps = allEmps.map(emp => {
-      const activeContract = allContracts.find(c => c.employee_code === emp.employee_code);
+      const activeContract = allContracts.find(
+        c => String(c.employee_code).trim() === String(emp.employee_code).trim()
+      );
       return {
         ...emp,
         contract_id: activeContract?.contract_id,
-        contract_type: activeContract?.contract_type || '—',
+        contract_type: activeContract?.contract_type || null,
         contract_start_date: activeContract?.contract_start_date || null,
         contract_end_date: activeContract?.contract_end_date || null,
       };
     });
+
+    setEmployees(mergedEmps);
+    setRenewals(allRens);
+    setLoading(false);
+  };
 
     setEmployees(mergedEmps);
     setRenewals(allRens);
