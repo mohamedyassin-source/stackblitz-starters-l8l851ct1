@@ -1,37 +1,36 @@
-'use client';
-import './globals.css'
-import { Cairo } from 'next/font/google' // 🌟 خط Cairo الاحترافي
-import { DataProvider } from '@/lib/DataContext'
-import { useState, useEffect } from 'react';
+import './globals.css';
 
-// تجهيز الخط بجميع الأوزان
-const cairo = Cairo({ subsets: ['latin', 'arabic'], display: 'swap' })
+export const metadata = {
+  title: 'نظام إدارة العقود والتجديدات - مجموعة المراسم',
+  description: 'بوابة إدارة عقود الموظفين والتنبيهات الذكية',
+};
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
+export const viewport = {
+  themeColor: '#0a0f1c',
+};
 
-  // 🌟 استرجاع حالة الوضع الداكن من الذاكرة المحلية
-  useEffect(() => {
-    setMounted(true);
-    const savedTheme = localStorage.getItem('executive-theme');
-    if (savedTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    }
-  }, []);
-
-  if (!mounted) return <html lang="ar" dir="rtl"><body className="bg-[var(--bg-color)]"></body></html>;
-
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="ar" dir="rtl">
       <head>
-        <title>بوابة الموارد البشرية | المراسم</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+        {/* سكريبت متزامن (blocking) يقرأ تفضيل الوضع الليلي المحفوظ ويطبّقه
+            قبل أول رسم للصفحة. بدونه كانت الصفحة تُرسم دائمًا بالوضع النهاري
+            أولًا ثم تتحول للوضع الليلي بعد تحميل React، مما يسبب "ومضة" لونية
+            مزعجة لأي مستخدم مفضّل الوضع الليلي — عيب فعلي في تجربة الاستخدام. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try {
+              var t = localStorage.getItem('theme');
+              if (t === 'dark') document.documentElement.classList.add('dark-init');
+            } catch (e) {}`,
+          }}
+        />
       </head>
-      <body className={`${cairo.className} antialiased selection:bg-gold selection:text-white`}>
-        <DataProvider>
-          {children}
-        </DataProvider>
-      </body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
-  )
+  );
 }

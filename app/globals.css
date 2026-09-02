@@ -1,87 +1,170 @@
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=IBM+Plex+Mono:wght@500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  /* 🌟 الوضع الفاتح (Light Mode) */
-  :root {
-    --bg-color: #f8fafc; /* رمادي فاتح مريح للعين */
-    --card-bg: #ffffff;
-    --text-main: #0f172a; /* كحلي داكن جداً للنصوص */
-    --text-muted: #64748b; /* رمادي هادئ للنصوص الثانوية */
-    --border-color: #e2e8f0;
-    --accent-gold: #b8934a;
-    --accent-gold-hover: #9c7a38;
-    --accent-navy: #1e293b;
-    --danger-bg: #fef2f2;
-    --danger-text: #dc2626;
-    --success-bg: #dcfce7;
-    --success-text: #15803d;
-    --warning-bg: #fff7ed;
-    --warning-text: #ea580c;
-  }
-
-  /* 🌙 الوضع الداكن (Dark Mode) - فخامة وهدوء */
-  .dark {
-    --bg-color: #020617; /* أسود كحلي عميق */
-    --card-bg: #0f172a; /* كحلي داكن للكروت */
-    --text-main: #f8fafc; /* أبيض ناصع للنصوص */
-    --text-muted: #94a3b8; /* رمادي فاتح */
-    --border-color: #1e293b; /* حدود داكنة متناسقة */
-    --accent-gold: #d4af37; /* ذهبي مشرق أكثر للوضع الداكن */
-    --accent-gold-hover: #b8934a;
-    --accent-navy: #334155;
-    --danger-bg: #450a0a;
-    --danger-text: #fca5a5;
-    --success-bg: #052e16;
-    --success-text: #86efac;
-    --warning-bg: #431407;
-    --warning-text: #fdba74;
-  }
-
-  * {
-    box-sizing: border-box;
-    scroll-behavior: smooth;
-  }
-
-  body {
-    @apply bg-[var(--bg-color)] text-[var(--text-main)] transition-colors duration-300 ease-in-out;
-    direction: rtl;
-  }
+:root {
+  --navy-950: #0a0f1c;
+  --navy-900: #101828;
+  --brass-600: #0f766e;
+  --brass-500: #0d9488;
+  --brass-400: #2dd4bf;
+  --paper: #f6f3ea;
+  --paper-card: #ffffff;
+  --line: #e6e1d3;
+  --muted: #6b7280;
+  --ink: #1b1f2a;
+  --stamp-green: #1f5c3a;
+  --stamp-green-bg: #eaf5ee;
+  --stamp-amber: #8a5a12;
+  --stamp-amber-bg: #fdf3e2;
+  --stamp-red: #8f2323;
+  --stamp-red-bg: #fbeaea;
+  --stamp-blue: #1f3f66;
+  --stamp-blue-bg: #eaf0f8;
+  /* لون دلالي إضافي (بنفسجي) لتمييز فئة "فوق السن" في تقارير العقود عن باقي
+     الفئات — لم يكن معرَّفًا كمتغيّر من قبل، بل مكتوبًا بقيمة ثابتة (#8b5cf6)
+     لا تتغيّر في الوضع الليلي. */
+  --stamp-purple: #6d28d9;
+  --stamp-purple-bg: #f4f0fd;
+  --shadow-card: 0 1px 2px rgba(20, 20, 10, 0.04), 0 8px 24px rgba(20, 20, 10, 0.05);
 }
 
-@layer components {
-  /* تنسيق موحد واحترافي لجميع الكروت */
-  .executive-card {
-    @apply bg-[var(--card-bg)] border border-[var(--border-color)] rounded-2xl shadow-sm transition-all duration-300 hover:shadow-md;
-  }
-
-  /* تنسيق موحد للجداول */
-  .executive-table th {
-    @apply bg-[var(--bg-color)] border-b border-[var(--border-color)] text-[var(--text-muted)] p-3 text-center text-xs font-extrabold;
-  }
-  
-  .executive-table td {
-    @apply border-b border-[var(--border-color)] p-3 text-sm transition-colors duration-200;
-  }
-
-  .executive-table tr:hover td {
-    @apply bg-[var(--bg-color)] opacity-90;
-  }
+/* الوضع الليلي — مصدر واحد للحقيقة، يطبَّق عبر class="dark" على body.
+   يشمل أيضًا html.dark-init التي يضيفها سكريبت متزامن في <head> (انظر
+   app/layout.tsx) لمنع ومضة الوضع النهاري قبل أن يشتغل React. */
+body.dark, html.dark-init body {
+  --navy-950: #f8fafc;
+  --paper: #0b1220;
+  --paper-card: #131c2e;
+  --line: #253145;
+  --muted: #94a3b8;
+  --ink: #e7ecf5;
+  /* عيب فعلي في النسخة السابقة: كانت خلفيات الأختام (stamp-*-bg) فقط تتغيّر في
+     الوضع الليلي، بينما ظل لون النص الداكن الأصلي (مثل الأخضر #1f5c3a) كما هو —
+     فيصبح نصًا داكنًا فوق خلفية شبه شفافة داكنة، أي شبه غير مقروء. تم الآن تفتيح
+     ألوان نصوص الأختام في الوضع الليلي أيضًا حتى يبقى التباين واضحًا. */
+  --stamp-green: #4ade80;
+  --stamp-green-bg: rgba(31, 92, 58, 0.24);
+  --stamp-amber: #fbbf24;
+  --stamp-amber-bg: rgba(138, 90, 18, 0.26);
+  --stamp-red: #f87171;
+  --stamp-red-bg: rgba(143, 35, 35, 0.26);
+  --stamp-blue: #60a5fa;
+  --stamp-blue-bg: rgba(31, 63, 102, 0.26);
+  --stamp-purple: #a78bfa;
+  --stamp-purple-bg: rgba(109, 40, 217, 0.22);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
 }
 
-/* 🎨 تجميل شريط التمرير (Scrollbar) ليناسب الـ Executive UI */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+* { box-sizing: border-box; }
+
+body {
+  font-family: 'Tajawal', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: var(--paper);
+  color: var(--ink);
+  margin: 0;
+  padding: 0;
+  direction: rtl;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* تركيز موحّد يتماشى مع لون العلامة (بدل الحلقة الزرقاء الافتراضية للمتصفح
+   التي كانت تظهر بلا تناسق فوق التصميم الداكن/الفاتح الحالي) */
+a, button, input, select, textarea, [tabindex] {
+  outline-color: var(--brass-500);
 }
-::-webkit-scrollbar-thumb {
-  background-color: var(--border-color);
-  border-radius: 10px;
+:focus-visible {
+  outline: 2px solid var(--brass-500);
+  outline-offset: 2px;
 }
-::-webkit-scrollbar-thumb:hover {
-  background-color: var(--accent-gold);
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: var(--brass-500); }
+
+/* تنسيق عام للجداول والبطاقات */
+.data-table { width: 100%; text-align: right; border-collapse: collapse; font-size: 12.5px; }
+.data-table th {
+  padding: 12px 14px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 11px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper-card);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
+.data-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); color: var(--ink); }
+.data-table tbody tr { transition: background-color 0.15s ease; }
+.data-table tbody tr:hover { background: var(--paper); }
+
+.card {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-card);
+}
+
+.field {
+  background: var(--paper-card);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.field:focus { border-color: var(--brass-500); }
+
+/* أسماء classes مستخدمة في صفحات متعددة — بدون تعريف مسبق؛ إضافة انتقال سلس لتبديل الوضع الليلي */
+.db-card, .db-input { transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease; }
+.table-responsive { overflow-x: auto; }
+
+/* الختم الرسمي — يُستخدم لحالة العقود والموافقات */
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.stamp-green { background: var(--stamp-green-bg); color: var(--stamp-green); }
+.stamp-amber { background: var(--stamp-amber-bg); color: var(--stamp-amber); }
+.stamp-red   { background: var(--stamp-red-bg);   color: var(--stamp-red); }
+.stamp-blue  { background: var(--stamp-blue-bg);  color: var(--stamp-blue); }
+.stamp-purple{ background: var(--stamp-purple-bg); color: var(--stamp-purple); }
+.stamp-slate { background: var(--line); color: var(--muted); }
+
+/* الختم/الشعار الدائري */
+.seal {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--brass-400), var(--brass-600));
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 6px 14px rgba(13, 148, 136, 0.35);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--brass-400), var(--brass-600));
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+  font-size: 12px;
+  padding: 9px 16px;
+  cursor: pointer;
+  transition: filter 0.15s ease, transform 0.05s ease;
+}
+.btn-primary:hover { filter: brightness(1.06); }
+.btn-primary:active { transform: translateY(1px); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }

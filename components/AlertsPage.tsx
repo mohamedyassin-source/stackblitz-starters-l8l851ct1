@@ -135,7 +135,7 @@ export default function AlertsPage() {
                   alert('حدث خطأ في الإرسال، تأكد من إعدادات ملف .env.local وإنشاء ملف الـ API');
               }
               setActionLoading(false);
-          }} disabled={actionLoading} style={{ background: '#15803d', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
+          }} disabled={actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
               {actionLoading ? 'جاري الإرسال...' : '📧 إرسال التقرير للإيميل الآن'}
           </button>
 
@@ -151,52 +151,52 @@ export default function AlertsPage() {
           onClick={() => setSeverityTab('critical')}
           style={{
             flex: 1, padding: '12px', borderRadius: '8px',
-            border: severityTab === 'critical' ? '2px solid #dc2626' : '1px solid var(--line)',
-            background: severityTab === 'critical' ? '#fef2f2' : '#fff',
+            border: severityTab === 'critical' ? '2px solid var(--stamp-red)' : '1px solid var(--line)',
+            background: severityTab === 'critical' ? 'var(--stamp-red-bg)' : 'var(--paper-card)',
             cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
           }}
         >
-          <div style={{ fontSize: '11px', color: '#dc2626', fontWeight: 'bold' }}>🔴 منتهية بالفعل (إجراء فوري)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '4px' }}>{counts.critical}</div>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-red)', fontWeight: 'bold' }}>🔴 منتهية بالفعل (إجراء فوري)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-red)', marginTop: '4px' }}>{counts.critical}</div>
         </button>
 
         <button
           onClick={() => setSeverityTab('warning')}
           style={{
             flex: 1, padding: '12px', borderRadius: '8px',
-            border: severityTab === 'warning' ? '2px solid #ea580c' : '1px solid var(--line)',
-            background: severityTab === 'warning' ? '#fff7ed' : '#fff',
+            border: severityTab === 'warning' ? '2px solid var(--stamp-amber)' : '1px solid var(--line)',
+            background: severityTab === 'warning' ? 'var(--stamp-amber-bg)' : 'var(--paper-card)',
             cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
           }}
         >
-          <div style={{ fontSize: '11px', color: '#ea580c', fontWeight: 'bold' }}>🟠 حرج (أقل من 30 يوماً)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c', marginTop: '4px' }}>{counts.warning}</div>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>🟠 حرج (أقل من 30 يوماً)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '4px' }}>{counts.warning}</div>
         </button>
 
         <button
           onClick={() => setSeverityTab('notice')}
           style={{
             flex: 1, padding: '12px', borderRadius: '8px',
-            border: severityTab === 'notice' ? '2px solid #d97706' : '1px solid var(--line)',
-            background: severityTab === 'notice' ? '#fefce8' : '#fff',
+            border: severityTab === 'notice' ? '2px solid var(--stamp-amber)' : '1px solid var(--line)',
+            background: severityTab === 'notice' ? 'var(--stamp-amber-bg)' : 'var(--paper-card)',
             cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
           }}
         >
-          <div style={{ fontSize: '11px', color: '#d97706', fontWeight: 'bold' }}>🟡 تنبيه (31 - 60 يوماً)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706', marginTop: '4px' }}>{counts.notice}</div>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>🟡 تنبيه (31 - 60 يوماً)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '4px' }}>{counts.notice}</div>
         </button>
 
         <button
           onClick={() => setSeverityTab('info')}
           style={{
             flex: 1, padding: '12px', borderRadius: '8px',
-            border: severityTab === 'info' ? '2px solid #2563eb' : '1px solid var(--line)',
-            background: severityTab === 'info' ? '#eff6ff' : '#fff',
+            border: severityTab === 'info' ? '2px solid var(--stamp-blue)' : '1px solid var(--line)',
+            background: severityTab === 'info' ? 'var(--stamp-blue-bg)' : 'var(--paper-card)',
             cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
           }}
         >
-          <div style={{ fontSize: '11px', color: '#2563eb', fontWeight: 'bold' }}>🔵 إشعار مبكر (61 - 90 يوماً)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', marginTop: '4px' }}>{counts.info}</div>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-blue)', fontWeight: 'bold' }}>🔵 إشعار مبكر (61 - 90 يوماً)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-blue)', marginTop: '4px' }}>{counts.info}</div>
         </button>
 
         <button
@@ -204,7 +204,7 @@ export default function AlertsPage() {
           style={{
             flex: 1, padding: '12px', borderRadius: '8px',
             border: severityTab === 'all' ? '2px solid var(--navy-950)' : '1px solid var(--line)',
-            background: severityTab === 'all' ? '#f8fafc' : '#fff',
+            background: severityTab === 'all' ? 'var(--paper)' : 'var(--paper-card)',
             cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s'
           }}
         >
@@ -227,7 +227,7 @@ export default function AlertsPage() {
           {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
         </select>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
         
         <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>
           عدد التنبيهات المعروضة: <span style={{ color: 'var(--navy-950)' }}>{filteredAlerts.length}</span> تنبيه
@@ -261,10 +261,10 @@ export default function AlertsPage() {
                   <tr key={item.employee_code} style={{ borderBottom: '1px solid var(--line)' }}>
                     
                     <td style={{ padding: '8px 10px' }}>
-                      {item.alertLevel === 'critical' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🔴 منتهي</span>}
-                      {item.alertLevel === 'warning' && <span style={{ background: '#fff7ed', color: '#ea580c', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🟠 حرج (30 يوم)</span>}
-                      {item.alertLevel === 'notice' && <span style={{ background: '#fefce8', color: '#d97706', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🟡 تنبيه (60 يوم)</span>}
-                      {item.alertLevel === 'info' && <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🔵 مبكر (90 يوم)</span>}
+                      {item.alertLevel === 'critical' && <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🔴 منتهي</span>}
+                      {item.alertLevel === 'warning' && <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🟠 حرج (30 يوم)</span>}
+                      {item.alertLevel === 'notice' && <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🟡 تنبيه (60 يوم)</span>}
+                      {item.alertLevel === 'info' && <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🔵 مبكر (90 يوم)</span>}
                     </td>
 
                     <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{item.employee_code}</td>
@@ -274,14 +274,14 @@ export default function AlertsPage() {
                     <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.contract_end_date || '—'}</td>
                     
                     <td style={{ padding: '8px 10px' }}>
-                      <span style={{ fontWeight: 'bold', color: item.daysRemaining < 0 ? '#dc2626' : item.daysRemaining <= 30 ? '#ea580c' : '#15803d' }}>
+                      <span style={{ fontWeight: 'bold', color: item.daysRemaining < 0 ? 'var(--stamp-red)' : item.daysRemaining <= 30 ? 'var(--stamp-amber)' : 'var(--stamp-green)' }}>
                         {item.daysRemaining < 0 ? `منتهي منذ ${Math.abs(item.daysRemaining)} يوم` : `${item.daysRemaining} يوم`}
                       </span>
                     </td>
 
                     <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px' }}>
                       {item.hasActiveRequest ? (
-                        <span style={{ color: '#2563eb' }}>طلب جاري ({item.requestStatus})</span>
+                        <span style={{ color: 'var(--stamp-blue)' }}>طلب جاري ({item.requestStatus})</span>
                       ) : (
                         <span style={{ color: 'var(--muted)' }}>يتطلب اتخاذ إجراء</span>
                       )}
@@ -292,8 +292,8 @@ export default function AlertsPage() {
                         onClick={() => handleQuickRenewal(item)}
                         disabled={item.hasActiveRequest || actionLoading}
                         style={{
-                          background: item.hasActiveRequest ? '#e2e8f0' : 'var(--brass-600)',
-                          color: item.hasActiveRequest ? '#94a3b8' : '#fff',
+                          background: item.hasActiveRequest ? 'var(--line)' : 'var(--brass-600)',
+                          color: item.hasActiveRequest ? 'var(--muted)' : '#fff',
                           border: 0, padding: '4px 10px', borderRadius: '4px',
                           fontSize: '9px', fontWeight: 'bold',
                           cursor: item.hasActiveRequest || actionLoading ? 'not-allowed' : 'pointer'

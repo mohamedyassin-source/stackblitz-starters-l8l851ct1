@@ -129,7 +129,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
       </div>
 
       {saved && (
-        <div style={{ background: '#dcfce7', border: '1px solid #86efac', color: '#15803d', padding: '10px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--stamp-green-bg)', border: '1px solid var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '10px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '16px' }}>
           ✅ تم حفظ إعدادات النظام بنجاح!
         </div>
       )}
@@ -194,9 +194,9 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                       <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace' }}>{emp.employee_code}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.employee_name}</td>
                       <td style={{ padding: '10px' }}>
-                        {emp.role === 'Admin' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>مدير نظام (Admin) 👑</span>}
-                        {emp.role === 'HR' && <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>إدارة HR 💼</span>}
-                        {(!emp.role || emp.role === 'Employee') && <span style={{ background: '#f1f5f9', color: '#64748b', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>موظف (Employee) 👤</span>}
+                        {emp.role === 'Admin' && <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>مدير نظام (Admin) 👑</span>}
+                        {emp.role === 'HR' && <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>إدارة HR 💼</span>}
+                        {(!emp.role || emp.role === 'Employee') && <span style={{ background: 'var(--line)', color: 'var(--muted)', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>موظف (Employee) 👤</span>}
                       </td>
                       <td style={{ padding: '10px' }}>
                         <select 
@@ -207,7 +207,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                             }
                           }}
                           disabled={emp.employee_code === currentUser?.code}
-                          style={{ padding: '6px', borderRadius: '4px', border: '1px solid var(--line)', outline: 'none', cursor: emp.employee_code === currentUser?.code ? 'not-allowed' : 'pointer', background: emp.employee_code === currentUser?.code ? '#f1f5f9' : '#fff', fontWeight: 'bold' }}
+                          style={{ padding: '6px', borderRadius: '4px', border: '1px solid var(--line)', outline: 'none', cursor: emp.employee_code === currentUser?.code ? 'not-allowed' : 'pointer', background: emp.employee_code === currentUser?.code ? 'var(--line)' : 'var(--paper-card)', color: 'var(--ink)', fontWeight: 'bold' }}
                         >
                           <option value="Admin">مدير نظام (Admin)</option>
                           <option value="HR">إدارة HR</option>

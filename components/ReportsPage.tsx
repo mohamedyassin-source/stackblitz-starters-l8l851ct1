@@ -17,7 +17,9 @@ const MONTHS_LIST = [
   { value: '12', label: 'ديسمبر (12)' },
 ];
 
-// 🌟 الدوال المساعدة خارج المكون لمنع مشاكل useMemo وتسريع الأداء
+// هذه الدوال نقية (pure) ولا تعتمد على أي state داخل المكوّن، لذا تم نقلها خارجه:
+// 1) لا تُعاد بناؤها في كل render، 2) تُحل تحذير exhaustive-deps في processedData
+// دون اللجوء لإعادة حساب التقرير بالكامل في كل مرة (كان هذا خطأ برمجي فعلي).
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
   for (const key of keys) {
@@ -42,6 +44,7 @@ const getEmployeeAge = (emp: any) => {
   return null;
 };
 
+// 🎯 استخراج تاريخ ودقة بلوغ سن الـ 60 من الرقم القومي
 const getAge60Date = (nationalId: string) => {
   if (!nationalId || String(nationalId).trim().length !== 14) return null;
   const idStr = String(nationalId).trim();
@@ -111,12 +114,15 @@ export default function ReportsPage() {
     });
   }, [employees, renewals]);
 
+  // 🌟 الفلترة المركبة الذكية
   const filteredReportData = useMemo(() => {
     return processedData.filter(item => {
+      // 1. تصفية التبويب "تقرير الاستحقاق الشهري" المركب
       if (activeTab === 'monthly_expiry') {
         let isContractExpiringInMonth = false;
         let isTurning60InMonth = false;
 
+        // أ) مراجعة تاريخ انتهاء العقد (للعقود محددة المدة)
         if (item.contractType !== 'دائم' && item.endDate) {
           const d = new Date(item.endDate);
           if (!isNaN(d.getTime())) {
@@ -128,6 +134,7 @@ export default function ReportsPage() {
           }
         }
 
+        // ب) مراجعة بلوغ سن الـ 60 (لأصحاب العقود الدائمة فقط ومش محولين فوق السن)
         if (item.contractType === 'دائم' && !String(item.contractType).includes('فوق السن') && item.age60DateObj) {
           const m = String(item.age60DateObj.getMonth() + 1);
           const y = String(item.age60DateObj.getFullYear());
@@ -136,8 +143,10 @@ export default function ReportsPage() {
           if (matchM && matchY) isTurning60InMonth = true;
         }
 
+        // لو مش انتهاء عقد ولا بلوغ 60 في الشهر المختار، يستبعد
         if (!isContractExpiringInMonth && !isTurning60InMonth) return false;
 
+        // حفظ نوع الإجراء المطلوب لتوضيحه في التقرير
         (item as any).actionReason = isTurning60InMonth ? '🎂 بلوغ سن الـ 60 (عقد دائم)' : '📑 انتهاء عقد محدد المدة';
       } else if (activeTab === 'above_age') {
         const isAbove60 = item.age !== null && item.age >= 60;
@@ -147,6 +156,7 @@ export default function ReportsPage() {
         if (item.renewalStatus === 'لا يوجد طلب') return false;
       }
 
+      // 2. الفلاتر النصية والقوائم
       const term = searchTerm.toLowerCase().trim();
       const matchesSearch = !term || item.code.toLowerCase().includes(term) || item.name.toLowerCase().includes(term);
       const matchesComp = !selectedCompany || item.company === selectedCompany;
@@ -199,74 +209,75 @@ export default function ReportsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 pb-10">
+    <div style={{ direction: 'rtl', paddingBottom: '40px' }}>
       <style>{`
         @media print {
           body * { visibility: hidden; }
           .print-area, .print-area * { visibility: visible; }
-          .print-area { position: absolute; left: 0; top: 0; width: 100%; direction: rtl; background: white !important; color: black !important; }
+          .print-area { position: absolute; left: 0; top: 0; width: 100%; direction: rtl; }
           .no-print { display: none !important; }
-          .executive-table th, .executive-table td { border: 1px solid #cbd5e1 !important; padding: 8px !important; color: black !important; }
+          .data-table th, .data-table td { border: 1px solid #cbd5e1 !important; padding: 6px !important; }
         }
       `}</style>
 
       {/* رأس الصفحة وأزرار الإجراءات */}
-      <div className="executive-card p-5 sm:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
+      <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 className="m-0 text-lg font-extrabold text-primary">مركز التقارير والتحليلات الرقمية</h3>
-          <p className="mt-1 text-xs font-bold text-muted">استخراج وحصر الاستحقاقات التعاقدية وحركات بلوغ الـ 60 المجمعة</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>مركز التقارير والتحليلات الرقمية</h3>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>استخراج وحصر الاستحقاقات التعاقدية وحركات بلوغ الـ 60 المجمعة</p>
         </div>
 
-        <div className="flex gap-3 w-full md:w-auto">
-          <button onClick={handleExportExcel} className="flex-1 md:flex-none bg-[var(--success-text)] hover:opacity-90 text-white px-4 py-2.5 rounded-lg font-bold text-xs transition-opacity flex items-center justify-center gap-2 shadow-sm">
-            📥 تصدير Excel
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={handleExportExcel} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            📥 تصدير Excel (XLSX)
           </button>
-          <button onClick={handlePrint} className="flex-1 md:flex-none bg-primary hover:opacity-90 text-card px-4 py-2.5 rounded-lg font-bold text-xs transition-opacity flex items-center justify-center gap-2 shadow-sm">
-            🖨️ طباعة التقرير
+          <button onClick={handlePrint} style={{ background: 'var(--navy-950, #0f172a)', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            🖨️ طباعة التقرير / PDF
           </button>
         </div>
       </div>
 
       {/* 🌟 تبويبات أنواع التقارير */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 no-print">
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
         {[
-          { id: 'monthly_expiry', icon: '🎯', title: 'تقرير استحقاقات الشهر', desc: 'انتهاء عقود + بلوغ الـ 60' },
-          { id: 'above_age', icon: '💼', title: 'تقرير العمالة (60+)', desc: 'متابعة المحالين للتقاعد' },
-          { id: 'approval_status', icon: '⏳', title: 'موقف التجديدات', desc: 'الطلبات المعتمدة وقيد التوقيع' },
-          { id: 'full_roster', icon: '📂', title: 'السجل العام الشامل', desc: 'كشف موحد لجميع الموظفين' },
+          { id: 'monthly_expiry', icon: '🎯', title: 'تقرير استحقاقات الشهر المركب', desc: 'انتهاء عقود + بلوغ الـ 60 (للعقود الدائمة)' },
+          { id: 'above_age', icon: '💼', title: 'تقرير العمالة فوق السن (60+)', desc: 'متابعة المحالين للتقاعد وتجديدات فوق السن' },
+          { id: 'approval_status', icon: '⏳', title: 'موقف التجديدات والتوقيع', desc: 'متابعة الطلبات المعتمدة وقيد الاعتماد والتوقيع' },
+          { id: 'full_roster', icon: '📂', title: 'السجل العام الشامل', desc: 'كشف موحد لجميع الموظفين النشطين' },
         ].map(tab => (
           <div
             key={tab.id}
             onClick={() => setActiveTab(tab.id as any)}
-            className={`executive-card p-4 cursor-pointer border-2 transition-all duration-300 ${
-              activeTab === tab.id 
-                ? 'border-gold bg-gold/5 shadow-md' 
-                : 'border-transparent hover:border-border'
-            }`}
+            style={{
+              background: activeTab === tab.id ? 'var(--stamp-green-bg)' : 'var(--paper-card)',
+              border: activeTab === tab.id ? '2px solid var(--brass-500)' : '1px solid var(--line)',
+              borderRadius: '12px',
+              padding: '14px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
           >
-            <div className="flex items-center gap-3 mb-2">
-              <span className="text-xl">{tab.icon}</span>
-              <span className={`text-xs font-extrabold ${activeTab === tab.id ? 'text-gold' : 'text-primary'}`}>
-                {tab.title}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+              <span style={{ fontSize: '16px' }}>{tab.icon}</span>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: activeTab === tab.id ? 'var(--brass-500)' : 'var(--navy-950)' }}>{tab.title}</span>
             </div>
-            <div className="text-[10px] text-muted font-bold">{tab.desc}</div>
+            <div style={{ fontSize: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{tab.desc}</div>
           </div>
         ))}
       </div>
 
       {/* شريط الفلاتر الذكي */}
-      <div className="executive-card p-5 flex flex-wrap gap-4 items-center no-print">
+      <div className="no-print" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         
         {activeTab === 'monthly_expiry' && (
-          <div className="flex items-center gap-3 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 rounded-lg border border-blue-200 dark:border-blue-800 w-full lg:w-auto">
-            <span className="text-xs font-bold text-blue-700 dark:text-blue-400">🗓️ شهر الاستحقاق:</span>
-            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-card text-primary border border-blue-200 dark:border-blue-800 rounded-md px-2 py-1 text-xs font-bold outline-none focus:border-blue-500">
-              <option value="">الكل</option>
+          <div style={{ display: 'flex', gap: '6px', background: 'var(--stamp-blue-bg)', padding: '5px 10px', borderRadius: '8px', border: '1px solid var(--stamp-blue-bg)', alignItems: 'center' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--stamp-blue)' }}>🗓️ شهر الاستحقاق المطلوب:</span>
+            <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--stamp-blue-bg)', fontSize: '11px', fontWeight: 'bold', outline: 'none' }}>
+              <option value="">كل الأشهر</option>
               {MONTHS_LIST.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
-            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="bg-card text-primary border border-blue-200 dark:border-blue-800 rounded-md px-2 py-1 text-xs font-bold outline-none focus:border-blue-500">
-              <option value="">الكل</option>
+            <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--stamp-blue-bg)', fontSize: '11px', fontWeight: 'bold', outline: 'none' }}>
+              <option value="">كل السنوات</option>
               <option value="2025">2025</option>
               <option value="2026">2026</option>
               <option value="2027">2027</option>
@@ -275,69 +286,74 @@ export default function ReportsPage() {
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 flex-1">
-          <input
-            type="text"
-            placeholder="بحث بالاسم أو الكود..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="bg-background border border-border text-primary px-4 py-2.5 rounded-lg text-xs font-bold outline-none focus:border-gold w-full sm:w-auto flex-1 min-w-[150px]"
-          />
-          <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="bg-background border border-border text-primary px-4 py-2.5 rounded-lg text-xs font-bold outline-none focus:border-gold flex-1 min-w-[120px]">
-            <option value="">🏢 كل الشركات</option>
-            {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
-          </select>
-          <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="bg-background border border-border text-primary px-4 py-2.5 rounded-lg text-xs font-bold outline-none focus:border-gold flex-1 min-w-[120px]">
-            <option value="">💼 كل الإدارات</option>
-            {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
-          </select>
-          <select value={selectedContractType} onChange={e => setSelectedType(e.target.value)} className="bg-background border border-border text-primary px-4 py-2.5 rounded-lg text-xs font-bold outline-none focus:border-gold flex-1 min-w-[120px]">
-            <option value="">📄 أنواع العقود</option>
-            {contractTypesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
-          </select>
+        <input
+          type="text"
+          placeholder="بحث بالاسم أو الكود..."
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '180px' }}
+        />
 
-          <button
-            onClick={() => {
-              setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); setSelectedType('');
-              setSelectedMonth(String(new Date().getMonth() + 1)); setSelectedYear(new Date().getFullYear().toString());
-            }}
-            className="bg-background text-primary border border-border hover:bg-border px-5 py-2.5 rounded-lg text-xs font-bold transition-colors w-full sm:w-auto"
-          >
-            إعادة ضبط
-          </button>
-        </div>
+        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
+          <option value="">🏢 كل الشركات</option>
+          {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
+        </select>
+
+        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
+          <option value="">💼 كل الإدارات</option>
+          {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
+        </select>
+
+        <select value={selectedContractType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none' }}>
+          <option value="">📄 أنواع العقود</option>
+          {contractTypesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
+        </select>
+
+        <button
+          onClick={() => {
+            setSearchTerm('');
+            setSelectedCompany('');
+            setSelectedDept('');
+            setSelectedType('');
+            setSelectedMonth(String(new Date().getMonth() + 1));
+            setSelectedYear(new Date().getFullYear().toString());
+          }}
+          style={{ background: 'var(--paper)', border: '1px solid var(--line, #e2e8f0)', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+        >
+          إعادة ضبط
+        </button>
       </div>
 
       {/* كروت المؤشرات المحدثة */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 no-print">
-        <div className="executive-card p-4 border-l-4 border-l-primary">
-          <div className="text-[10px] text-muted font-bold mb-1">إجمالي الاستحقاقات المطلوب إجراءها</div>
-          <div className="text-2xl font-black text-primary">{reportStats.total.toLocaleString('en-US')}</div>
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
+        <div style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إجمالي الاستحقاقات المطلوب إجراءها</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy-950, #0f172a)', marginTop: '2px' }}>{reportStats.total.toLocaleString('en-US')}</div>
         </div>
 
-        <div className="executive-card p-4 border-l-4 border-l-[var(--warning-text)] bg-[var(--warning-bg)]/30">
-          <div className="text-[10px] text-[var(--warning-text)] font-bold mb-1">🎂 بلوغ الـ 60 (تحويل لعقد فوق السن)</div>
-          <div className="text-2xl font-black text-[var(--warning-text)]">{reportStats.turning60Count.toLocaleString('en-US')} <span className="text-xs">موظف</span></div>
+        <div style={{ background: 'var(--stamp-amber-bg)', border: '1px solid var(--stamp-amber-bg)', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>🎂 بلوغ الـ 60 (تحويل لعقد فوق السن)</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '2px' }}>{reportStats.turning60Count.toLocaleString('en-US')} موظف</div>
         </div>
 
-        <div className="executive-card p-4 border-l-4 border-l-blue-500 bg-blue-50/50 dark:bg-blue-900/10">
-          <div className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mb-1">📑 عقود محددة انتهى أجلها</div>
-          <div className="text-2xl font-black text-blue-600 dark:text-blue-400">{reportStats.contractExpCount.toLocaleString('en-US')} <span className="text-xs">عقد</span></div>
+        <div style={{ background: 'var(--stamp-blue-bg)', border: '1px solid var(--stamp-blue-bg)', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: 'var(--stamp-blue)', fontWeight: 'bold' }}>📑 عقود محددة انتهى أجلها</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-blue)', marginTop: '2px' }}>{reportStats.contractExpCount.toLocaleString('en-US')} عقد</div>
         </div>
 
-        <div className="executive-card p-4 border-l-4 border-l-[var(--success-text)] bg-[var(--success-bg)]/30">
-          <div className="text-[10px] text-[var(--success-text)] font-bold mb-1">عقود مكتملة وموقعة</div>
-          <div className="text-2xl font-black text-[var(--success-text)]">{reportStats.signedCount.toLocaleString('en-US')}</div>
+        <div style={{ background: 'var(--stamp-green-bg)', border: '1px solid var(--stamp-green-bg)', padding: '12px 16px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '10.5px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>عقود مكتملة وموقعة</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)', marginTop: '2px' }}>{reportStats.signedCount.toLocaleString('en-US')}</div>
         </div>
       </div>
 
       {/* 🖨️ منطقة التقرير والمعاينة القابلة للطباعة */}
-      <div className="print-area executive-card p-6 overflow-hidden">
+      <div className="print-area" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', padding: '24px' }}>
         
-        <div className="border-b-2 border-primary pb-4 mb-6 flex justify-between items-start md:items-center flex-col md:flex-row gap-4">
+        <div style={{ borderBottom: '2px solid var(--navy-950, #0f172a)', paddingBottom: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <h2 className="m-0 text-lg text-primary font-black">مجموعة شركات المراسم الدولية</h2>
-            <p className="mt-1 text-xs text-muted font-bold">
+            <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2>
+            <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
               {activeTab === 'monthly_expiry' && `كشف استحقاقات العمل لشهر (${MONTHS_LIST.find(m => m.value === selectedMonth)?.label || 'الكل'}) لسنة ${selectedYear || 'الكل'} (عقود تنتهي + بلوغ الـ 60)`}
               {activeTab === 'above_age' && 'كشف حصر الموظفين البالغين لسن التقاعد (60 سنة فأكثر)'}
               {activeTab === 'approval_status' && 'تقرير متابعة موقف اعتمادات وتوقيعات العقود'}
@@ -345,56 +361,56 @@ export default function ReportsPage() {
             </p>
           </div>
 
-          <div className="text-left text-[10px] text-muted font-mono font-bold bg-background p-3 rounded-lg border border-border">
-            <div>تاريخ التقرير: <strong className="text-primary">{new Date().toLocaleDateString('ar-EG')}</strong></div>
-            <div className="mt-1">عدد السجلات: <strong className="text-primary">{filteredReportData.length}</strong></div>
+          <div style={{ textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontFamily: 'monospace' }}>
+            <div>تاريخ التقرير: <strong>{new Date().toLocaleDateString('ar-EG')}</strong></div>
+            <div>عدد السجلات: <strong>{filteredReportData.length}</strong></div>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="table-responsive" style={{ border: 0 }}>
           {loading ? (
-            <div className="p-10 text-center text-xs font-bold text-muted">جاري استخراج وبناء التقرير... ⏳</div>
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري استخراج وبناء التقرير... ⏳</div>
           ) : (
-            <table className="w-full text-right text-xs whitespace-nowrap executive-table">
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
               <thead>
-                <tr>
-                  <th className="rounded-tr-lg">#</th>
-                  <th>الكود</th>
-                  <th>اسم الموظف</th>
-                  <th>الإدارة</th>
-                  <th>الوظيفة</th>
-                  <th>السن</th>
-                  <th>نوع العقد الحالي</th>
-                  <th>السبب / الإجراء المطلوب</th>
-                  <th>تاريخ الاستحقاق</th>
-                  <th className="rounded-tl-lg text-center">حالة التجديد</th>
+                <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                  <th style={{ padding: '10px' }}>#</th>
+                  <th style={{ padding: '10px' }}>الكود</th>
+                  <th style={{ padding: '10px' }}>اسم الموظف</th>
+                  <th style={{ padding: '10px' }}>الإدارة</th>
+                  <th style={{ padding: '10px' }}>الوظيفة</th>
+                  <th style={{ padding: '10px' }}>السن</th>
+                  <th style={{ padding: '10px' }}>نوع العقد الحالي</th>
+                  <th style={{ padding: '10px' }}>السبب / الإجراء المطلوب</th>
+                  <th style={{ padding: '10px' }}>تاريخ الاستحقاق</th>
+                  <th style={{ padding: '10px' }}>حالة التجديد</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredReportData.length === 0 ? (
-                  <tr><td colSpan={10} className="p-8 text-center text-muted font-bold">لا توجد استحقاقات تعاقدية أو حركات مطابقة للفلاتر. 🎉</td></tr>
+                  <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>لا توجد استحقاقات تعاقدية أو حركات بلوغ 60 في هذا الشهر. 🎉</td></tr>
                 ) : (
                   filteredReportData.map((item, idx) => {
                     const is60Event = (item as any).actionReason?.includes('60');
 
                     return (
-                      <tr key={idx} className={is60Event ? 'bg-[var(--warning-bg)]/20' : ''}>
-                        <td className="text-muted font-mono">{idx + 1}</td>
-                        <td className="font-mono font-bold text-gold">{item.code}</td>
-                        <td className="font-bold text-primary">{item.name}</td>
-                        <td className="text-muted">{item.department || '—'}</td>
-                        <td className="text-muted">{item.jobTitle || '—'}</td>
-                        <td className={`font-bold ${item.age && item.age >= 60 ? 'text-[var(--warning-text)]' : 'text-primary'}`}>
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--line)', background: is60Event ? 'var(--stamp-amber-bg)' : 'transparent' }}>
+                        <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{idx + 1}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-500)' }}>{item.code}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: 'var(--ink)' }}>{item.name}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{item.department || '—'}</td>
+                        <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{item.jobTitle || '—'}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: item.age && item.age >= 60 ? 'var(--stamp-amber)' : 'var(--ink)' }}>
                           {item.age ? `${item.age} سنة` : '—'}
                         </td>
-                        <td className="font-bold text-primary">{item.contractType || '—'}</td>
-                        <td className={`font-bold ${is60Event ? 'text-[var(--warning-text)]' : 'text-blue-600 dark:text-blue-400'}`}>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.contractType || '—'}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold', color: is60Event ? 'var(--stamp-amber)' : 'var(--stamp-blue)' }}>
                           {(item as any).actionReason || 'انتهاء عقد'}
                         </td>
-                        <td className="font-mono font-bold text-primary">
+                        <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
                           {is60Event && item.age60DateObj ? item.age60DateObj.toISOString().split('T')[0] : (item.endDate || '—')}
                         </td>
-                        <td className="text-center font-bold text-muted">{item.renewalStatus}</td>
+                        <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.renewalStatus}</td>
                       </tr>
                     );
                   })
@@ -404,7 +420,7 @@ export default function ReportsPage() {
           )}
         </div>
 
-        <div className="mt-12 flex flex-col sm:flex-row justify-between items-center gap-6 px-4 text-xs text-muted font-bold">
+        <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>
           <div>مُعد التقرير: ........................</div>
           <div>مراجعة الموارد البشرية: ........................</div>
           <div>اعتماد إدارة الشركة: ........................</div>

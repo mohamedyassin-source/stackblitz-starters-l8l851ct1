@@ -282,7 +282,7 @@ export default function RenewalsPage() {
 
             {/* زر استخراج الإكسيل */}
             {activeTab === 'Approved' && (
-              <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#059669', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+              <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
                 {actionLoading ? 'جاري التجهيز...' : `📥 تصدير كشف عقود (${selectedIds.length})`}
               </button>
             )}
@@ -290,19 +290,19 @@ export default function RenewalsPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-          <button onClick={() => setActiveTab('Pending')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Pending' ? '2px solid #2563eb' : '1px solid var(--line)', background: activeTab === 'Pending' ? '#eff6ff' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+          <button onClick={() => setActiveTab('Pending')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Pending' ? '2px solid var(--stamp-blue)' : '1px solid var(--line)', background: activeTab === 'Pending' ? 'var(--stamp-blue-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
             <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>قيد المعالجة</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#2563eb', marginTop: '4px' }}>{countPending}</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-blue)', marginTop: '4px' }}>{countPending}</div>
           </button>
-          <button onClick={() => setActiveTab('Approved')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Approved' ? '2px solid #15803d' : '1px solid var(--line)', background: activeTab === 'Approved' ? '#dcfce7' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+          <button onClick={() => setActiveTab('Approved')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Approved' ? '2px solid var(--stamp-green)' : '1px solid var(--line)', background: activeTab === 'Approved' ? 'var(--stamp-green-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
             <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>معتمدة (تنتظر التوقيع)</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#15803d', marginTop: '4px' }}>{countApproved}</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '4px' }}>{countApproved}</div>
           </button>
-          <button onClick={() => setActiveTab('Rejected')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Rejected' ? '2px solid #dc2626' : '1px solid var(--line)', background: activeTab === 'Rejected' ? '#fef2f2' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+          <button onClick={() => setActiveTab('Rejected')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Rejected' ? '2px solid var(--stamp-red)' : '1px solid var(--line)', background: activeTab === 'Rejected' ? 'var(--stamp-red-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
             <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>مرفوضة</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#dc2626', marginTop: '4px' }}>{countRejected}</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-red)', marginTop: '4px' }}>{countRejected}</div>
           </button>
-          <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: activeTab === 'All' ? '#f8fafc' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+          <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: activeTab === 'All' ? 'var(--paper)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
             <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الجميع</div>
             <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--navy-950)', marginTop: '4px' }}>{countAll}</div>
           </button>
@@ -328,7 +328,7 @@ export default function RenewalsPage() {
             />
           </div>
 
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
           
           <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>معروض: <span style={{ color: 'var(--navy-950)' }}>{sortedRequests.length}</span> طلب</div>
         </div>
@@ -366,7 +366,7 @@ export default function RenewalsPage() {
                 ) : sortedRequests.map((req) => {
                   const days = getDaysRemaining(req.contract_end_date);
                   return (
-                    <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? '#f8fafc' : 'transparent' }}>
+                    <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? 'var(--paper)' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         <input 
                           type="checkbox" 
@@ -382,25 +382,25 @@ export default function RenewalsPage() {
                       <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{req.contract_end_date || '—'}</td>
                       <td style={{ padding: '8px 10px' }}>
                         {days !== null ? (
-                          <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', background: days < 0 ? '#fef2f2' : days <= 60 ? '#fff7ed' : '#dcfce7', color: days < 0 ? '#dc2626' : days <= 60 ? '#c2410c' : '#15803d' }}>
+                          <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', background: days < 0 ? 'var(--stamp-red-bg)' : days <= 60 ? 'var(--stamp-amber-bg)' : 'var(--stamp-green-bg)', color: days < 0 ? 'var(--stamp-red)' : days <= 60 ? 'var(--stamp-amber)' : 'var(--stamp-green)' }}>
                             {days < 0 ? `منتهي (${Math.abs(days)})` : `${days} يوم`}
                           </span>
                         ) : '—'}
                       </td>
                       <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.renewal_months || 12} ش</td>
                       <td style={{ padding: '8px 10px' }}>
-                        {req.status === 'Approved' && <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>معتمد</span>}
-                        {req.status === 'Pending' && <span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>قيد المعالجة</span>}
-                        {req.status === 'Rejected' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>مرفوض</span>}
+                        {req.status === 'Approved' && <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>معتمد</span>}
+                        {req.status === 'Pending' && <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>قيد المعالجة</span>}
+                        {req.status === 'Rejected' && <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>مرفوض</span>}
                       </td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px', color: req.signature_status === 'تم التوقيع' ? '#15803d' : 'var(--muted)' }}>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px', color: req.signature_status === 'تم التوقيع' ? 'var(--stamp-green)' : 'var(--muted)' }}>
                         {req.signature_status || '—'}
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         {req.status === 'Pending' ? (
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                            <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: '#15803d', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
-                            <button onClick={() => handleReject(req.request_id)} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
+                            <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
+                            <button onClick={() => handleReject(req.request_id)} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
                           </div>
                         ) : (
                           <span style={{ fontSize: '9px', color: 'var(--muted)' }}>— تمت المعالجة —</span>
@@ -417,7 +417,7 @@ export default function RenewalsPage() {
         {approvalModal.isOpen && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
             <div style={{ width: '400px', background: 'var(--paper-card)', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-              <h3 style={{ margin: '0 0 16px', fontSize: '15px', color: '#15803d' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: '15px', color: 'var(--stamp-green)' }}>
                 {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
               </h3>
               <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
@@ -426,10 +426,10 @@ export default function RenewalsPage() {
               
               {/* عرض تواريخ العقد للتأكيد (للموظف الواحد فقط) */}
               {approvalModal.type === 'single' && approvalModal.req && (
-                <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#334155' }}>
+                <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: 'var(--ink)' }}>
                   <div style={{ marginBottom: '6px' }}><strong>تاريخ النهاية القديم:</strong> {approvalModal.req.contract_end_date || 'غير مسجل'}</div>
-                  <div style={{ marginBottom: '6px', color: '#059669' }}><strong>تاريخ البداية الجديد:</strong> {calculateNewStartDate(approvalModal.req.contract_end_date)}</div>
-                  <div style={{ color: '#059669' }}><strong>تاريخ النهاية المتوقع:</strong> {calculateNewEndDateFromStart(calculateNewStartDate(approvalModal.req.contract_end_date), confirmedMonths)}</div>
+                  <div style={{ marginBottom: '6px', color: 'var(--stamp-green)' }}><strong>تاريخ البداية الجديد:</strong> {calculateNewStartDate(approvalModal.req.contract_end_date)}</div>
+                  <div style={{ color: 'var(--stamp-green)' }}><strong>تاريخ النهاية المتوقع:</strong> {calculateNewEndDateFromStart(calculateNewStartDate(approvalModal.req.contract_end_date), confirmedMonths)}</div>
                 </div>
               )}
 
@@ -445,8 +445,8 @@ export default function RenewalsPage() {
                 </select>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', color: 'var(--ink)' }}>إلغاء</button>
-                <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: '#15803d', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
+                <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', color: 'var(--ink)' }}>إلغاء</button>
+                <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
                   {actionLoading ? 'جاري الاعتماد...' : 'تأكيد الاعتماد ✅'}
                 </button>
               </div>

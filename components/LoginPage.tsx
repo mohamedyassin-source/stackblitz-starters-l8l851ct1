@@ -142,22 +142,22 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0a0f1c 0%, #1e293b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', direction: 'rtl', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
-      <div style={{ width: '100%', maxWidth: '420px', background: '#ffffff', borderRadius: '16px', padding: '36px 28px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+      <div style={{ width: '100%', maxWidth: '420px', background: 'var(--paper-card)', borderRadius: '16px', padding: '36px 28px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', border: '1px solid rgba(255, 255, 255, 0.1)' }} className="animate-fade-in-up">
         
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'linear-gradient(135deg, var(--brass-400, #d97706), var(--brass-600, #b8934a))', color: '#fff', display: 'grid', placeItems: 'center', fontSize: '24px', margin: '0 auto 12px', boxShadow: '0 8px 16px rgba(184, 147, 74, 0.3)' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'linear-gradient(135deg, var(--brass-400), var(--brass-600))', color: '#fff', display: 'grid', placeItems: 'center', fontSize: '24px', margin: '0 auto 12px', boxShadow: '0 8px 16px rgba(13, 148, 136, 0.35)' }}>
             {requirePasswordChange ? '🛡️' : '🏢'}
           </div>
-          <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>
+          <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: 'var(--ink)', fontWeight: '900' }}>
             {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
-          <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
+          <p style={{ margin: 0, fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>
             {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
           </p>
         </div>
 
         {errorMsg && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', padding: '10px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '20px', textAlign: 'center' }}>
+          <div style={{ background: 'var(--stamp-red-bg)', border: '1px solid var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '10px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', marginBottom: '20px', textAlign: 'center' }}>
             ⚠️ {errorMsg}
           </div>
         )}
@@ -165,25 +165,25 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         {requirePasswordChange ? (
           <form onSubmit={handlePasswordChange} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كلمة السر الجديدة:</label>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: 'var(--ink)', marginBottom: '6px' }}>كلمة السر الجديدة:</label>
               <input
                 type="password"
                 required
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
-                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>تأكيد كلمة السر:</label>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: 'var(--ink)', marginBottom: '6px' }}>تأكيد كلمة السر:</label>
               <input
                 type="password"
                 required
                 placeholder="••••••••"
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}
-                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
             
@@ -191,7 +191,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <button
                 type="submit"
                 disabled={loading}
-                style={{ padding: '12px', borderRadius: '8px', border: 0, background: '#15803d', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+                style={{ padding: '12px', borderRadius: '8px', border: 0, background: 'linear-gradient(135deg, var(--brass-400), var(--brass-600))', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
               >
                 {loading ? 'جاري التحديث...' : 'حفظ كلمة السر الجديدة والدخول 💾'}
               </button>
@@ -199,7 +199,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <button
                 type="button"
                 onClick={handleSkipPasswordChange}
-                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'transparent', color: '#64748b', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
+                style={{ padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', background: 'transparent', color: 'var(--muted)', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
               >
                 التخطي والدخول بكلمة السر الحالية ↩️
               </button>
@@ -208,32 +208,32 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         ) : (
           <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كود الموظف:</label>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: 'var(--ink)', marginBottom: '6px' }}>كود الموظف:</label>
               <input
                 type="text"
                 required
                 placeholder="مثال: 10025"
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
-                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', fontWeight: 'bold', fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: '#334155', marginBottom: '6px' }}>كلمة السر:</label>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', color: 'var(--ink)', marginBottom: '6px' }}>كلمة السر:</label>
               <input
                 type="password"
                 required
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
 
             <button
               type="submit"
               disabled={loading}
-              style={{ marginTop: '6px', padding: '12px', borderRadius: '8px', border: 0, background: '#0f172a', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+              style={{ marginTop: '6px', padding: '12px', borderRadius: '8px', border: 0, background: 'linear-gradient(135deg, var(--brass-400), var(--brass-600))', color: '#ffffff', fontSize: '12px', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
             >
               {loading ? 'جاري التحقق...' : 'دخول إلى النظام 🔑'}
             </button>
@@ -242,7 +242,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <button
                 type="button"
                 onClick={handleOpenPasswordChange}
-                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}
+                style={{ background: 'none', border: 'none', color: 'var(--stamp-blue)', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}
               >
                 هل ترغب في تغيير كلمة السر الآن؟ 🔑
               </button>

@@ -207,73 +207,66 @@ export default function DashboardPage() {
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.aboveAgeCount;
   const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
   const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
-  
-  // تدرج ألوان الدونات شارت (يدعم الوضعين)
   const donutGradient = totalContracts === 0 
-    ? 'conic-gradient(var(--border-color) 0% 100%)' 
-    : `conic-gradient(var(--success-text) 0% ${p1}%, #2563eb ${p1}% ${p2}%, var(--warning-text) ${p2}% 100%)`;
+    ? 'conic-gradient(var(--line) 0% 100%)' 
+    : `conic-gradient(var(--stamp-green) 0% ${p1}%, var(--stamp-blue) ${p1}% ${p2}%, var(--stamp-amber) ${p2}% 100%)`;
 
   return (
-    <div className="flex flex-col gap-6 pb-10">
+    <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px' }}>
       
-      {/* 🌟 رأس الصفحة الاحترافي */}
-      <div className="executive-card flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 sm:p-6">
+      {/* رأس الصفحة */}
+      <div className="card flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 sm:px-6 py-5">
         <div>
-          <h2 className="m-0 text-xl sm:text-2xl font-extrabold tracking-tight text-primary">
-            بوابة تجديد العقود لشركة المراسم الدولية
+          <h2 className="m-0 text-lg sm:text-xl font-extrabold tracking-tight" style={{ color: 'var(--navy-950)' }}>
+            بوابة تجديد العقود لشركة المراسم الدولية والشركات الشقيقة
           </h2>
-          <div className="flex items-center gap-3 mt-3 text-xs font-bold text-muted">
+          <div className="flex items-center gap-3 mt-2 text-[12px] font-bold" style={{ color: 'var(--muted)' }}>
             <span>📅 {dateFormatted}</span>
-            <span className="text-border">|</span>
-            <span className="font-mono text-gold flex items-center gap-1">⏰ {timeFormatted}</span>
+            <span style={{ color: 'var(--line)' }}>|</span>
+            <span className="font-mono" style={{ color: 'var(--brass-600)' }}>⏰ {timeFormatted}</span>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative">
-            <input list="dashCompList" className="bg-background border border-border text-primary text-xs font-bold rounded-lg px-4 py-2.5 outline-none focus:border-gold transition-colors w-full sm:w-auto" placeholder="🏢 كل الشركات (ابحث...)" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)} />
-            <datalist id="dashCompList">{companiesList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <input list="dashCompList" className="field" placeholder="🏢 كل الشركات (ابحث...)" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)} />
+          <datalist id="dashCompList">{companiesList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-          <div className="relative">
-            <input list="dashDeptList" className="bg-background border border-border text-primary text-xs font-bold rounded-lg px-4 py-2.5 outline-none focus:border-gold transition-colors w-full sm:w-auto" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} />
-            <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-          </div>
+          <input list="dashDeptList" className="field" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} />
+          <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
 
           {(filterCompany || filterDept) && (
-            <button className="bg-background border border-border text-primary hover:text-danger-text px-4 py-2.5 rounded-lg text-xs font-bold transition-colors" onClick={() => { setFilterCompany(''); setFilterDept(''); }}>إعادة ضبط ✕</button>
+            <button className="field font-bold" style={{ background: 'var(--paper)', cursor: 'pointer' }} onClick={() => { setFilterCompany(''); setFilterDept(''); }}>إعادة ضبط</button>
           )}
         </div>
       </div>
 
-      {/* 🌟 الكروت السريعة (تعتمد على KpiCard المحدث) */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <KpiCard loading={loading} title="إجمالي القوة" value={dashboardData.totalEmps} sub="عرض السجل" icon="👥" onClick={() => navigateTo('employees')} />
-        <KpiCard loading={loading} title="طلبات معلقة" value={dashboardData.pendingCount} sub={`+ ${dashboardData.waitingSignCount} توقيع`} icon="⏳" onClick={() => navigateTo('renewals')} />
-        <KpiCard loading={loading} title="عقود مؤقتة" value={dashboardData.shortTermTotal} sub="عرض القائمة" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
-        <KpiCard loading={loading} title="تنتهي قريباً" value={dashboardData.expiringSoonCount} sub="إدارة العقود" icon="📆" onClick={() => navigateTo('contracts')} />
-        <KpiCard loading={loading} title="عقود منتهية" value={dashboardData.expiredCount} sub="تسوية فورية" icon="🚨" onClick={() => navigateTo('contracts')} />
-        <KpiCard loading={loading} title="نواقص بيانات" value={dashboardData.missingDataList.length} sub="مراجعة السجل" icon="⚠️" onClick={() => setShowMissingDataModal(true)} />
+      {/* الكروت السريعة */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        <KpiCard loading={loading} tone="brass" title="إجمالي القوة" value={dashboardData.totalEmps} sub="عرض السجل 👁️" icon="👥" onClick={() => navigateTo('employees')} />
+        <KpiCard loading={loading} tone="blue" title="طلبات معلقة" value={dashboardData.pendingCount} sub={`+ ${dashboardData.waitingSignCount} توقيع`} icon="⏳" onClick={() => navigateTo('renewals')} />
+        <KpiCard loading={loading} tone="blue" title="عقود مؤقتة" value={dashboardData.shortTermTotal} sub="عرض القائمة ⏱️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
+        <KpiCard loading={loading} tone="amber" title="تنتهي قريباً" value={dashboardData.expiringSoonCount} sub="إدارة العقود 👁️" icon="📆" onClick={() => navigateTo('contracts')} />
+        <KpiCard loading={loading} tone="red" title="عقود منتهية" value={dashboardData.expiredCount} sub="إدارة العقود 🚨" icon="🚨" onClick={() => navigateTo('contracts')} />
+        <KpiCard loading={loading} tone="red" title="نواقص بيانات" value={dashboardData.missingDataList.length} sub="عرض القائمة ⚠️" icon="⚠️" onClick={() => setShowMissingDataModal(true)} />
       </div>
 
       {/* 🌟 الصف الأول من الرسوم البيانية */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        
+      <div className="grid lg:grid-cols-3 gap-5">
         {/* 1. الإدارات (ثلث المساحة) */}
-        <div className="executive-card p-5 sm:p-6">
-          <h4 className="m-0 mb-6 text-sm font-extrabold text-primary flex items-center gap-2">📊 أكبر 5 إدارات (كثافة)</h4>
-          <div className="flex flex-col gap-5">
+        <div className="card px-5 sm:px-6 py-5">
+          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>📊 أكبر 5 إدارات (كثافة)</h4>
+          <div className="flex flex-col gap-4">
             {dashboardData.topDepts.map((dept, idx) => {
               const max = dashboardData.topDepts[0]?.count || 1;
               const percentage = (dept.count / max) * 100;
               return (
                 <div key={idx}>
-                  <div className="flex justify-between text-xs font-bold mb-2 text-primary">
+                  <div className="flex justify-between text-[11px] font-bold mb-1.5" style={{ color: 'var(--ink)' }}>
                     <span>{dept.name}</span>
-                    <span className="font-mono text-gold">{dept.count.toLocaleString('en-US')}</span>
+                    <span className="font-mono">{dept.count.toLocaleString('en-US')}</span>
                   </div>
-                  <div className="w-full h-2.5 rounded-full overflow-hidden bg-background border border-border">
-                    <div className="h-full rounded-full transition-all duration-700 bg-gold" style={{ width: `${percentage}%` }} />
+                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--paper)' }}>
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${percentage}%`, background: 'linear-gradient(90deg, var(--brass-400), var(--brass-600))' }} />
                   </div>
                 </div>
               );
@@ -281,21 +274,21 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. الرسم البياني للشهور (ثلثي المساحة) */}
-        <div className="executive-card p-5 sm:p-6 flex flex-col lg:col-span-2">
-          <h4 className="m-0 mb-6 text-sm font-extrabold text-primary flex items-center gap-2">
+        {/* 2. الرسم البياني للشهور (يأخذ ثلثي المساحة براحته) */}
+        <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
+          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
             📈 التوزيع الشهري لبدايات العقود (كثافة التجديدات)
           </h4>
-          <div className="flex-1 flex items-end gap-2 h-[180px] pb-4 border-b border-border">
+          <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
               return (
-                <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full group">
-                  <span className={`text-[10px] font-mono font-bold mb-2 transition-opacity duration-300 ${month.count > 0 ? 'text-primary opacity-100' : 'opacity-0'}`}>
+                <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full">
+                  <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? 'var(--stamp-green)' : 'transparent' }}>
                     {month.count.toLocaleString('en-US')}
                   </span>
-                  <div className={`w-full max-w-[40px] rounded-t-lg transition-all duration-700 ${month.count > 0 ? 'bg-gold group-hover:bg-gold-hover' : 'bg-background'}`} style={{ height: `${height}%`, minHeight: month.count > 0 ? '6px' : '0' }} />
-                  <span className="text-[11px] font-bold mt-3 text-muted">{month.name}</span>
+                  <div className="w-full max-w-[32px] rounded-t-md transition-all duration-700" style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--paper)' }} />
+                  <span className="text-[10px] font-bold mt-2" style={{ color: 'var(--muted)' }}>{month.name}</span>
                 </div>
               );
             })}
@@ -304,65 +297,54 @@ export default function DashboardPage() {
       </div>
 
       {/* 🌟 الصف الثاني من الرسوم البيانية */}
-      <div className="grid lg:grid-cols-3 gap-6">
-        
+      <div className="grid lg:grid-cols-3 gap-5">
         {/* 3. الدونات شارت (ثلث المساحة) */}
-        <div className="executive-card p-5 sm:p-6 flex flex-col items-center justify-center relative lg:col-span-1 min-h-[300px]">
-          <h4 className="m-0 mb-6 text-sm font-extrabold w-full text-right text-primary">📑 توزيع هيكل العقود</h4>
+        <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1">
+          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
           
-          <div className="w-44 h-44 rounded-full relative flex items-center justify-center shadow-lg transition-all" style={{ background: donutGradient }}>
-            <div className="w-32 h-32 bg-card rounded-full flex flex-col items-center justify-center shadow-inner z-10 transition-colors">
-              <span className="text-xs text-muted font-bold mb-1">الإجمالي</span>
-              <span className="text-2xl font-black text-primary">{totalContracts.toLocaleString('en-US')}</span>
+          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+            <div style={{ width: '110px', height: '110px', background: 'var(--paper-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الإجمالي</span>
+              <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
             </div>
           </div>
 
-          <div className="w-full flex justify-between mt-8 text-xs font-bold px-2 text-primary">
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[var(--success-text)] shadow-sm" />دائم ({dashboardData.permCount})</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-blue-600 shadow-sm" />محدد ({dashboardData.fixedCount})</div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[var(--warning-text)] shadow-sm" />فوق السن ({dashboardData.aboveAgeCount})</div>
+          <div className="w-full flex justify-between mt-8 text-[11px] font-bold px-2">
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[var(--stamp-green)]" />دائم ({dashboardData.permCount})</div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[var(--stamp-blue)]" />محدد ({dashboardData.fixedCount})</div>
+            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[var(--stamp-amber)]" />فوق السن ({dashboardData.aboveAgeCount})</div>
           </div>
         </div>
 
-        {/* 4. المهام العاجلة (ثلثي المساحة) */}
-        <div className="executive-card p-5 sm:p-6 lg:col-span-2 flex flex-col">
-          <div className="flex items-center justify-between mb-5">
-            <h4 className="m-0 text-sm font-extrabold flex items-center gap-2 text-[var(--danger-text)]">
-              <span className="text-lg">🚨</span> مهام عاجلة تحتاج لتدخل (اضغط للذهاب)
+        {/* 4. المهام العاجلة (يأخذ ثلثي المساحة لجدول عريض ومريح) */}
+        <div className="card px-5 sm:px-6 py-5 lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: 'var(--stamp-red)' }}>
+              <span className="text-base">🚨</span> مهام عاجلة (اضغط للتجديد)
             </h4>
           </div>
           {dashboardData.urgentAlerts.length === 0 ? (
-            <div className="flex-1 flex items-center justify-center bg-[var(--success-bg)] text-[var(--success-text)] rounded-xl text-sm font-bold border border-[var(--success-text)]/20 p-8">
-              لا توجد مهام عاجلة! جميع العقود سارية وفي أمان. 🎉
+            <div className="stamp-green text-center py-8 rounded-xl text-[13px] font-bold" style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)' }}>
+              لا توجد مهام عاجلة! جميع العقود سارية. 🎉
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto max-h-[260px] pr-2">
-              <table className="w-full text-right text-xs whitespace-nowrap executive-table">
-                <thead className="sticky top-0 z-10">
-                  <tr>
-                    <th className="rounded-tr-lg">الكود</th>
-                    <th>الموظف</th>
-                    <th>الإدارة</th>
-                    <th>الانتهاء</th>
-                    <th className="rounded-tl-lg text-center">الحالة</th>
-                  </tr>
+            <div className="overflow-y-auto max-h-[220px]">
+              <table className="data-table" style={{ width: '100%' }}>
+                <thead>
+                  <tr><th>الكود</th><th>الموظف</th><th>الإدارة</th><th>الانتهاء</th><th>الحالة</th></tr>
                 </thead>
                 <tbody>
                   {dashboardData.urgentAlerts.map((alert) => (
-                    <tr key={alert.id} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer group">
-                      <td className="font-mono font-bold text-gold group-hover:text-gold-hover">{alert.employee_code}</td>
-                      <td className="font-bold text-primary">{alert.employee_name}</td>
-                      <td className="text-muted">{alert.department || '—'}</td>
-                      <td className="font-mono font-bold text-primary">{alert.contract_end_date}</td>
-                      <td className="text-center">
+                    <tr key={alert.id} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                      <td className="font-mono font-bold" style={{ color: 'var(--brass-600)' }}>{alert.employee_code}</td>
+                      <td className="font-bold">{alert.employee_name}</td>
+                      <td style={{ color: 'var(--muted)', fontSize: '11px' }}>{alert.department || '—'}</td>
+                      <td className="font-mono font-bold">{alert.contract_end_date}</td>
+                      <td>
                         {alert.status === 'expired' ? (
-                          <span className="bg-[var(--danger-bg)] text-[var(--danger-text)] px-3 py-1.5 rounded-md font-bold text-[10px] border border-[var(--danger-text)]/20 inline-block">
-                            منتهي ({Math.abs(alert.days)})
-                          </span>
+                          <Stamp color="red">منتهي ({Math.abs(alert.days)})</Stamp>
                         ) : (
-                          <span className="bg-[var(--warning-bg)] text-[var(--warning-text)] px-3 py-1.5 rounded-md font-bold text-[10px] border border-[var(--warning-text)]/20 inline-block">
-                            متبقي {alert.days}
-                          </span>
+                          <Stamp color="amber">متبقي {alert.days}</Stamp>
                         )}
                       </td>
                     </tr>
@@ -374,76 +356,79 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 النوافذ المنبثقة (Modals) متوافقة مع الـ Dark Mode */}
+      {/* 🌟 النوافذ المنبثقة (Modals) */}
       
-      {/* 1. نافذة العقود المؤقتة */}
+      {/* نافذة العقود المؤقتة (ذات الهيدر الثابت) */}
       {showShortTermModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 sm:p-6 transition-opacity">
-          <div className="w-full max-w-3xl h-[85vh] bg-card rounded-2xl flex flex-col shadow-2xl overflow-hidden border border-border">
-            <div className="p-5 sm:p-6 bg-background border-b border-border flex justify-between items-center shrink-0">
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            
+            <div style={{ padding: '20px 24px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
-                <h3 className="m-0 text-base font-extrabold text-blue-600 flex items-center gap-2">⏱️ العقود المؤقتة وفترات الاختبار</h3>
-                <p className="mt-1 text-xs text-muted font-bold">إجمالي الحالات: {dashboardData.shortTermTotal} موظف تحت التقييم</p>
+                <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
+                  ⏱️ العقود المؤقتة وفترات الاختبار
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>إجمالي: {dashboardData.shortTermTotal} موظف</p>
               </div>
-              <div className="flex gap-2">
+              <div style={{ display: 'flex', gap: '8px' }}>
                 {selectedShortTermDept && (
-                  <button onClick={() => setSelectedShortTermDept(null)} className="bg-card border border-border text-primary px-4 py-2 rounded-lg cursor-pointer font-bold text-xs hover:bg-background transition-colors shadow-sm">
+                  <button onClick={() => setSelectedShortTermDept(null)} style={{ background: 'var(--line)', border: 0, color: 'var(--ink)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
                     🔙 رجوع للإدارات
                   </button>
                 )}
-                <button onClick={() => { setShowShortTermModal(false); setSelectedShortTermDept(null); }} className="bg-[var(--danger-bg)] text-[var(--danger-text)] border border-[var(--danger-text)]/20 px-4 py-2 rounded-lg cursor-pointer font-bold text-xs hover:opacity-80 transition-colors shadow-sm">
+                <button onClick={() => { setShowShortTermModal(false); setSelectedShortTermDept(null); }} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
                   إغلاق ✕
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6">
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
               {!selectedShortTermDept ? (
-                <div className="flex flex-col gap-3">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {dashboardData.shortTermList.length === 0 ? (
-                    <div className="text-center text-muted font-bold text-sm mt-10">لا توجد عقود مؤقتة مسجلة حالياً.</div>
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold', fontSize: '13px', marginTop: '40px' }}>لا توجد عقود مؤقتة حالياً.</div>
                   ) : (
                     dashboardData.shortTermList.map((group, idx) => (
-                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} className="flex justify-between items-center p-4 border border-border rounded-xl cursor-pointer transition-all hover:border-blue-500 bg-card hover:shadow-md group">
-                        <div className="font-extrabold text-sm text-primary transition-colors group-hover:text-blue-600">🏢 {group.deptName}</div>
-                        <div className="flex items-center gap-4">
-                          <span className="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-4 py-1.5 rounded-full text-xs font-black shadow-sm">{group.emps.length} موظف</span>
-                          <span className="text-xs text-muted font-bold group-hover:text-primary transition-colors">تصفح القائمة 👁️</span>
+                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s', background: 'var(--paper-card)' }} onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--stamp-blue)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}>
+                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: 'var(--ink)' }}>🏢 {group.deptName}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '4px 10px', borderRadius: '100px', fontSize: '11px', fontWeight: 'bold' }}>{group.emps.length} موظف</span>
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>عرض 👁️</span>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <h4 className="m-0 mb-5 text-primary text-sm font-extrabold border-r-4 border-blue-500 pr-3">قائمة موظفي إدارة: {selectedShortTermDept}</h4>
-                  <table className="w-full text-right text-xs whitespace-nowrap executive-table">
+                <div className="table-responsive">
+                  <h4 style={{ margin: '0 0 16px', color: 'var(--ink)', fontSize: '14px' }}>إدارة: {selectedShortTermDept}</h4>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
                     <thead>
-                      <tr>
-                        <th className="rounded-tr-lg">الموظف</th>
-                        <th>تحليل سجل التعاقد</th>
-                        <th>الانتهاء</th>
-                        <th className="rounded-tl-lg text-center">إجراء سريع</th>
+                      <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                        <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                        <th style={{ padding: '10px', color: 'var(--muted)' }}>سجل التعاقد</th>
+                        <th style={{ padding: '10px', color: 'var(--muted)' }}>الانتهاء</th>
+                        <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
                       </tr>
                     </thead>
                     <tbody>
                       {dashboardData.shortTermList.find(g => g.deptName === selectedShortTermDept)?.emps.map((emp) => {
                         const daysLeft = getDaysRemaining(emp.contract_end_date);
                         return (
-                          <tr key={emp.employee_code}>
-                            <td>
-                              <div className="font-bold text-primary text-sm mb-1">{emp.employee_name}</div>
-                              <div className="text-[10px] text-gold font-mono font-bold">{emp.employee_code}</div>
+                          <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
+                            <td style={{ padding: '10px' }}>
+                              <div style={{ fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--brass-500)', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employee_code}</div>
                             </td>
-                            <td>
-                              <span className="bg-background text-primary px-3 py-1.5 rounded-md font-bold text-[10px] border border-border/50 border-dashed inline-block shadow-sm">{emp.historyDesc}</span>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{ background: 'var(--paper)', color: 'var(--ink)', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px dashed var(--line)' }}>{emp.historyDesc}</span>
                             </td>
-                            <td>
-                              <div className="font-mono font-bold text-primary mb-1">{emp.contract_end_date}</div>
-                              {daysLeft !== null && <div className={`text-[10px] font-extrabold ${daysLeft < 0 ? 'text-[var(--danger-text)]' : 'text-[var(--warning-text)]'}`}>{daysLeft < 0 ? `منتهي منذ ${Math.abs(daysLeft)} يوم` : `متبقي ${daysLeft} يوم`}</div>}
+                            <td style={{ padding: '10px' }}>
+                              <div style={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.contract_end_date}</div>
+                              {daysLeft !== null && <div style={{ fontSize: '9px', color: daysLeft < 0 ? 'var(--stamp-red)' : 'var(--stamp-amber)', fontWeight: 'bold' }}>{daysLeft < 0 ? `منتهي` : `متبقي ${daysLeft} يوم`}</div>}
                             </td>
-                            <td className="text-center">
-                              <button onClick={() => { setShowShortTermModal(false); handleRowClick(emp.employee_code); }} className="bg-card text-blue-600 border border-blue-200 dark:border-blue-800 px-4 py-2 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors shadow-sm">إدارة العقد ↗️</button>
+                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                              <button onClick={() => { setShowShortTermModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--paper-card)', color: 'var(--stamp-blue)', border: '1px solid var(--stamp-blue-bg)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>العقد ↗️</button>
                             </td>
                           </tr>
                         );
@@ -457,101 +442,93 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 2. نافذة نواقص البيانات */}
+      {/* نافذة نواقص البيانات */}
       {showMissingDataModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 transition-opacity">
-          <div className="w-full max-w-2xl max-h-[85vh] flex flex-col bg-card rounded-2xl shadow-2xl overflow-hidden border border-border">
-            <div className="p-5 sm:p-6 bg-background border-b border-border flex justify-between items-center shrink-0">
-              <h3 className="m-0 text-base font-extrabold text-[var(--danger-text)] flex items-center gap-2">⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
-              <button onClick={() => setShowMissingDataModal(false)} className="bg-card border border-border text-primary px-4 py-2 rounded-lg cursor-pointer font-bold text-xs hover:bg-background transition-colors shadow-sm">إغلاق ✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-red)', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
+              <button onClick={() => setShowMissingDataModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-              {dashboardData.missingDataList.length === 0 ? (
-                <div className="bg-[var(--success-bg)] text-[var(--success-text)] p-8 text-center rounded-xl font-bold text-sm border border-[var(--success-text)]/20 shadow-sm">بيانات جميع الموظفين مكتملة بنجاح! السجل نظيف تماماً. ✅</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-xs whitespace-nowrap executive-table">
-                    <thead>
-                      <tr>
-                        <th className="rounded-tr-lg">الكود</th>
-                        <th>اسم الموظف</th>
-                        <th>البيان المفقود</th>
-                        <th className="rounded-tl-lg text-center">إجراء</th>
+            {dashboardData.missingDataList.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--stamp-green)', fontWeight: 'bold' }}>بيانات جميع الموظفين مكتملة بنجاح! ✅</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>النواقص</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.missingDataList.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', color: 'var(--stamp-red)', fontWeight: 'bold' }}>
+                          {!emp.national_id && <span>الرقم القومي </span>}
+                          {!emp.mobile && <span>- الموبايل </span>}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} style={{ background: 'var(--ink)', color: 'var(--paper-card)', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {dashboardData.missingDataList.map((emp) => (
-                        <tr key={emp.employee_code}>
-                          <td className="font-mono font-bold text-gold">{emp.employee_code}</td>
-                          <td className="font-bold text-primary">{emp.employee_name}</td>
-                          <td className="text-[var(--danger-text)] font-extrabold text-[11px]">
-                            <div className="flex flex-col gap-1">
-                              {!emp.national_id && <span>• الرقم القومي (14 رقم)</span>}
-                              {!emp.mobile && <span>• رقم الهاتف (الموبايل)</span>}
-                            </div>
-                          </td>
-                          <td className="text-center">
-                            <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} className="bg-primary text-card border border-border px-4 py-2 rounded-lg text-[10px] font-bold cursor-pointer hover:opacity-80 transition-opacity shadow-sm">تحديث السجل ✏️</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* 3. نافذة سن الـ 60 */}
+      {/* نافذة سن الـ 60 */}
       {showAgeModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 transition-opacity">
-          <div className="w-full max-w-3xl max-h-[85vh] flex flex-col bg-card rounded-2xl shadow-2xl overflow-hidden border border-border">
-            <div className="p-5 sm:p-6 bg-background border-b border-border flex justify-between items-center shrink-0">
-              <h3 className="m-0 text-base font-extrabold text-gold flex items-center gap-2">🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60</h3>
-              <button onClick={() => setShowAgeModal(false)} className="bg-card border border-border text-primary px-4 py-2 rounded-lg cursor-pointer font-bold text-xs hover:bg-background transition-colors shadow-sm">إغلاق ✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-amber)', fontWeight: '800' }}>🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60</h3>
+              <button onClick={() => setShowAgeModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6">
-              {dashboardData.turning60List.length === 0 ? (
-                <div className="bg-background text-muted p-8 text-center rounded-xl font-bold text-sm border border-border border-dashed">لا يوجد موظفون (بعقود دائمة) يبلغون الـ 60 قريباً. 🎉</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-right text-xs whitespace-nowrap executive-table">
-                    <thead>
-                      <tr>
-                        <th className="rounded-tr-lg">الكود</th>
-                        <th>الموظف</th>
-                        <th>تاريخ البلوغ</th>
-                        <th className="text-center">موقف الحالة</th>
-                        <th className="rounded-tl-lg text-center">إجراء تسوية</th>
+            {dashboardData.turning60List.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا يوجد موظفون (بعقود دائمة) يبلغون الـ 60 حالياً. 🎉</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>تاريخ بلوغ الـ 60</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>الحالة</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.turning60List.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)', background: emp.daysLeft < 0 ? 'var(--stamp-red-bg)' : 'transparent' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--brass-500)' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: emp.daysLeft < 0 ? 'var(--stamp-red)' : 'inherit' }}>{emp.age60Date}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {emp.daysLeft < 0 ? (
+                            <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid var(--stamp-red-bg)' }}>🚨 تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
+                          ) : (
+                            <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>⏳ متبقي {emp.daysLeft} يوم</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل العقد ✏️</button>
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {dashboardData.turning60List.map((emp) => (
-                        <tr key={emp.employee_code} className={emp.daysLeft < 0 ? 'bg-[var(--danger-bg)]/30' : ''}>
-                          <td className="font-mono font-bold text-gold">{emp.employee_code}</td>
-                          <td className="font-bold text-primary">{emp.employee_name}</td>
-                          <td className={`font-mono font-extrabold ${emp.daysLeft < 0 ? 'text-[var(--danger-text)]' : 'text-primary'}`}>{emp.age60Date}</td>
-                          <td className="text-center">
-                            {emp.daysLeft < 0 ? (
-                              <span className="bg-[var(--danger-bg)] text-[var(--danger-text)] px-3 py-1.5 rounded-md font-bold text-[10px] border border-[var(--danger-text)]/20 inline-block shadow-sm">🚨 تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
-                            ) : (
-                              <span className="bg-[var(--warning-bg)] text-[var(--warning-text)] px-3 py-1.5 rounded-md font-bold text-[10px] border border-[var(--warning-text)]/20 inline-block shadow-sm">⏳ متبقي {emp.daysLeft} يوم</span>
-                            )}
-                          </td>
-                          <td className="text-center">
-                            <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} className="bg-gold text-white border border-transparent px-4 py-2 rounded-lg text-[10px] font-bold cursor-pointer hover:bg-gold-hover transition-colors shadow-sm">تحويل لعقد محدد ✏️</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}

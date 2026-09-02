@@ -185,7 +185,7 @@ export default function SignaturesPage() {
         
         {/* 🌟 أزرار العمليات المجمعة (حذف وتوقيع) */}
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => handleDelete()} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+          <button onClick={() => handleDelete()} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
             🗑️ حذف مجمع ({selectedIds.length})
           </button>
           <button onClick={() => handleSign()} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
@@ -195,15 +195,15 @@ export default function SignaturesPage() {
       </div>
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-        <button onClick={() => setActiveTab('PendingSignature')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'PendingSignature' ? '2px solid #ea580c' : '1px solid var(--line)', background: activeTab === 'PendingSignature' ? '#fff7ed' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+        <button onClick={() => setActiveTab('PendingSignature')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'PendingSignature' ? '2px solid var(--stamp-amber)' : '1px solid var(--line)', background: activeTab === 'PendingSignature' ? 'var(--stamp-amber-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
           <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>في انتظار التوقيع</div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ea580c', marginTop: '4px' }}>{countPending}</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-amber)', marginTop: '4px' }}>{countPending}</div>
         </button>
-        <button onClick={() => setActiveTab('Signed')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Signed' ? '2px solid #15803d' : '1px solid var(--line)', background: activeTab === 'Signed' ? '#dcfce7' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+        <button onClick={() => setActiveTab('Signed')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Signed' ? '2px solid var(--stamp-green)' : '1px solid var(--line)', background: activeTab === 'Signed' ? 'var(--stamp-green-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
           <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>تم التوقيع</div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#15803d', marginTop: '4px' }}>{countSigned}</div>
+          <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '4px' }}>{countSigned}</div>
         </button>
-        <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: activeTab === 'All' ? '#f8fafc' : '#fff', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+        <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: activeTab === 'All' ? 'var(--paper)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
           <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>جميع العقود المعتمدة</div>
           <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--navy-950)', marginTop: '4px' }}>{countAll}</div>
         </button>
@@ -213,7 +213,7 @@ export default function SignaturesPage() {
         <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '220px' }} />
         <input list="deptList" placeholder="الإدارة (اكتب للبحث)..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '160px' }} />
         <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', color: 'var(--ink)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
       </div>
 
       <div className="table-responsive" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', overflowX: 'auto' }}>
@@ -248,7 +248,7 @@ export default function SignaturesPage() {
               {filteredRequests.length === 0 ? (
                 <tr><td colSpan={9} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد عقود مطابقة.</td></tr>
               ) : filteredRequests.map((req) => (
-                <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? '#f8fafc' : 'transparent' }}>
+                <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? 'var(--paper)' : 'transparent' }}>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     <input 
                       type="checkbox" 
@@ -261,19 +261,19 @@ export default function SignaturesPage() {
                   <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.employee_name}</td>
                   <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{req.department || '—'}</td>
                   
-                  <td style={{ padding: '8px 10px', fontWeight: 'bold', color: '#15803d' }}>
+                  <td style={{ padding: '8px 10px', fontWeight: 'bold', color: 'var(--stamp-green)' }}>
                     {req.renewal_months ? `${req.renewal_months} شهور` : 'تاريخ مخصص'}
                   </td>
 
-                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>
+                  <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--ink)' }}>
                     {req.new_contract_end_date || '—'}
                   </td>
                   
                   <td style={{ padding: '8px 10px' }}>
                     {req.signature_status === 'تم التوقيع' ? 
-                      <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>تم التوقيع ✍️</span>
+                      <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>تم التوقيع ✍️</span>
                       : 
-                      <span style={{ background: '#fff7ed', color: '#ea580c', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>ينتظر التوقيع ⏳</span>
+                      <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>ينتظر التوقيع ⏳</span>
                     }
                   </td>
                   
@@ -283,7 +283,7 @@ export default function SignaturesPage() {
                     <button 
                       onClick={() => handleDelete(req.request_id)} 
                       disabled={actionLoading}
-                      style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}
+                      style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', border: '1px solid var(--stamp-red-bg)', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}
                     >
                       حذف 🗑️
                     </button>
@@ -291,13 +291,13 @@ export default function SignaturesPage() {
                     <button 
                       onClick={() => handleGeneratePDF(req)} 
                       disabled={actionLoading}
-                      style={{ background: '#0284c7', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}
+                      style={{ background: 'var(--stamp-blue)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}
                     >
                       📄 تصدير
                     </button>
 
                     {req.signature_status !== 'تم التوقيع' ? (
-                      <button onClick={() => handleSign(req.request_id)} disabled={actionLoading} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>
+                      <button onClick={() => handleSign(req.request_id)} disabled={actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>
                         توقيع ✍️
                       </button>
                     ) : null}

@@ -346,30 +346,30 @@ export default function EmployeesPage() {
       const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
       if (days < 0) {
-        return <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr} 🚨</span>;
+        return <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr} 🚨</span>;
       }
       if (days <= 60) {
-        return <span style={{ background: '#fef3c7', color: '#d97706', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr} ⏳</span>;
+        return <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr} ⏳</span>;
       }
-      return <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr}</span>;
+      return <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr}</span>;
     }
 
     if (contractType === 'دائم') {
-      return <span style={{ background: '#dcfce7', color: '#15803d', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
+      return <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
     }
 
-    return <span style={{ color: '#64748b' }}>—</span>;
+    return <span style={{ color: 'var(--muted)' }}>—</span>;
   };
 
   // 🌟 عرض العمر الصريح بتمييز بصري
   const renderAgeBadge = (emp: any) => {
     const age = getEmployeeAge(emp);
-    if (age === null) return <span style={{ color: '#94a3b8' }}>—</span>;
+    if (age === null) return <span style={{ color: 'var(--muted)' }}>—</span>;
 
     if (age >= 60) {
-      return <span style={{ background: '#fef3c7', color: '#d97706', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
+      return <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', border: '1px solid var(--stamp-amber-bg)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
     }
-    return <span style={{ background: '#f1f5f9', color: '#334155', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{age} سنة</span>;
+    return <span style={{ background: 'var(--paper)', color: 'var(--ink)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{age} سنة</span>;
   };
 
   return (
@@ -385,14 +385,14 @@ export default function EmployeesPage() {
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           <button 
             onClick={() => handleExportToExcel(false)}
-            style={{ background: '#059669', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+            style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
           >
             📥 تصدير Excel
           </button>
 
           <button 
             onClick={() => { setShowTermModal(true); setSelectedTermEmp(null); setTermSearch(''); }} 
-            style={{ background: '#ef4444', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
+            style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
           >
             🚫 Terminated
           </button>
@@ -416,10 +416,10 @@ export default function EmployeesPage() {
         >
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>إجمالي الموظفين (Active)</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: '#16a34a' }}>{kpiStats.total.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#16a34a', marginTop: '2px' }}>100% من القوة المفلترة</div>
+            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)' }}>{kpiStats.total.toLocaleString('en-US')}</div>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '2px' }}>100% من القوة المفلترة</div>
           </div>
-          <div style={{ background: '#dcfce7', color: '#16a34a', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🟢</div>
+          <div style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🟢</div>
         </div>
 
         <div 
@@ -433,10 +433,10 @@ export default function EmployeesPage() {
         >
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود دائمة</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: '#15803d' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#15803d', marginTop: '2px' }}>{kpiStats.permPct}% من القوة الحالية</div>
+            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '2px' }}>{kpiStats.permPct}% من القوة الحالية</div>
           </div>
-          <div style={{ background: '#dcfce7', color: '#15803d', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🛡️</div>
+          <div style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🛡️</div>
         </div>
 
         <div 
@@ -450,10 +450,10 @@ export default function EmployeesPage() {
         >
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود محددة المدة</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>{kpiStats.fixedPct}% من القوة الحالية</div>
+            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-blue)' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-blue)', marginTop: '2px' }}>{kpiStats.fixedPct}% من القوة الحالية</div>
           </div>
-          <div style={{ background: '#eff6ff', color: '#2563eb', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>📂</div>
+          <div style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>📂</div>
         </div>
 
         <div 
@@ -467,10 +467,10 @@ export default function EmployeesPage() {
         >
           <div>
             <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>موظفين فوق السن (60+)</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#d97706', marginTop: '2px' }}>{kpiStats.aboveAgePct}% من القوة الحالية</div>
+            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
+            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-amber)', marginTop: '2px' }}>{kpiStats.aboveAgePct}% من القوة الحالية</div>
           </div>
-          <div style={{ background: '#fef3c7', color: '#d97706', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>💼</div>
+          <div style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>💼</div>
         </div>
       </div>
 
@@ -478,16 +478,16 @@ export default function EmployeesPage() {
       {selectedEmpIds.length > 0 && (
         <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '10px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-            تم تحديد <span style={{ color: '#38bdf8' }}>{selectedEmpIds.length}</span> موظف
+            تم تحديد <span style={{ color: 'var(--stamp-blue)' }}>{selectedEmpIds.length}</span> موظف
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setShowBulkTransferModal(true)} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <button onClick={() => setShowBulkTransferModal(true)} style={{ background: 'var(--stamp-blue)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               نقل مجمع 🔄
             </button>
-            <button onClick={() => handleExportToExcel(true)} style={{ background: '#16a34a', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <button onClick={() => handleExportToExcel(true)} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               تصدير المحدد 📥
             </button>
-            <button onClick={() => setSelectedEmpIds([])} style={{ background: 'transparent', border: '1px solid #475569', color: '#94a3b8', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
+            <button onClick={() => setSelectedEmpIds([])} style={{ background: 'transparent', border: '1px solid var(--muted)', color: 'var(--muted)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
               إلغاء ✕
             </button>
           </div>
@@ -589,7 +589,7 @@ export default function EmployeesPage() {
                       </td>
 
                       <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        <button onClick={() => setProfileEmp(emp)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
+                        <button onClick={() => setProfileEmp(emp)} style={{ background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--line)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
                         <button onClick={() => handleOpenEdit(emp)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
                       </td>
                     </tr>
@@ -606,25 +606,25 @@ export default function EmployeesPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '600px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>👤 الملف الوظيفي الشامل</h3>
-              <button onClick={() => setProfileEmp(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--ink)', fontWeight: '800' }}>👤 الملف الوظيفي الشامل</h3>
+              <button onClick={() => setProfileEmp(null)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px' }}><strong>نهاية العقد:</strong> {getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل'}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType')}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>نهاية العقد:</strong> {getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</div>
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'left' }}>
-              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
+              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
             </div>
           </div>
         </div>
@@ -635,24 +635,24 @@ export default function EmployeesPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>🚫 إنهاء خدمة / تحويل للانتظار</h3>
-              <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-red)', fontWeight: '800' }}>🚫 إنهاء خدمة / تحويل للانتظار</h3>
+              <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف (اكتب كود أو اسم الموظف):</label>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف (اكتب كود أو اسم الموظف):</label>
                 <div style={{ position: 'relative' }}>
                   <input 
                     type="text"
                     placeholder="اكتب كود الموظف، اسمه، أو إدارته..."
                     value={termSearch}
                     onChange={e => { setTermSearch(e.target.value); setSelectedTermEmp(null); }}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
                   />
 
                   {termSearchResults.length > 0 && !selectedTermEmp && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, left: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+                    <div style={{ position: 'absolute', top: '100%', right: 0, left: 0, background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
                       {termSearchResults.map((emp, i) => (
                         <div 
                           key={i} 
@@ -664,8 +664,8 @@ export default function EmployeesPage() {
                           onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                          <strong style={{ color: '#0d9488' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')} 
-                          <span style={{ color: '#64748b', fontSize: '10.5px', marginRight: '6px' }}>({getField(emp, 'department', 'Department') || 'بدون إدارة'})</span>
+                          <strong style={{ color: 'var(--brass-500)' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')} 
+                          <span style={{ color: 'var(--muted)', fontSize: '10.5px', marginRight: '6px' }}>({getField(emp, 'department', 'Department') || 'بدون إدارة'})</span>
                         </div>
                       ))}
                     </div>
@@ -674,17 +674,17 @@ export default function EmployeesPage() {
               </div>
 
               {selectedTermEmp && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 12px', borderRadius: '8px', fontSize: '11.5px', color: '#991b1b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ background: 'var(--stamp-red-bg)', border: '1px solid var(--stamp-red-bg)', padding: '10px 12px', borderRadius: '8px', fontSize: '11.5px', color: 'var(--stamp-red)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong>الموظف المحدّد:</strong> {getField(selectedTermEmp, 'employee_name', 'ArabicName')} (كود: {getField(selectedTermEmp, 'employee_code', 'EmployeeCode')})
                   </div>
-                  <button type="button" onClick={() => { setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'transparent', border: 0, color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}>تغيير ✕</button>
+                  <button type="button" onClick={() => { setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'transparent', border: 0, color: 'var(--stamp-red)', cursor: 'pointer', fontWeight: 'bold' }}>تغيير ✕</button>
                 </div>
               )}
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة / التحويل:</label>
-                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة / التحويل:</label>
+                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none' }}>
                   <option value="استقالة">استقالة</option>
                   <option value="إنهاء عقد">إنهاء عقد</option>
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
@@ -694,13 +694,13 @@ export default function EmployeesPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إجراء العمل:</label>
-                <input type="date" required value={termDate} onChange={e => setTermDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إجراء العمل:</label>
+                <input type="date" required value={termDate} onChange={e => setTermDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer', opacity: (termSaving || !selectedTermEmp) ? 0.6 : 1 }}>
+                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer', opacity: (termSaving || !selectedTermEmp) ? 0.6 : 1 }}>
                   {termSaving ? 'جاري الحفظ...' : 'تحويل الموظف لـ (تحويلات تحت الاعتماد) 🚫'}
                 </button>
               </div>
@@ -714,30 +714,30 @@ export default function EmployeesPage() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '800' }}>🔄 النقل المجمع للموظفين المحددين</h3>
-              <button onClick={() => setShowBulkTransferModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>🔄 النقل المجمع للموظفين المحددين</h3>
+              <button onClick={() => setShowBulkTransferModal(false)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <form onSubmit={handleConfirmBulkTransfer} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>
+              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
                 سيتم تطبيق البيانات المحددة على عدد <strong>{selectedEmpIds.length}</strong> موظف.
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الإدارة الجديدة:</label>
-                <input list="bulkDeptList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkDept} onChange={e => setBulkDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>الإدارة الجديدة:</label>
+                <input list="bulkDeptList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkDept} onChange={e => setBulkDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 <datalist id="bulkDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الشركة الجديدة:</label>
-                <input list="bulkCompList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkCompany} onChange={e => setBulkCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>الشركة الجديدة:</label>
+                <input list="bulkCompList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkCompany} onChange={e => setBulkCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 <datalist id="bulkCompList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                <button type="button" onClick={() => setShowBulkTransferModal(false)} style={{ background: 'transparent', border: '1px solid #e2e8f0', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={bulkSaving} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: bulkSaving ? 'not-allowed' : 'pointer' }}>
+                <button type="button" onClick={() => setShowBulkTransferModal(false)} style={{ background: 'transparent', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={bulkSaving} style={{ background: 'var(--stamp-blue)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: bulkSaving ? 'not-allowed' : 'pointer' }}>
                   {bulkSaving ? 'جاري التحديث...' : 'تأكيد النقل المجمع 🔄'}
                 </button>
               </div>
@@ -752,7 +752,7 @@ export default function EmployeesPage() {
           <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>تعديل بيانات الموظف (شامل)</h3>
-              <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <button onClick={() => setEditData(null)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <form onSubmit={handleSaveEdit}>
@@ -778,7 +778,7 @@ export default function EmployeesPage() {
               </div>
 
               <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#2563eb', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
+                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--stamp-blue)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ التعيين</label>
@@ -820,7 +820,7 @@ export default function EmployeesPage() {
           <div className="db-card" style={{ width: '650px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>إضافة موظف جديد</h3>
-              <button onClick={() => setShowAddModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <button onClick={() => setShowAddModal(false)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
             
             <form onSubmit={handleAddEmployee}>

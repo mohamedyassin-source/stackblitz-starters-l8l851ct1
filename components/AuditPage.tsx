@@ -44,8 +44,8 @@ export default function AuditPage() {
         actionText: 'إنشاء طلب تجديد',
         target: `${req.employee_name || 'موظف'} (${req.employee_code})`,
         details: `تم إنشاء طلب تجديد برقم ${req.request_id} لمدة ${req.renewal_months || 12} شهر.`,
-        color: '#2563eb',
-        bg: '#eff6ff'
+        color: 'var(--stamp-blue)',
+        bg: 'var(--stamp-blue-bg)'
       });
 
       // 2. حركة الاعتماد
@@ -59,8 +59,8 @@ export default function AuditPage() {
           actionText: 'اعتماد تجديد العقد',
           target: `${req.employee_name} (${req.employee_code})`,
           details: `تم اعتماد الطلب وتحديث تاريخ الانتهاء الجديد إلى (${req.new_contract_end_date || '—'}).`,
-          color: '#15803d',
-          bg: '#dcfce7'
+          color: 'var(--stamp-green)',
+          bg: 'var(--stamp-green-bg)'
         });
       }
 
@@ -75,8 +75,8 @@ export default function AuditPage() {
           actionText: 'رفض طلب التجديد',
           target: `${req.employee_name} (${req.employee_code})`,
           details: `تم رفض طلب التجديد رقم ${req.request_id} وإيقاف الإجراء.`,
-          color: '#dc2626',
-          bg: '#fef2f2'
+          color: 'var(--stamp-red)',
+          bg: 'var(--stamp-red-bg)'
         });
       }
 
@@ -91,8 +91,8 @@ export default function AuditPage() {
           actionText: 'توقيع العقد إلكترونياً',
           target: `${req.employee_name} (${req.employee_code})`,
           details: `تم تسجيل توقيع الموظف على العقد الجديد وإقفال الدورة مستندياً.`,
-          color: '#d97706',
-          bg: '#fefce8'
+          color: 'var(--stamp-amber)',
+          bg: 'var(--stamp-amber-bg)'
         });
       }
     });
@@ -142,17 +142,17 @@ export default function AuditPage() {
           <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إجمالي الحركات المسجلة</div>
           <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--navy-950, #0f172a)', marginTop: '2px' }}>{stats.total}</div>
         </div>
-        <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '14px', borderRadius: '10px' }}>
-          <div style={{ fontSize: '11px', color: '#1e40af', fontWeight: 'bold' }}>طلبات تم إنشاؤها</div>
-          <div style={{ fontSize: '22px', fontWeight: '900', color: '#1d4ed8', marginTop: '2px' }}>{stats.creates}</div>
+        <div style={{ background: 'var(--stamp-blue-bg)', border: '1px solid var(--stamp-blue-bg)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-blue)', fontWeight: 'bold' }}>طلبات تم إنشاؤها</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--stamp-blue)', marginTop: '2px' }}>{stats.creates}</div>
         </div>
-        <div style={{ background: '#dcfce7', border: '1px solid #bbf7d0', padding: '14px', borderRadius: '10px' }}>
-          <div style={{ fontSize: '11px', color: '#166534', fontWeight: 'bold' }}>قرارات اعتماد وتمديد</div>
-          <div style={{ fontSize: '22px', fontWeight: '900', color: '#15803d', marginTop: '2px' }}>{stats.approvals}</div>
+        <div style={{ background: 'var(--stamp-green-bg)', border: '1px solid var(--stamp-green-bg)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>قرارات اعتماد وتمديد</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--stamp-green)', marginTop: '2px' }}>{stats.approvals}</div>
         </div>
-        <div style={{ background: '#fefce8', border: '1px solid #fef08a', padding: '14px', borderRadius: '10px' }}>
-          <div style={{ fontSize: '11px', color: '#854d0e', fontWeight: 'bold' }}>توقيعات إلكترونية</div>
-          <div style={{ fontSize: '22px', fontWeight: '900', color: '#a16207', marginTop: '2px' }}>{stats.signs}</div>
+        <div style={{ background: 'var(--stamp-amber-bg)', border: '1px solid var(--stamp-amber-bg)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>توقيعات إلكترونية</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '2px' }}>{stats.signs}</div>
         </div>
       </div>
 
@@ -181,7 +181,7 @@ export default function AuditPage() {
           style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', fontFamily: 'monospace' }} 
         />
 
-        <button onClick={() => { setSearchTerm(''); setSelectedAction(''); setDateFilter(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line, #e2e8f0)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+        <button onClick={() => { setSearchTerm(''); setSelectedAction(''); setDateFilter(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line, #e2e8f0)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
       </div>
 
       {/* جدول السجل */}
@@ -212,7 +212,7 @@ export default function AuditPage() {
                     
                     <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--navy-950, #0f172a)' }}>
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                        <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px' }}>👤</span>
+                        <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px' }}>👤</span>
                         {log.user}
                       </span>
                     </td>
