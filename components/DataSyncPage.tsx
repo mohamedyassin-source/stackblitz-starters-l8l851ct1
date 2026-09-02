@@ -8,6 +8,7 @@ export default function DataSyncPage() {
   const { refresh } = useAppData();
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
 
   const sanitizeString = (val: any): string | null => {
     if (val === undefined || val === null) return null;
@@ -35,19 +36,13 @@ export default function DataSyncPage() {
     return null;
   };
 
-  const sanitizeNumeric = (val: any): number | null => {
-    if (val === undefined || val === null || val === '') return null;
-    if (typeof val === 'string' && val.includes('-')) return null;
-    const num = Number(val);
-    if (isNaN(num)) return null;
-    return num;
-  };
-
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
 
     setLoading(true);
+    setLogs(['جاري قراءة الملف... ⏳']);
+    
     try {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
@@ -60,40 +55,53 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
-      const payload = rawData
-        .map((row) => {
-          const empCode = sanitizeString(row.employee_code);
-          if (!empCode) return null;
+      // 1. استخراج الأكواد والبيانات من الشيت
+      const updatesMap = new Map();
+      rawData.forEach(row => {
+        const code = sanitizeString(row.employee_code);
+        if (code) {
+          updatesMap.set(code, row);
+        }
+      });
 
-          // 🌟 إجبار الكود على إرسال employee_id لترضية قاعدة البيانات
-          const updateItem: any = { 
-            employee_code: empCode,
-            employee_id: row.employee_id !== undefined ? (sanitizeString(row.employee_id) || empCode) : empCode
-          };
+      const excelCodes = Array.from(updatesMap.keys());
+      setLogs(prev => [...prev, `تم العثور على ${excelCodes.length} موظف في الشيت.`]);
 
-          if (row.hiring_date !== undefined) updateItem.hiring_date = sanitizeDate(row.hiring_date);
-          if (row.employee_name !== undefined) updateItem.employee_name = sanitizeString(row.employee_name);
-          if (row.department !== undefined) updateItem.department = sanitizeString(row.department);
-          if (row.job_title !== undefined) updateItem.job_title = sanitizeString(row.job_title);
-          if (row.company !== undefined) updateItem.company = sanitizeString(row.company);
-          if (row.national_id !== undefined) updateItem.national_id = sanitizeString(row.national_id);
-          if (row.birth_date !== undefined) updateItem.birth_date = sanitizeDate(row.birth_date);
-          if (row.age !== undefined) updateItem.age = sanitizeNumeric(row.age);
-          if (row.age_60_date !== undefined) updateItem.age_60_date = sanitizeDate(row.age_60_date);
-          if (row.age_status !== undefined) updateItem.age_status = sanitizeString(row.age_status);
-          if (row.status !== undefined) updateItem.status = sanitizeString(row.status);
-          if (row.email !== undefined) updateItem.email = sanitizeString(row.email);
-          if (row.mobile !== undefined) updateItem.mobile = sanitizeString(row.mobile);
-          if (row.manager !== undefined) updateItem.manager = sanitizeString(row.manager);
-          if (row.contract_type !== undefined) updateItem.contract_type = sanitizeString(row.contract_type);
-          if (row.contract_start_date !== undefined) updateItem.contract_start_date = sanitizeDate(row.contract_start_date);
-          if (row.contract_end_date !== undefined) updateItem.contract_end_date = sanitizeDate(row.contract_end_date);
-          if (row.role !== undefined) updateItem.role = sanitizeString(row.role);
+      // 2. جلب بيانات الموظفين الحالية كاملة من الداتابيز (على دفعات لمنع أخطاء الحجم)
+      setLogs(prev => [...prev, `جاري جلب البيانات الحالية للمطابقة...`]);
+      let existingEmps: any[] = [];
+      const FETCH_BATCH = 200;
+      for (let i = 0; i < excelCodes.length; i += FETCH_BATCH) {
+        const batchCodes = excelCodes.slice(i, i + FETCH_BATCH);
+        const { data, error } = await supabase
+          .from('employees')
+          .select('*')
+          .in('employee_code', batchCodes);
+          
+        if (error) throw error;
+        if (data) existingEmps.push(...data);
+      }
 
-          return updateItem;
-        })
-        .filter((item): item is NonNullable<typeof item> => item !== null);
+      if (existingEmps.length === 0) {
+         setLoading(false);
+         return alert('لم يتم العثور على أي موظف من الشيت في قاعدة البيانات.');
+      }
 
+      // 3. دمج تاريخ التعيين الجديد مع بيانات الموظف القديمة الكاملة
+      const payload = existingEmps.map(emp => {
+        const newUpdates = updatesMap.get(emp.employee_code);
+        
+        // إذا وجدنا تاريخ تعيين في الشيت، نقوم بوضعه مكان القديم
+        if (newUpdates && newUpdates.hiring_date !== undefined) {
+           emp.hiring_date = sanitizeDate(newUpdates.hiring_date);
+        }
+        
+        return emp;
+      });
+
+      setLogs(prev => [...prev, `جاري تحديث ${payload.length} موظف بأمان تام...`]);
+
+      // 4. الرفع للداتابيز بدون أي نقص في الأعمدة
       const BATCH_SIZE = 300;
       for (let i = 0; i < payload.length; i += BATCH_SIZE) {
         const batch = payload.slice(i, i + BATCH_SIZE);
@@ -104,10 +112,12 @@ export default function DataSyncPage() {
         if (error) throw error;
       }
 
-      alert('تم تحديث تاريخ التعيين بنجاح وأمان تام! ✅');
+      setLogs(prev => [...prev, '✅ تم التحديث بنجاح!']);
+      alert('تم تحديث التواريخ بنجاح وأمان تام! ✅');
       await refresh();
       setFile(null);
     } catch (err: any) {
+      setLogs(prev => [...prev, `❌ خطأ: ${err.message}`]);
       alert('حدث خطأ أثناء الرفع: ' + err.message);
     } finally {
       setLoading(false);
@@ -115,10 +125,10 @@ export default function DataSyncPage() {
   };
 
   return (
-    <div className="p-6 executive-card max-w-2xl mx-auto my-8">
-      <h3 className="text-lg font-bold text-primary mb-2">🔄 التحديث الجزئي الآمن (Partial Update)</h3>
+    <div className="p-6 executive-card max-w-2xl mx-auto my-8" style={{ direction: 'rtl' }}>
+      <h3 className="text-lg font-bold text-primary mb-2">🔄 التحديث الجزئي الآمن 100%</h3>
       <p className="text-xs text-muted mb-6">
-        ارفع شيت إكسيل يحتوي فقط على كود الموظف والأعمدة التي تريد تعديلها (مثل تاريخ التعيين). سيتم تجاهل باقي البيانات للحفاظ عليها.
+        ارفع شيت إكسيل يحتوي فقط على (كود الموظف) و (تاريخ التعيين). سيقوم النظام بدمجها مع بيانات الموظف الحالية ورفعها دون مساس بأي بيانات أخرى.
       </p>
 
       <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
@@ -134,10 +144,19 @@ export default function DataSyncPage() {
             disabled={loading || !file}
             className="bg-gold text-white font-bold text-xs px-6 py-2.5 rounded-lg disabled:opacity-50"
           >
-            {loading ? 'جاري التحديث الآمن...' : 'رفع وتحديث البيانات 🚀'}
+            {loading ? 'جاري التحديث...' : 'رفع وتحديث تاريخ التعيين 🚀'}
           </button>
         </div>
       </form>
+      
+      {logs.length > 0 && (
+        <div className="mt-6 bg-[#0f172a] text-[#38bdf8] p-4 rounded-xl font-mono text-xs max-h-52 overflow-y-auto border border-border text-right">
+          <div className="font-bold mb-2 text-white">سجل المعالجة:</div>
+          {logs.map((log, idx) => (
+            <div key={idx} className="mb-1">{log}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
