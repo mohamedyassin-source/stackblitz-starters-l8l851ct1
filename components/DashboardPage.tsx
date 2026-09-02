@@ -11,7 +11,7 @@ export default function DashboardPage() {
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
-  
+
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
@@ -82,13 +82,16 @@ export default function DashboardPage() {
     filteredEmps.forEach((emp) => {
       const type = emp.contract_type || '';
       const dept = emp.department || 'غير محدد';
+      const contractStatus = emp.contract_status || 'Active'; // قراءة حالة العقد النشط
+      
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
       if (!emp.national_id || !emp.mobile) {
         missingDataList.push(emp);
       }
 
-      if (emp.contract_start_date) {
+      // إضافة إحصائيات الشهور فقط للعقود النشطة الحالية
+      if (emp.contract_start_date && contractStatus === 'Active') {
         const startDate = new Date(emp.contract_start_date);
         if (!isNaN(startDate.getTime())) {
           const monthIdx = startDate.getMonth();
@@ -110,7 +113,8 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      if (type !== 'دائم') {
+      // فحص التنبيهات للعقود غير الدائمة بشرط أن تكون حية (Active) وغير تجديد قديم (Renewed)
+      if (type !== 'دائم' && contractStatus === 'Active') {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
           if (days < 0) {
@@ -123,7 +127,7 @@ export default function DashboardPage() {
         }
       }
 
-      if (type === 'محدد المدة') {
+      if (type === 'محدد المدة' && contractStatus === 'Active') {
         const empRens = filteredRens
           .filter(r => r.employee_code === emp.employee_code && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
           .sort((a, b) => (new Date(a.request_date).getTime() - new Date(b.request_date).getTime()));
@@ -252,7 +256,7 @@ export default function DashboardPage() {
 
       {/* 🌟 الصف الأول من الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* 1. الإدارات (ثلث المساحة) */}
+        {/* 1. الإدارات */}
         <div className="card px-5 sm:px-6 py-5">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>📊 أكبر 5 إدارات (كثافة)</h4>
           <div className="flex flex-col gap-4">
@@ -274,10 +278,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. الرسم البياني للشهور (يأخذ ثلثي المساحة براحته) */}
+        {/* 2. الرسم البياني للشهور */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التوزيع الشهري لبدايات العقود (كثافة التجديدات)
+            📈 التوزيع الشهري لبدايات العقود النشطة
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
@@ -298,7 +302,7 @@ export default function DashboardPage() {
 
       {/* 🌟 الصف الثاني من الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* 3. الدونات شارت (ثلث المساحة) */}
+        {/* 3. الدونات شارت */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1">
           <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
           
@@ -316,7 +320,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4. المهام العاجلة (يأخذ ثلثي المساحة لجدول عريض ومريح) */}
+        {/* 4. المهام العاجلة */}
         <div className="card px-5 sm:px-6 py-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: 'var(--stamp-red)' }}>
@@ -335,7 +339,7 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {dashboardData.urgentAlerts.map((alert) => (
-                    <tr key={alert.id} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer hover:bg-slate-50 transition-colors">
                       <td className="font-mono font-bold" style={{ color: 'var(--brass-600)' }}>{alert.employee_code}</td>
                       <td className="font-bold">{alert.employee_name}</td>
                       <td style={{ color: 'var(--muted)', fontSize: '11px' }}>{alert.department || '—'}</td>
@@ -358,7 +362,7 @@ export default function DashboardPage() {
 
       {/* 🌟 النوافذ المنبثقة (Modals) */}
       
-      {/* نافذة العقود المؤقتة (ذات الهيدر الثابت) */}
+      {/* نافذة العقود المؤقتة */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
