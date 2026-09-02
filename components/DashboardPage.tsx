@@ -87,20 +87,23 @@ export default function DashboardPage() {
     filteredEmps.forEach((emp) => {
       const type = emp.contract_type || '';
       const dept = emp.department || 'غير محدد';
-      const contractStatus = emp.contract_status || 'Active';
       
+      const isContractActive = !emp.contract_status || 
+                               emp.contract_status === 'Active' || 
+                               emp.contract_status === 'ساري' || 
+                               emp.contract_status === 'نشط';
+
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
       if (!emp.national_id || !emp.mobile) {
         missingDataList.push(emp);
       }
 
-      // 🌟 المعالجة المرنة لتاريخ بداية العقد بكل صيغه (DD/MMM/YYYY أو YYYY-MM-DD)
-      if (emp.contract_start_date && (contractStatus === 'Active' || !emp.contract_status)) {
+      // 🌟 المعالجة والمرونة لتاريخ بداية العقد
+      if (emp.contract_start_date && isContractActive) {
         const dateStr = String(emp.contract_start_date).trim();
         let monthIdx = -1;
 
-        // 1. فحص الصيغ النصية (مثل 03/Apr/2026 أو 01-May-2026)
         const parts = dateStr.split(/[\/\-\s]/);
         if (parts.length >= 2) {
           const monthPart = parts[1].toLowerCase();
@@ -109,7 +112,6 @@ export default function DashboardPage() {
           }
         }
 
-        // 2. إذا كان تاريخ قياسي (YYYY-MM-DD)
         if (monthIdx === -1) {
           const startDate = new Date(dateStr);
           if (!isNaN(startDate.getTime())) {
@@ -134,7 +136,7 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      if (type !== 'دائم' && (contractStatus === 'Active' || !emp.contract_status)) {
+      if (type !== 'دائم' && isContractActive) {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
           if (days < 0) {
@@ -147,9 +149,9 @@ export default function DashboardPage() {
         }
       }
 
-      if (type === 'محدد المدة' && (contractStatus === 'Active' || !emp.contract_status)) {
+      if (type === 'محدد المدة' && isContractActive) {
         const empRens = filteredRens
-          .filter(r => r.employee_code === emp.employee_code && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
+          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
           .sort((a, b) => (new Date(a.request_date).getTime() - new Date(b.request_date).getTime()));
 
         let isShort = false;
@@ -326,7 +328,7 @@ export default function DashboardPage() {
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1">
           <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
           
-          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', itemsCenter: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
             <div style={{ width: '110px', height: '110px', background: 'var(--paper-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الإجمالي</span>
               <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
@@ -380,9 +382,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 النوافذ المنبثقة (Modals) */}
-      
-      {/* نافذة العقود المؤقتة */}
+      {/* Modals */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -466,7 +466,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* نافذة نواقص البيانات */}
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -509,7 +508,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* نافذة سن الـ 60 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
