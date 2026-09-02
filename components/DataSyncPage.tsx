@@ -9,6 +9,14 @@ export default function DataSyncPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // دالة بسيطة جداً: ترجع القيمة كما هي أو null لو الخلية فاضية بدون أي افتراضات
+  const getValueOrNull = (val: any) => {
+    if (val === undefined || val === null) return null;
+    const str = String(val).trim();
+    if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
+    return str;
+  };
+
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -16,43 +24,57 @@ export default function DataSyncPage() {
     setLoading(true);
     try {
       const buffer = await file.arrayBuffer();
+      // cellDates: false عشان نقرا النص اللي مكتوب في الإكسيل زي ما هو بالظبط
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rawData: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
 
       if (rawData.length === 0) {
         setLoading(false);
-        return alert('الملف فارغ');
+        return alert('الملف فارغ!');
       }
 
-      // تجهيز الحقول المكتوبة فقط في الإكسيل وتجاهل الحقول الفاضية
+      // قراءة كل عمود حرفياً: لو فاضي ينزل null صريح
       const payload = rawData.map((row) => {
-        const item: any = {
-          employee_code: String(row.employee_code || '').trim(),
+        const empCode = getValueOrNull(row.employee_code);
+        if (!empCode) return null;
+
+        return {
+          employee_code: empCode,
+          employee_id: getValueOrNull(row.employee_id) || empCode,
+          employee_name: getValueOrNull(row.employee_name),
+          department: getValueOrNull(row.department),
+          job_title: getValueOrNull(row.job_title),
+          company: getValueOrNull(row.company),
+          hiring_date: getValueOrNull(row.hiring_date),
+          national_id: getValueOrNull(row.national_id),
+          birth_date: getValueOrNull(row.birth_date),
+          age: row.age && !isNaN(Number(row.age)) ? Number(row.age) : null,
+          age_60_date: getValueOrNull(row.age_60_date),
+          age_status: getValueOrNull(row.age_status),
+          status: getValueOrNull(row.status) || 'Active',
+          email: getValueOrNull(row.email),
+          mobile: getValueOrNull(row.mobile),
+          manager: getValueOrNull(row.manager),
+          contract_type: getValueOrNull(row.contract_type),
+          contract_start_date: getValueOrNull(row.contract_start_date),
+          contract_end_date: getValueOrNull(row.contract_end_date),
+          role: getValueOrNull(row.role) || 'Employee',
         };
+      }).filter(Boolean); // استبعاد أي صف بدون كود موظف
 
-        // نأخذ القيمة فقط إذا كانت مكتوبة في الإكسيل، لعدم مسح أو تغيير البيانات القديمة
-        if (row.employee_name) item.employee_name = String(row.employee_name).trim();
-        if (row.department) item.department = String(row.department).trim();
-        if (row.job_title) item.job_title = String(row.job_title).trim();
-        if (row.company) item.company = String(row.company).trim();
-        if (row.contract_type) item.contract_type = String(row.contract_type).trim();
-        if (row.hiring_date) item.hiring_date = String(row.hiring_date).trim();
-        if (row.contract_start_date) item.contract_start_date = String(row.contract_start_date).trim();
-        if (row.contract_end_date) item.contract_end_date = String(row.contract_end_date).trim();
-        if (row.national_id) item.national_id = String(row.national_id).trim();
-        if (row.status) item.status = String(row.status).trim();
+      // رفع البيانات وتحديث الجدول بالكامل بحساب null للخلية الفاضية
+      const BATCH_SIZE = 300;
+      for (let i = 0; i < payload.length; i += BATCH_SIZE) {
+        const batch = payload.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase
+          .from('employees')
+          .upsert(batch, { onConflict: 'employee_code' });
 
-        return item;
-      }).filter(e => e.employee_code !== '');
+        if (error) throw error;
+      }
 
-      const { error } = await supabase
-        .from('employees')
-        .upsert(payload, { onConflict: 'employee_code' });
-
-      if (error) throw error;
-
-      alert('تم تحديث البيانات المحددة في الإكسيل بنجاح ✅');
+      alert('تم استرجاع وتحديث البيانات بنجاح من الشيت المطلوب! ✅');
       await refresh();
       setFile(null);
     } catch (err: any) {
@@ -64,8 +86,10 @@ export default function DataSyncPage() {
 
   return (
     <div className="p-6 executive-card max-w-2xl mx-auto my-8">
-      <h3 className="text-lg font-bold text-primary mb-2">🔄 استيراد وتعديل البيانات الآمن</h3>
-      <p className="text-xs text-muted mb-6">يقوم النظام بتعديل الحقول المكتوبة فقط في الإكسيل دون المساس بأي حقول أخرى.</p>
+      <h3 className="text-lg font-bold text-primary mb-2">🔄 استرجاع البيانات المطابق للشيت</h3>
+      <p className="text-xs text-muted mb-6">
+        سيتم قراءة الشيت حرفياً: الأعمدة المكتوبة ستُحدث، والخلية الفاضية ستتحول إلى (null) لضبط الداتابيز تماماً مع ملفك.
+      </p>
 
       <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
         <input
@@ -80,7 +104,7 @@ export default function DataSyncPage() {
             disabled={loading || !file}
             className="bg-gold text-white font-bold text-xs px-6 py-2.5 rounded-lg disabled:opacity-50"
           >
-            {loading ? 'جاري التعديل...' : 'تحديث الشيت في الداتابيز 🚀'}
+            {loading ? 'جاري الاسترجاع والرفع...' : 'رفع الشيت وتعديل الداتابيز 🚀'}
           </button>
         </div>
       </form>
