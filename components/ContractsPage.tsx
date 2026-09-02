@@ -63,7 +63,10 @@ export default function ContractsPage() {
       setSearchTerm(jumpCode);
       setTimeout(() => localStorage.removeItem('jumpSearch'), 1000);
     }
-   const fetchData = async () => {
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
     setLoading(true);
     let allEmps: any[] = [];
     let allContracts: any[] = [];
@@ -113,11 +116,6 @@ export default function ContractsPage() {
         contract_end_date: activeContract?.contract_end_date || null,
       };
     });
-
-    setEmployees(mergedEmps);
-    setRenewals(allRens);
-    setLoading(false);
-  };
 
     setEmployees(mergedEmps);
     setRenewals(allRens);
@@ -458,7 +456,7 @@ export default function ContractsPage() {
           alignItems: center;
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-          box-shadow: var(--shadow-card);
+          boxShadow: var(--shadow-card);
           position: relative;
           overflow: hidden;
         }
