@@ -10,7 +10,7 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
-  // 1. تنظيف النصوص (بترجع null لو الخلية فاضية)
+  // 1. تنظيف النصوص
   const sanitizeString = (val: any): string | null => {
     if (val === undefined || val === null) return null;
     const str = String(val).trim();
@@ -18,7 +18,7 @@ export default function DataSyncPage() {
     return str;
   };
 
-  // 2. تنظيف التواريخ (بيعالج تواريخ الإكسيل والأرقام التسلسلية)
+  // 2. تنظيف التواريخ
   const sanitizeDate = (val: any): string | null => {
     if (!val) return null;
     if (typeof val === 'number') {
@@ -38,7 +38,7 @@ export default function DataSyncPage() {
     return null;
   };
 
-  // 3. تنظيف الأرقام (لمنع خطأ نوع numeric)
+  // 3. تنظيف الأرقام
   const sanitizeNumeric = (val: any): number | null => {
     if (val === undefined || val === null || val === '') return null;
     if (typeof val === 'string' && val.includes('-')) return null;
@@ -47,19 +47,19 @@ export default function DataSyncPage() {
     return num;
   };
 
-  // 4. تحميل تمبلت لضمان توحيد أسماء الأعمدة
+  // 4. تحميل تمبلت مخصص للبيانات الأساسية فقط (بدون عقود)
   const handleDownloadTemplate = () => {
     const headers = [
-      'employee_code', 'employee_name', 'status', 'department', 'job_title', 'company', 
-      'hiring_date', 'national_id', 'mobile', 'contract_type', 'contract_start_date', 'contract_end_date'
+      'employee_id', 'employee_code', 'employee_name', 'department', 'job_title', 
+      'company', 'hiring_date', 'national_id', 'birth_date', 'status', 
+      'email', 'mobile', 'manager', 'termination_date', 'termination_reason'
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, 'قالب_تحديث_البيانات_الشامل.xlsx');
+    XLSX.writeFile(wb, 'قالب_بيانات_الموظفين.xlsx');
   };
 
-  // 5. دالة الرفع الأساسية
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -79,7 +79,6 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
-      // تجهيز خريطة لأكواد الموظفين من الإكسيل
       const excelUpdatesMap = new Map();
       rawData.forEach(row => {
         const code = sanitizeString(row.employee_code);
@@ -89,7 +88,6 @@ export default function DataSyncPage() {
       const excelCodes = Array.from(excelUpdatesMap.keys());
       setLogs(prev => [...prev, `تم العثور على ${excelCodes.length} سجل في الشيت.`]);
 
-      // جلب بيانات الموظفين الحاليين من الداتابيز
       setLogs(prev => [...prev, `جاري جلب البيانات الحالية للمطابقة...`]);
       let existingEmps: any[] = [];
       const FETCH_BATCH = 200;
@@ -106,14 +104,13 @@ export default function DataSyncPage() {
 
       const existingMap = new Map(existingEmps.map(emp => [emp.employee_code, emp]));
 
-      // 🌟 بناء البيانات النهائية (الدمج بين القديم والجديد)
+      // دمج وتحديث البيانات الأساسية فقط
       const finalPayload = excelCodes.map(empCode => {
         const excelRow = excelUpdatesMap.get(empCode);
         const dbRecord = existingMap.get(empCode);
 
         if (dbRecord) {
-          // --- حالة (1): الموظف موجود (تحديث إدارة/استقالة/نقل) ---
-          // بناخد الداتا القديمة كاملة، ونحدث فقط الأعمدة الموجودة في الإكسيل
+          // تحديث الموظف الحالي
           const updatedRecord = { ...dbRecord };
           
           if ('employee_name' in excelRow) updatedRecord.employee_name = sanitizeString(excelRow.employee_name) || updatedRecord.employee_name;
@@ -124,39 +121,41 @@ export default function DataSyncPage() {
           if ('hiring_date' in excelRow) updatedRecord.hiring_date = sanitizeDate(excelRow.hiring_date);
           if ('national_id' in excelRow) updatedRecord.national_id = sanitizeString(excelRow.national_id);
           if ('mobile' in excelRow) updatedRecord.mobile = sanitizeString(excelRow.mobile);
-          if ('contract_type' in excelRow) updatedRecord.contract_type = sanitizeString(excelRow.contract_type);
-          if ('contract_start_date' in excelRow) updatedRecord.contract_start_date = sanitizeDate(excelRow.contract_start_date);
-          if ('contract_end_date' in excelRow) updatedRecord.contract_end_date = sanitizeDate(excelRow.contract_end_date);
+          if ('email' in excelRow) updatedRecord.email = sanitizeString(excelRow.email);
+          if ('birth_date' in excelRow) updatedRecord.birth_date = sanitizeDate(excelRow.birth_date);
           if ('age' in excelRow) updatedRecord.age = sanitizeNumeric(excelRow.age);
+          if ('manager' in excelRow) updatedRecord.manager = sanitizeString(excelRow.manager);
+          if ('termination_date' in excelRow) updatedRecord.termination_date = sanitizeDate(excelRow.termination_date);
+          if ('termination_reason' in excelRow) updatedRecord.termination_reason = sanitizeString(excelRow.termination_reason);
 
           return updatedRecord;
         } else {
-          // --- حالة (2): الموظف جديد لسه متعين (إضافة جديدة) ---
-          // بننشئ سجل جديد كامل وبنأمنه بقيم افتراضية للخانات الإجبارية
+          // إضافة موظف جديد
           return {
             employee_code: empCode,
-            employee_id: sanitizeString(excelRow.employee_id) || empCode, // تأمين Not-Null
-            employee_name: sanitizeString(excelRow.employee_name) || 'موظف جديد', // تأمين Not-Null
-            status: sanitizeString(excelRow.status) || 'Active', // تأمين Not-Null
-            role: sanitizeString(excelRow.role) || 'Employee', // تأمين Not-Null
-            password: '123456', // تأمين Not-Null
+            employee_id: sanitizeString(excelRow.employee_id) || empCode,
+            employee_name: sanitizeString(excelRow.employee_name) || 'موظف جديد',
+            status: sanitizeString(excelRow.status) || 'Active',
+            role: sanitizeString(excelRow.role) || 'Employee',
+            password: '123456',
             department: sanitizeString(excelRow.department),
             job_title: sanitizeString(excelRow.job_title),
             company: sanitizeString(excelRow.company),
             hiring_date: sanitizeDate(excelRow.hiring_date),
             national_id: sanitizeString(excelRow.national_id),
             mobile: sanitizeString(excelRow.mobile),
-            contract_type: sanitizeString(excelRow.contract_type),
-            contract_start_date: sanitizeDate(excelRow.contract_start_date),
-            contract_end_date: sanitizeDate(excelRow.contract_end_date),
+            email: sanitizeString(excelRow.email),
+            birth_date: sanitizeDate(excelRow.birth_date),
             age: sanitizeNumeric(excelRow.age),
+            manager: sanitizeString(excelRow.manager),
+            termination_date: sanitizeDate(excelRow.termination_date),
+            termination_reason: sanitizeString(excelRow.termination_reason),
           };
         }
       });
 
       setLogs(prev => [...prev, `جاري رفع وتحديث ${finalPayload.length} سجل...`]);
 
-      // رفع البيانات לדاتابيز على دفعات
       const BATCH_SIZE = 300;
       for (let i = 0; i < finalPayload.length; i += BATCH_SIZE) {
         const batch = finalPayload.slice(i, i + BATCH_SIZE);
@@ -167,8 +166,8 @@ export default function DataSyncPage() {
         if (error) throw error;
       }
 
-      setLogs(prev => [...prev, '✅ تمت العملية بنجاح!']);
-      alert('تم تحديث البيانات الشاملة بنجاح وأمان تام! ✅');
+      setLogs(prev => [...prev, '✅ تمت المزامنة بنجاح!']);
+      alert('تم التحديث بنجاح! قاعدة البيانات الآن نظيفة ومفصولة بالكامل. ✅');
       await refresh();
       setFile(null);
     } catch (err: any) {
@@ -181,9 +180,9 @@ export default function DataSyncPage() {
 
   return (
     <div className="p-6 executive-card max-w-2xl mx-auto my-8" style={{ direction: 'rtl' }}>
-      <h3 className="text-lg font-bold text-primary mb-2">🔄 المزامنة الشاملة والآمنة للموظفين</h3>
+      <h3 className="text-lg font-bold text-primary mb-2">🔄 تحديث بيانات الموظفين الأساسية</h3>
       <p className="text-xs text-muted mb-6">
-        هذه الأداة الذكية تقوم بقراءة الشيت، تحديث الموظفين الحاليين (نقل/استقالة)، وإضافة الموظفين الجدد تلقائياً بأمان دون المساس بالبيانات القديمة.
+        هذه الأداة تقوم بتحديث البيانات الوظيفية الأساسية للموظفين (كالإدارات والوظائف). تم نقل إدارة العقود بالكامل لصفحة التجديدات.
       </p>
 
       <div className="mb-6">
@@ -191,7 +190,7 @@ export default function DataSyncPage() {
           onClick={handleDownloadTemplate}
           className="bg-[var(--success-text)] text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm"
         >
-          📥 تحميل قالب الإكسيل المعتمد
+          📥 تحميل القالب المعتمد (بدون بيانات العقود)
         </button>
       </div>
 
@@ -208,7 +207,7 @@ export default function DataSyncPage() {
             disabled={loading || !file}
             className="bg-gold text-white font-bold text-xs px-8 py-3 rounded-lg disabled:opacity-50 hover:bg-gold-hover transition-colors"
           >
-            {loading ? 'جاري المزامنة...' : 'مزامنة وتحديث النظام 🚀'}
+            {loading ? 'جاري المزامنة...' : 'رفع وتحديث النظام 🚀'}
           </button>
         </div>
       </form>
