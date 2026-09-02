@@ -125,33 +125,19 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
 
     const cleanCode = String(tempUserData.employee_code).trim();
-    const userNameVal = tempUserData.employee_name || cleanCode;
+    const userNameVal = tempUserData.employee_name || tempUserData.username || cleanCode;
 
-    // التحقق من وجود حساب سابق في app_users
-    const { data: existingUser } = await supabase
+    // استخدام upsert مع تحديد onConflict للتعامل السليم مع وجود الصف المسبق
+    const { error: saveError } = await supabase
       .from('app_users')
-      .select('id')
-      .ilike('employee_code', cleanCode)
-      .maybeSingle();
-
-    let saveError = null;
-
-    if (existingUser) {
-      const { error } = await supabase
-        .from('app_users')
-        .update({ password: newPassword })
-        .ilike('employee_code', cleanCode);
-      saveError = error;
-    } else {
-      const { error } = await supabase
-        .from('app_users')
-        .insert([{ 
-          employee_code: cleanCode, 
-          username: userNameVal, 
-          password: newPassword 
-        }]);
-      saveError = error;
-    }
+      .upsert(
+        {
+          employee_code: cleanCode,
+          username: userNameVal,
+          password: newPassword,
+        },
+        { onConflict: 'employee_code' }
+      );
 
     setLoading(false);
 
