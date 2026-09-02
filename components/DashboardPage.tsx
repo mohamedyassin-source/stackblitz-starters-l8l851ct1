@@ -53,7 +53,6 @@ export default function DashboardPage() {
   const companiesList = Array.from(new Set(allEmployees.map((e) => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const dashboardData = useMemo(() => {
     const activeEmployeesOnly = allEmployees.filter(emp => (emp.status || 'Active') === 'Active' && emp.department !== 'تحويلات تحت الاعتماد');
 
@@ -99,7 +98,6 @@ export default function DashboardPage() {
         missingDataList.push(emp);
       }
 
-      // 🌟 المعالجة والمرونة لتاريخ بداية العقد
       if (emp.contract_start_date && isContractActive) {
         const dateStr = String(emp.contract_start_date).trim();
         let monthIdx = -1;
@@ -276,9 +274,8 @@ export default function DashboardPage() {
         <KpiCard loading={loading} tone="red" title="نواقص بيانات" value={dashboardData.missingDataList.length} sub="عرض القائمة ⚠️" icon="⚠️" onClick={() => setShowMissingDataModal(true)} />
       </div>
 
-      {/* 🌟 الصف الأول من الرسوم البيانية */}
+      {/* الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* 1. الإدارات */}
         <div className="card px-5 sm:px-6 py-5">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>📊 أكبر 5 إدارات (كثافة)</h4>
           <div className="flex flex-col gap-4">
@@ -300,7 +297,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 2. الرسم البياني للشهور */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
             📈 التوزيع الشهري لبدايات العقود النشطة
@@ -322,13 +318,11 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 الصف الثاني من الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
-        {/* 3. الدونات شارت */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1">
           <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود</h4>
           
-          <<div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
             <div style={{ width: '110px', height: '110px', background: 'var(--paper-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الإجمالي</span>
               <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
@@ -342,7 +336,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 4. المهام العاجلة */}
         <div className="card px-5 sm:px-6 py-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: 'var(--stamp-red)' }}>
@@ -386,7 +379,6 @@ export default function DashboardPage() {
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            
             <div style={{ padding: '20px 24px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
@@ -413,7 +405,7 @@ export default function DashboardPage() {
                     <div style={{ textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold', fontSize: '13px', marginTop: '40px' }}>لا توجد عقود مؤقتة حالياً.</div>
                   ) : (
                     dashboardData.shortTermList.map((group, idx) => (
-                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s', background: 'var(--paper-card)' }} onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--stamp-blue)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--line)'}>
+                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s', background: 'var(--paper-card)' }}>
                         <div style={{ fontWeight: 'bold', fontSize: '13px', color: 'var(--ink)' }}>🏢 {group.deptName}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '4px 10px', borderRadius: '100px', fontSize: '11px', fontWeight: 'bold' }}>{group.emps.length} موظف</span>
