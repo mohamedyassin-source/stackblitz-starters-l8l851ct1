@@ -9,8 +9,8 @@ export default function DataSyncPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // دالة بسيطة جداً: ترجع القيمة كما هي أو null لو الخلية فاضية بدون أي افتراضات
-  const getValueOrNull = (val: any) => {
+  // دالة ترجع القيمة النصية كما هي أو null إذا كانت الخلية فارغة
+  const getValueOrNull = (val: any): string | null => {
     if (val === undefined || val === null) return null;
     const str = String(val).trim();
     if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
@@ -24,7 +24,6 @@ export default function DataSyncPage() {
     setLoading(true);
     try {
       const buffer = await file.arrayBuffer();
-      // cellDates: false عشان نقرا النص اللي مكتوب في الإكسيل زي ما هو بالظبط
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rawData: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
@@ -34,36 +33,38 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
-      // قراءة كل عمود حرفياً: لو فاضي ينزل null صريح
-      const payload = rawData.map((row) => {
-        const empCode = getValueOrNull(row.employee_code);
-        if (!empCode) return null;
+      // قراءة كل عمود وتصفية الخانات الفارغة لتصبح null صريح
+      const payload = rawData
+        .map((row) => {
+          const empCode = getValueOrNull(row.employee_code);
+          if (!empCode) return null;
 
-        return {
-          employee_code: empCode,
-          employee_id: getValueOrNull(row.employee_id) || empCode,
-          employee_name: getValueOrNull(row.employee_name),
-          department: getValueOrNull(row.department),
-          job_title: getValueOrNull(row.job_title),
-          company: getValueOrNull(row.company),
-          hiring_date: getValueOrNull(row.hiring_date),
-          national_id: getValueOrNull(row.national_id),
-          birth_date: getValueOrNull(row.birth_date),
-          age: row.age && !isNaN(Number(row.age)) ? Number(row.age) : null,
-          age_60_date: getValueOrNull(row.age_60_date),
-          age_status: getValueOrNull(row.age_status),
-          status: getValueOrNull(row.status) || 'Active',
-          email: getValueOrNull(row.email),
-          mobile: getValueOrNull(row.mobile),
-          manager: getValueOrNull(row.manager),
-          contract_type: getValueOrNull(row.contract_type),
-          contract_start_date: getValueOrNull(row.contract_start_date),
-          contract_end_date: getValueOrNull(row.contract_end_date),
-          role: getValueOrNull(row.role) || 'Employee',
-        };
-      }).filter(Boolean); // استبعاد أي صف بدون كود موظف
+          return {
+            employee_code: empCode,
+            employee_id: getValueOrNull(row.employee_id) || empCode,
+            employee_name: getValueOrNull(row.employee_name),
+            department: getValueOrNull(row.department),
+            job_title: getValueOrNull(row.job_title),
+            company: getValueOrNull(row.company),
+            hiring_date: getValueOrNull(row.hiring_date),
+            national_id: getValueOrNull(row.national_id),
+            birth_date: getValueOrNull(row.birth_date),
+            age: row.age && !isNaN(Number(row.age)) ? Number(row.age) : null,
+            age_60_date: getValueOrNull(row.age_60_date),
+            age_status: getValueOrNull(row.age_status),
+            status: getValueOrNull(row.status) || 'Active',
+            email: getValueOrNull(row.email),
+            mobile: getValueOrNull(row.mobile),
+            manager: getValueOrNull(row.manager),
+            contract_type: getValueOrNull(row.contract_type),
+            contract_start_date: getValueOrNull(row.contract_start_date),
+            contract_end_date: getValueOrNull(row.contract_end_date),
+            role: getValueOrNull(row.role) || 'Employee',
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
 
-      // رفع البيانات وتحديث الجدول بالكامل بحساب null للخلية الفاضية
+      // رفع وتحديث البيانات في Supabase بأسلوب الدفعات (Batches)
       const BATCH_SIZE = 300;
       for (let i = 0; i < payload.length; i += BATCH_SIZE) {
         const batch = payload.slice(i, i + BATCH_SIZE);
