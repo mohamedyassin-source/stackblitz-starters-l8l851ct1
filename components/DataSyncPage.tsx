@@ -9,11 +9,33 @@ export default function DataSyncPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // دالة ترجع القيمة النصية كما هي أو null إذا كانت الخلية فارغة
+  // 🌟 دالة معالجة التواريخ وتحويل أرقام الإكسيل التسلسلية مثل (48761) إلى تاريخ YYYY-MM-DD
   const getValueOrNull = (val: any): string | null => {
     if (val === undefined || val === null) return null;
+    
+    // لو القيمة رقم تسلسلي للتواريخ في إكسيل
+    if (typeof val === 'number') {
+      const date = XLSX.SSF.parse_date_code(val);
+      if (date && date.y > 1900 && date.y < 2100) {
+        const m = String(date.m).padStart(2, '0');
+        const d = String(date.d).padStart(2, '0');
+        return `${date.y}-${m}-${d}`;
+      }
+    }
+
     const str = String(val).trim();
     if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
+
+    // لو الرقم مكتوب كنص "48761"
+    if (!isNaN(Number(str)) && Number(str) > 30000 && Number(str) < 60000) {
+      const date = XLSX.SSF.parse_date_code(Number(str));
+      if (date && date.y > 1900 && date.y < 2100) {
+        const m = String(date.m).padStart(2, '0');
+        const d = String(date.d).padStart(2, '0');
+        return `${date.y}-${m}-${d}`;
+      }
+    }
+
     return str;
   };
 
@@ -33,7 +55,7 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
-      // قراءة كل عمود وتصفية الخانات الفارغة لتصبح null صريح
+      // قراءة كل عمود وتصحيح التواريخ مع إمكانية إرجاع null للخلية الفاضية
       const payload = rawData
         .map((row) => {
           const empCode = getValueOrNull(row.employee_code);
@@ -64,7 +86,6 @@ export default function DataSyncPage() {
         })
         .filter((item): item is NonNullable<typeof item> => item !== null);
 
-      // رفع وتحديث البيانات في Supabase بأسلوب الدفعات (Batches)
       const BATCH_SIZE = 300;
       for (let i = 0; i < payload.length; i += BATCH_SIZE) {
         const batch = payload.slice(i, i + BATCH_SIZE);
@@ -89,7 +110,7 @@ export default function DataSyncPage() {
     <div className="p-6 executive-card max-w-2xl mx-auto my-8">
       <h3 className="text-lg font-bold text-primary mb-2">🔄 استرجاع البيانات المطابق للشيت</h3>
       <p className="text-xs text-muted mb-6">
-        سيتم قراءة الشيت حرفياً: الأعمدة المكتوبة ستُحدث، والخلية الفاضية ستتحول إلى (null) لضبط الداتابيز تماماً مع ملفك.
+        سيتم قراءة الشيت حرفياً وتصحيح التواريخ تلقائياً: الأعمدة المكتوبة ستُحدث، والخلية الفاضية ستتحول إلى (null).
       </p>
 
       <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
