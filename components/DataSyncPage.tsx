@@ -9,11 +9,19 @@ export default function DataSyncPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 🌟 دالة معالجة النصوص والتواريخ
-  const getValueOrNull = (val: any): string | null => {
+  // 1. تنظيف النصوص والتأكد من أنها ليست تواريخ عشوائية مقتطعة
+  const sanitizeString = (val: any): string | null => {
     if (val === undefined || val === null) return null;
-    
-    // لو القيمة رقم تسلسلي للتواريخ في إكسيل
+    const str = String(val).trim();
+    if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
+    return str;
+  };
+
+  // 2. تنظيف التواريخ الحقيقية فقط (YYYY-MM-DD)
+  const sanitizeDate = (val: any): string | null => {
+    if (!val) return null;
+
+    // إذا كانت القيمة رقم تسلسلي من الإكسيل
     if (typeof val === 'number') {
       const date = XLSX.SSF.parse_date_code(val);
       if (date && date.y > 1900 && date.y < 2100) {
@@ -21,29 +29,31 @@ export default function DataSyncPage() {
         const d = String(date.d).padStart(2, '0');
         return `${date.y}-${m}-${d}`;
       }
+      return null;
     }
 
     const str = String(val).trim();
-    if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
+    if (!str || str === '—') return null;
 
-    // لو الرقم التسلسلي مكتوب كنص "48761"
-    if (!isNaN(Number(str)) && Number(str) > 30000 && Number(str) < 60000) {
-      const date = XLSX.SSF.parse_date_code(Number(str));
-      if (date && date.y > 1900 && date.y < 2100) {
-        const m = String(date.m).padStart(2, '0');
-        const d = String(date.d).padStart(2, '0');
-        return `${date.y}-${m}-${d}`;
-      }
+    // إذا كانت صيغة تاريخ YYYY-MM-DD أو YYYY/MM/DD
+    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(str)) {
+      return str.replace(/\//g, '-');
     }
 
-    return str;
+    return null;
   };
 
-  // 🌟 دالة تنظيف الأرقام فقط (لمنع خطأ numeric)
-  const getNumericOrNull = (val: any): number | null => {
+  // 3. تنظيف الأرقام فقط (يضمن عدم إرسال تواريخ مثل "1906-01-11" للحقول الرقمية)
+  const sanitizeNumeric = (val: any): number | null => {
     if (val === undefined || val === null || val === '') return null;
+    
+    // إذا كانت القيمة تاريخ نصي تحوي شرائط '-' نلغيها فوراً
+    if (typeof val === 'string' && val.includes('-')) {
+      return null;
+    }
+
     const num = Number(val);
-    if (isNaN(num)) return null; // لو القيمة تاريخ زي "1906-01-11" يرجع null
+    if (isNaN(num)) return null;
     return num;
   };
 
@@ -63,36 +73,38 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
+      // معالجة صريحة لكل حقل بنوعه الصحيح لمنع التضارب
       const payload = rawData
         .map((row) => {
-          const empCode = getValueOrNull(row.employee_code);
+          const empCode = sanitizeString(row.employee_code);
           if (!empCode) return null;
 
           return {
             employee_code: empCode,
-            employee_id: getValueOrNull(row.employee_id) || empCode,
-            employee_name: getValueOrNull(row.employee_name),
-            department: getValueOrNull(row.department),
-            job_title: getValueOrNull(row.job_title),
-            company: getValueOrNull(row.company),
-            hiring_date: getValueOrNull(row.hiring_date),
-            national_id: getValueOrNull(row.national_id),
-            birth_date: getValueOrNull(row.birth_date),
-            age: getNumericOrNull(row.age), // 👈 تنظيف رقم السن
-            age_60_date: getValueOrNull(row.age_60_date),
-            age_status: getValueOrNull(row.age_status),
-            status: getValueOrNull(row.status) || 'Active',
-            email: getValueOrNull(row.email),
-            mobile: getValueOrNull(row.mobile),
-            manager: getValueOrNull(row.manager),
-            contract_type: getValueOrNull(row.contract_type),
-            contract_start_date: getValueOrNull(row.contract_start_date),
-            contract_end_date: getValueOrNull(row.contract_end_date),
-            role: getValueOrNull(row.role) || 'Employee',
+            employee_id: sanitizeString(row.employee_id) || empCode,
+            employee_name: sanitizeString(row.employee_name),
+            department: sanitizeString(row.department),
+            job_title: sanitizeString(row.job_title),
+            company: sanitizeString(row.company),
+            hiring_date: sanitizeDate(row.hiring_date),
+            national_id: sanitizeString(row.national_id), // معاملة الرقم القومي كنص دائماً
+            birth_date: sanitizeDate(row.birth_date),
+            age: sanitizeNumeric(row.age), // تنظيف حقل السن حصراً كـ numeric
+            age_60_date: sanitizeDate(row.age_60_date),
+            age_status: sanitizeString(row.age_status),
+            status: sanitizeString(row.status) || 'Active',
+            email: sanitizeString(row.email),
+            mobile: sanitizeString(row.mobile),
+            manager: sanitizeString(row.manager),
+            contract_type: sanitizeString(row.contract_type),
+            contract_start_date: sanitizeDate(row.contract_start_date),
+            contract_end_date: sanitizeDate(row.contract_end_date),
+            role: sanitizeString(row.role) || 'Employee',
           };
         })
         .filter((item): item is NonNullable<typeof item> => item !== null);
 
+      // الرفع لداتابيز Supabase على دفعات
       const BATCH_SIZE = 300;
       for (let i = 0; i < payload.length; i += BATCH_SIZE) {
         const batch = payload.slice(i, i + BATCH_SIZE);
@@ -103,7 +115,7 @@ export default function DataSyncPage() {
         if (error) throw error;
       }
 
-      alert('تم استرجاع وتحديث البيانات بنجاح من الشيت المطلوب! ✅');
+      alert('تم استرجاع وتحديث البيانات بنجاح وبدون أي أخطاء! ✅');
       await refresh();
       setFile(null);
     } catch (err: any) {
@@ -115,9 +127,9 @@ export default function DataSyncPage() {
 
   return (
     <div className="p-6 executive-card max-w-2xl mx-auto my-8">
-      <h3 className="text-lg font-bold text-primary mb-2">🔄 استرجاع البيانات المطابق للشيت</h3>
+      <h3 className="text-lg font-bold text-primary mb-2">🔄 استرجاع البيانات المباشر المظبوط</h3>
       <p className="text-xs text-muted mb-6">
-        سيتم قراءة الشيت حرفياً وتصحيح أنواع البيانات والتواريخ تلقائياً دون أخطاء.
+        تم تأمين أنواع البيانات: الخانات الفاضية تنزل (null)، والأعمدة الرقمية محمية تماماً من التداخل.
       </p>
 
       <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
