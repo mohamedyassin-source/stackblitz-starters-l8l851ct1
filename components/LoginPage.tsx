@@ -142,12 +142,15 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   };
 
   const proceedToLogin = (data: any) => {
-    // تحديد دور المستخدم (Role) مع منح الأدمن صلاحية كاملة
     let userRole = data.role;
     
+    // التحقق من مسميات إدارة الموارد البشرية لمنح صلاحية Admin
+    const dept = String(data.department || '').trim();
+    const isHrDept = dept.includes('الموارد البشرية') || dept.includes('الموارد البشريه') || dept.includes('HR');
+
     if (!userRole) {
-      if (data.department === 'الموارد البشرية' || data.department === 'HR') {
-        userRole = 'admin'; // منح صلاحية أدمن للموارد البشرية
+      if (isHrDept) {
+        userRole = 'admin'; // منح صلاحية أدمن
       } else {
         userRole = 'Employee';
       }
@@ -237,7 +240,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               <input
                 type="text"
                 required
-                placeholder="مثال: 10025"
+                placeholder="مثال: 3577"
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', fontWeight: 'bold', fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
