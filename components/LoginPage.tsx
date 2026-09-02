@@ -20,7 +20,9 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!employeeCode || !password) {
+    const cleanCode = employeeCode.trim();
+
+    if (!cleanCode || !password) {
       setErrorMsg('يرجى إدخال كود الموظف وكلمة السر.');
       return;
     }
@@ -28,21 +30,26 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
     setErrorMsg('');
 
-    // البحث باستخدام employee_code فقط وإزالة employee_id الملغاة
+    // البحث عن كود الموظف بطريقة مرنة
     const { data, error } = await supabase
       .from('employees')
       .select('*')
-      .eq('employee_code', employeeCode.trim())
-      .single();
+      .ilike('employee_code', cleanCode)
+      .maybeSingle();
 
     setLoading(false);
 
-    if (error || !data) {
-      setErrorMsg('كود الموظف غير موجود بالنظام.');
+    if (error) {
+      setErrorMsg(`خطأ في قاعدة البيانات: ${error.message}`);
       return;
     }
 
-    const isDefaultPassword = password === '123456' || password === data.employee_code;
+    if (!data) {
+      setErrorMsg(`كود الموظف (${cleanCode}) غير موجود بالنظام.`);
+      return;
+    }
+
+    const isDefaultPassword = password === '123456' || password === String(data.employee_code);
     const hasCustomPassword = data.password && data.password !== '';
 
     if (hasCustomPassword && data.password !== password && !isDefaultPassword) {
@@ -60,7 +67,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   };
 
   const handleOpenPasswordChange = async () => {
-    if (!employeeCode) {
+    const cleanCode = employeeCode.trim();
+    if (!cleanCode) {
       setErrorMsg('يرجى إدخال كود الموظف أولاً لتغيير كلمة السر.');
       return;
     }
@@ -71,13 +79,18 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const { data, error } = await supabase
       .from('employees')
       .select('*')
-      .eq('employee_code', employeeCode.trim())
-      .single();
+      .ilike('employee_code', cleanCode)
+      .maybeSingle();
 
     setLoading(false);
 
-    if (error || !data) {
-      setErrorMsg('كود الموظف غير موجود بالنظام.');
+    if (error) {
+      setErrorMsg(`خطأ في قاعدة البيانات: ${error.message}`);
+      return;
+    }
+
+    if (!data) {
+      setErrorMsg(`كود الموظف (${cleanCode}) غير موجود بالنظام.`);
       return;
     }
 
@@ -97,7 +110,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       setErrorMsg('كلمات المرور غير متطابقة.');
       return;
     }
-    if (newPassword === '123456' || newPassword === tempUserData.employee_code) {
+    if (newPassword === '123456' || newPassword === String(tempUserData.employee_code)) {
       setErrorMsg('لا يمكنك استخدام كلمة السر الافتراضية أو الكود ككلمة سر جديدة.');
       return;
     }
