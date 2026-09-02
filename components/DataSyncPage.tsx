@@ -9,7 +9,7 @@ export default function DataSyncPage() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 🌟 دالة معالجة التواريخ وتحويل أرقام الإكسيل التسلسلية مثل (48761) إلى تاريخ YYYY-MM-DD
+  // 🌟 دالة معالجة النصوص والتواريخ
   const getValueOrNull = (val: any): string | null => {
     if (val === undefined || val === null) return null;
     
@@ -26,7 +26,7 @@ export default function DataSyncPage() {
     const str = String(val).trim();
     if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
 
-    // لو الرقم مكتوب كنص "48761"
+    // لو الرقم التسلسلي مكتوب كنص "48761"
     if (!isNaN(Number(str)) && Number(str) > 30000 && Number(str) < 60000) {
       const date = XLSX.SSF.parse_date_code(Number(str));
       if (date && date.y > 1900 && date.y < 2100) {
@@ -37,6 +37,14 @@ export default function DataSyncPage() {
     }
 
     return str;
+  };
+
+  // 🌟 دالة تنظيف الأرقام فقط (لمنع خطأ numeric)
+  const getNumericOrNull = (val: any): number | null => {
+    if (val === undefined || val === null || val === '') return null;
+    const num = Number(val);
+    if (isNaN(num)) return null; // لو القيمة تاريخ زي "1906-01-11" يرجع null
+    return num;
   };
 
   const handleFileUpload = async (e: React.FormEvent) => {
@@ -55,7 +63,6 @@ export default function DataSyncPage() {
         return alert('الملف فارغ!');
       }
 
-      // قراءة كل عمود وتصحيح التواريخ مع إمكانية إرجاع null للخلية الفاضية
       const payload = rawData
         .map((row) => {
           const empCode = getValueOrNull(row.employee_code);
@@ -71,7 +78,7 @@ export default function DataSyncPage() {
             hiring_date: getValueOrNull(row.hiring_date),
             national_id: getValueOrNull(row.national_id),
             birth_date: getValueOrNull(row.birth_date),
-            age: row.age && !isNaN(Number(row.age)) ? Number(row.age) : null,
+            age: getNumericOrNull(row.age), // 👈 تنظيف رقم السن
             age_60_date: getValueOrNull(row.age_60_date),
             age_status: getValueOrNull(row.age_status),
             status: getValueOrNull(row.status) || 'Active',
@@ -110,7 +117,7 @@ export default function DataSyncPage() {
     <div className="p-6 executive-card max-w-2xl mx-auto my-8">
       <h3 className="text-lg font-bold text-primary mb-2">🔄 استرجاع البيانات المطابق للشيت</h3>
       <p className="text-xs text-muted mb-6">
-        سيتم قراءة الشيت حرفياً وتصحيح التواريخ تلقائياً: الأعمدة المكتوبة ستُحدث، والخلية الفاضية ستتحول إلى (null).
+        سيتم قراءة الشيت حرفياً وتصحيح أنواع البيانات والتواريخ تلقائياً دون أخطاء.
       </p>
 
       <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
