@@ -2,48 +2,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
+// 🌟 1. استدعاء الـ DataContext
 import { useAppData } from '@/lib/DataContext';
 
-// 🌟 دالة حساب تاريخ البداية الجديد (معالجة أمان الفروق الزمنية Timezone)
-const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
-  if (!oldEndDateStr) {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  
-  const parts = String(oldEndDateStr).split('-');
-  if (parts.length < 3) return oldEndDateStr;
-  
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const day = parseInt(parts[2], 10);
-  
-  // ضبط الوقت الساعة 12 ظهراً لتفادي تأثر التاريخ بتوقيت GMT
-  const d = new Date(year, month, day, 12, 0, 0);
-  d.setDate(d.getDate() + 1); // إضافة يوم كامل لبداية العقد الجديد
-
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
-// 🌟 دالة حساب تاريخ الانتهاء الجديد (إضافة الشهور وخصم يوم)
-const calculateNewEndDateFromStart = (startDateStr: string | null, monthsToAdd: number) => {
-  if (!startDateStr) return null;
-
-  const parts = String(startDateStr).split('-');
-  if (parts.length < 3) return null;
-
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const day = parseInt(parts[2], 10);
-
-  const d = new Date(year, month, day, 12, 0, 0);
-  d.setMonth(d.getMonth() + monthsToAdd); // إضافة الشهور
-  d.setDate(d.getDate() - 1); // خصم يوم واحد لنهاية العقد
-
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
 export default function RenewalsPage() {
+  // 🌟 2. استخراج دالة التحديث المركزية
   const { refresh: refreshGlobalData } = useAppData();
 
   const [requests, setRequests] = useState<any[]>([]);
@@ -57,7 +20,7 @@ export default function RenewalsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(''); // فلتر شهر وسنة بداية التجديد
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // حالات نافذة الاعتماد
@@ -68,6 +31,7 @@ export default function RenewalsPage() {
     fetchRequests();
   }, []);
 
+  // تفريغ التحديد التلقائي عند تغيير التاب
   useEffect(() => {
     setSelectedIds([]);
   }, [activeTab]);
@@ -84,10 +48,49 @@ export default function RenewalsPage() {
     if (!endDateStr) return null;
     const parts = endDateStr.split('-');
     if (parts.length < 3) return null;
-    const end = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]), 12, 0, 0);
+    const end = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
     if (isNaN(end.getTime())) return null;
     const today = new Date();
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
+  };
+
+  // 🌟 دالة حساب تاريخ البداية الجديد (معالجة أمان الفروق الزمنية Timezone وتفادي نقص الأيام)
+  const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
+    if (!oldEndDateStr) {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+    
+    const parts = String(oldEndDateStr).split('-');
+    if (parts.length < 3) return oldEndDateStr;
+    
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    
+    // ضبط الوقت الساعة 12 ظهراً لتفادي تأثر التاريخ بتوقيت GMT عند التحويل
+    const d = new Date(year, month, day, 12, 0, 0);
+    d.setDate(d.getDate() + 1); // إضافة يوم كامل لبداية العقد الجديد
+
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  // 🌟 دالة حساب تاريخ الانتهاء الجديد (إضافة الشهور وخصم يوم لضبط نهاية العقد)
+  const calculateNewEndDateFromStart = (startDateStr: string | null, monthsToAdd: number) => {
+    if (!startDateStr) return null;
+
+    const parts = String(startDateStr).split('-');
+    if (parts.length < 3) return null;
+
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+
+    const d = new Date(year, month, day, 12, 0, 0);
+    d.setMonth(d.getMonth() + monthsToAdd); // إضافة الشهور
+    d.setDate(d.getDate() - 1); // خصم يوم واحد لنهاية العقد
+
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   };
 
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
@@ -100,6 +103,7 @@ export default function RenewalsPage() {
     const matchesDept = !selectedDept || req.department === selectedDept;
     const matchesComp = !selectedCompany || req.company === selectedCompany;
     
+    // فلترة بشهر التجديد الجديد (مثل: 2026-09)
     let matchesMonth = true;
     if (selectedMonth) {
       const newStart = calculateNewStartDate(req.contract_end_date);
@@ -148,6 +152,7 @@ export default function RenewalsPage() {
         }
 
         alert(`تم اعتماد الطلب وتحديث العقد بنجاح: \n يبدأ في: ${newStartDate} \n ينتهي في: ${newEndDate} ✅`);
+        // 🌟 3. تحديث البيانات المركزية للداشبورد (للاعتماد الفردي)
         await refreshGlobalData();
         
       } else if (approvalModal.type === 'bulk') {
@@ -176,6 +181,7 @@ export default function RenewalsPage() {
 
         await Promise.all(updatePromises);
         alert(`تم اعتماد ${reqsToApprove.length} طلب تجديد وتحديث بيانات الموظفين بنجاح ✅`);
+        // 🌟 4. تحديث البيانات المركزية للداشبورد (للاعتماد المجمع)
         await refreshGlobalData();
       }
 
@@ -203,17 +209,20 @@ export default function RenewalsPage() {
     if (error) alert('حدث خطأ أثناء رفض الطلب: ' + error.message);
     else {
       alert('تم رفض الطلب بنجاح ❌');
+      // 🌟 5. تحديث البيانات المركزية بعد الرفض
       await refreshGlobalData();
       fetchRequests();
     }
     setActionLoading(false);
   };
 
+  // دالة تصدير الإكسيل (محمية ومخصصة للطلبات المعتمدة فقط)
   const handleExportApprovedToExcel = async () => {
     if (selectedIds.length === 0) return alert('يرجى تحديد طلبات أولاً.');
     setActionLoading(true);
 
     try {
+      // تأكيد أمني: فلترة الطلبات المحددة للتأكد إن حالتها Approved فقط
       const selectedReqs = requests.filter(r => selectedIds.includes(r.request_id) && r.status === 'Approved');
       
       if (selectedReqs.length === 0) {
@@ -222,9 +231,12 @@ export default function RenewalsPage() {
       }
 
       const empCodes = selectedReqs.map(r => r.employee_code);
+
+      // جلب بيانات الرقم القومي للموظفين المحددين
       const { data: emps, error } = await supabase.from('employees').select('employee_code, national_id').in('employee_code', empCodes);
       if (error) throw error;
 
+      // دمج وتجهيز البيانات لشيت الإكسيل
       const exportData = selectedReqs.map(req => {
         const empDetails = emps?.find(e => e.employee_code === req.employee_code);
         const newStart = calculateNewStartDate(req.contract_end_date);
@@ -244,6 +256,7 @@ export default function RenewalsPage() {
         };
       });
 
+      // إنشاء الملف وتنزيله
       const ws = XLSX.utils.json_to_sheet(exportData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'عقود التجديد المعتمدة');
@@ -267,150 +280,152 @@ export default function RenewalsPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 pb-10">
-      <div className="executive-card p-5 sm:p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h3 className="m-0 text-lg font-extrabold text-primary">طلبات التجديد</h3>
-          <p className="mt-1 text-xs text-muted font-bold">دورة الاعتماد وإدارة العقود قيد المعالجة لتوجيهها للتوقيع</p>
-        </div>
-        <div className="flex gap-3 w-full md:w-auto">
-          {activeTab === 'Pending' && (
-            <button onClick={() => {
-              if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
-              setApprovalModal({ isOpen: true, type: 'bulk' });
-            }} disabled={selectedIds.length === 0 || actionLoading} className="bg-gold hover:bg-gold-hover text-white px-4 py-2.5 rounded-lg font-bold text-xs transition-colors shadow-sm disabled:opacity-50">
-              ✅ اعتماد مجمع ({selectedIds.length})
+    <div style={{ paddingBottom: '40px' }}>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>طلبات التجديد</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>دورة الاعتماد وإدارة العقود قيد المعالجة لتوجيهها للتوقيع</p>
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => alert("سيتم توجيهك لصفحة العقود لإنشاء طلب تجديد جديد.")} style={{ background: 'var(--paper-card)', color: 'var(--navy-950)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
+              + إنشاء طلب جديد
             </button>
-          )}
+            
+            {/* الزر يتغير حسب التاب النشط */}
+            {activeTab === 'Pending' && (
+              <button onClick={() => {
+                if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
+                setApprovalModal({ isOpen: true, type: 'bulk' });
+              }} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+                ✅ اعتماد مجمع ({selectedIds.length})
+              </button>
+            )}
 
-          {activeTab === 'Approved' && (
-            <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} className="bg-[var(--success-text)] text-white px-4 py-2.5 rounded-lg font-bold text-xs transition-opacity shadow-sm disabled:opacity-50">
-              {actionLoading ? 'جاري التجهيز...' : `📥 تصدير كشف عقود (${selectedIds.length})`}
-            </button>
-          )}
+            {/* زر استخراج الإكسيل */}
+            {activeTab === 'Approved' && (
+              <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+                {actionLoading ? 'جاري التجهيز...' : `📥 تصدير كشف عقود (${selectedIds.length})`}
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <button onClick={() => setActiveTab('Pending')} className={`executive-card p-4 text-center cursor-pointer border-2 transition-all ${activeTab === 'Pending' ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-transparent hover:border-border'}`}>
-          <div className="text-xs font-bold text-muted">قيد المعالجة</div>
-          <div className="text-xl font-black text-blue-600 mt-1">{countPending}</div>
-        </button>
-        <button onClick={() => setActiveTab('Approved')} className={`executive-card p-4 text-center cursor-pointer border-2 transition-all ${activeTab === 'Approved' ? 'border-[var(--success-text)] bg-[var(--success-bg)]' : 'border-transparent hover:border-border'}`}>
-          <div className="text-xs font-bold text-muted">معتمدة (تنتظر التوقيع)</div>
-          <div className="text-xl font-black text-[var(--success-text)] mt-1">{countApproved}</div>
-        </button>
-        <button onClick={() => setActiveTab('Rejected')} className={`executive-card p-4 text-center cursor-pointer border-2 transition-all ${activeTab === 'Rejected' ? 'border-[var(--danger-text)] bg-[var(--danger-bg)]' : 'border-transparent hover:border-border'}`}>
-          <div className="text-xs font-bold text-muted">مرفوضة</div>
-          <div className="text-xl font-black text-[var(--danger-text)] mt-1">{countRejected}</div>
-        </button>
-        <button onClick={() => setActiveTab('All')} className={`executive-card p-4 text-center cursor-pointer border-2 transition-all ${activeTab === 'All' ? 'border-primary bg-background' : 'border-transparent hover:border-border'}`}>
-          <div className="text-xs font-bold text-muted">الجميع</div>
-          <div className="text-xl font-black text-primary mt-1">{countAll}</div>
-        </button>
-      </div>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+          <button onClick={() => setActiveTab('Pending')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Pending' ? '2px solid var(--stamp-blue)' : '1px solid var(--line)', background: activeTab === 'Pending' ? 'var(--stamp-blue-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>قيد المعالجة</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-blue)', marginTop: '4px' }}>{countPending}</div>
+          </button>
+          <button onClick={() => setActiveTab('Approved')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Approved' ? '2px solid var(--stamp-green)' : '1px solid var(--line)', background: activeTab === 'Approved' ? 'var(--stamp-green-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>معتمدة (تنتظر التوقيع)</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '4px' }}>{countApproved}</div>
+          </button>
+          <button onClick={() => setActiveTab('Rejected')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Rejected' ? '2px solid var(--stamp-red)' : '1px solid var(--line)', background: activeTab === 'Rejected' ? 'var(--stamp-red-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>مرفوضة</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-red)', marginTop: '4px' }}>{countRejected}</div>
+          </button>
+          <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: activeTab === 'All' ? 'var(--paper)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
+            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الجميع</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--navy-950)', marginTop: '4px' }}>{countAll}</div>
+          </button>
+        </div>
 
-      <div className="executive-card p-4 flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex flex-wrap gap-3 items-center w-full lg:w-auto">
-          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="bg-background border border-border text-primary text-xs font-bold rounded-lg px-4 py-2 outline-none focus:border-gold w-full sm:w-48" />
+        <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '220px' }} />
           
-          <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="bg-background border border-border text-primary text-xs font-bold rounded-lg px-4 py-2 outline-none focus:border-gold w-full sm:w-32">
-            <option value="">الإدارة (الكل)</option>
-            {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
-          </select>
+          <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
+          <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
           
-          <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="bg-background border border-border text-primary text-xs font-bold rounded-lg px-4 py-2 outline-none focus:border-gold w-full sm:w-32">
-            <option value="">الشركة (الكل)</option>
-            {compsList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
-          </select>
+          <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
+          <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-          <div className="flex items-center w-full sm:w-auto">
-            <span className="text-xs font-bold text-muted ml-2">شهر البداية:</span>
-            <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-background border border-border text-primary text-xs font-bold font-mono rounded-lg px-3 py-2 outline-none focus:border-gold" />
+          {/* فلتر شهر وسنة التجديد */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--muted)', marginLeft: '6px' }}>شهر البداية:</span>
+            <input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={e => setSelectedMonth(e.target.value)} 
+              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} 
+            />
           </div>
 
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} className="bg-card border border-border text-primary px-4 py-2 rounded-lg font-bold text-xs hover:bg-background">إعادة ضبط</button>
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+          
+          <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>معروض: <span style={{ color: 'var(--navy-950)' }}>{sortedRequests.length}</span> طلب</div>
         </div>
-        
-        <div className="text-xs font-bold text-muted w-full lg:w-auto text-left">
-          معروض: <span className="text-primary">{sortedRequests.length}</span> طلب
-        </div>
-      </div>
 
-      <div className="executive-card overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="table-responsive" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', overflowX: 'auto' }}>
           {loading ? (
-            <div className="p-10 text-center text-xs font-bold text-muted">جاري تحميل الطلبات وترتيبها...</div>
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري تحميل الطلبات وترتيبها...</div>
           ) : (
-            <table className="w-full text-right text-xs whitespace-nowrap executive-table">
+            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '10.5px', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr>
-                  <th className="text-center w-10">
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', textAlign: 'center', width: '30px' }}>
                     <input 
                       type="checkbox" 
                       onChange={handleSelectAll} 
                       checked={selectedIds.length > 0 && selectedIds.length === sortedRequests.filter(r => r.status === activeTab).length}
                       disabled={activeTab === 'All' || activeTab === 'Rejected'} 
-                      className="cursor-pointer"
                     />
                   </th>
-                  <th>رقم الطلب</th>
-                  <th>الكود</th>
-                  <th>الموظف</th>
-                  <th>الإدارة</th>
-                  <th>انتهاء العقد</th>
-                  <th>المتبقي</th>
-                  <th>التجديد</th>
-                  <th>الطلب</th>
-                  <th>التوقيع</th>
-                  <th className="text-center">إجراء</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>رقم الطلب</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الكود</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الموظف</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الإدارة</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>انتهاء العقد</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>المتبقي</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>التجديد</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الطلب</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>التوقيع</th>
+                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedRequests.length === 0 ? (
-                  <tr><td colSpan={11} className="p-5 text-center text-muted font-bold">لا توجد طلبات مطابقة.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد طلبات مطابقة.</td></tr>
                 ) : sortedRequests.map((req) => {
                   const days = getDaysRemaining(req.contract_end_date);
                   return (
-                    <tr key={req.request_id} className={selectedIds.includes(req.request_id) ? 'bg-gold/10' : ''}>
-                      <td className="text-center p-3">
+                    <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? 'var(--paper)' : 'transparent' }}>
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         <input 
                           type="checkbox" 
                           disabled={req.status === 'Rejected'} 
                           checked={selectedIds.includes(req.request_id)} 
                           onChange={e => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter(id => id !== req.request_id))} 
-                          className="cursor-pointer"
                         />
                       </td>
-                      <td className="font-mono text-muted">{req.request_id}</td>
-                      <td className="font-mono font-bold text-gold">{req.employee_code}</td>
-                      <td className="font-bold text-primary">{req.employee_name}</td>
-                      <td className="text-muted">{req.department || '—'}</td>
-                      <td className="font-mono font-bold text-primary">{req.contract_end_date || '—'}</td>
-                      <td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--muted)' }}>{req.request_id}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{req.employee_code}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.employee_name}</td>
+                      <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{req.department || '—'}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{req.contract_end_date || '—'}</td>
+                      <td style={{ padding: '8px 10px' }}>
                         {days !== null ? (
-                          <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold ${days < 0 ? 'bg-[var(--danger-bg)] text-[var(--danger-text)]' : days <= 60 ? 'bg-[var(--warning-bg)] text-[var(--warning-text)]' : 'bg-[var(--success-bg)] text-[var(--success-text)]'}`}>
+                          <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', background: days < 0 ? 'var(--stamp-red-bg)' : days <= 60 ? 'var(--stamp-amber-bg)' : 'var(--stamp-green-bg)', color: days < 0 ? 'var(--stamp-red)' : days <= 60 ? 'var(--stamp-amber)' : 'var(--stamp-green)' }}>
                             {days < 0 ? `منتهي (${Math.abs(days)})` : `${days} يوم`}
                           </span>
                         ) : '—'}
                       </td>
-                      <td className="font-bold text-primary">{req.renewal_months || 12} ش</td>
-                      <td>
-                        {req.status === 'Approved' && <span className="bg-[var(--success-bg)] text-[var(--success-text)] px-2.5 py-1 rounded-md text-[10px] font-bold">معتمد</span>}
-                        {req.status === 'Pending' && <span className="bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400 px-2.5 py-1 rounded-md text-[10px] font-bold">قيد المعالجة</span>}
-                        {req.status === 'Rejected' && <span className="bg-[var(--danger-bg)] text-[var(--danger-text)] px-2.5 py-1 rounded-md text-[10px] font-bold">مرفوض</span>}
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.renewal_months || 12} ش</td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {req.status === 'Approved' && <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>معتمد</span>}
+                        {req.status === 'Pending' && <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>قيد المعالجة</span>}
+                        {req.status === 'Rejected' && <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>مرفوض</span>}
                       </td>
-                      <td className={`font-bold text-[10px] ${req.signature_status === 'تم التوقيع' ? 'text-[var(--success-text)]' : 'text-muted'}`}>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px', color: req.signature_status === 'تم التوقيع' ? 'var(--stamp-green)' : 'var(--muted)' }}>
                         {req.signature_status || '—'}
                       </td>
-                      <td className="text-center p-3">
+                      <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         {req.status === 'Pending' ? (
-                          <div className="flex justify-center gap-2">
-                            <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} className="bg-[var(--success-text)] text-white px-3 py-1.5 rounded-md text-[10px] font-bold hover:opacity-90 transition-opacity">اعتماد ✅</button>
-                            <button onClick={() => handleReject(req.request_id)} className="bg-[var(--danger-text)] text-white px-3 py-1.5 rounded-md text-[10px] font-bold hover:opacity-90 transition-opacity">رفض ❌</button>
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
+                            <button onClick={() => handleReject(req.request_id)} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-muted font-bold">— تمت المعالجة —</span>
+                          <span style={{ fontSize: '9px', color: 'var(--muted)' }}>— تمت المعالجة —</span>
                         )}
                       </td>
                     </tr>
@@ -422,26 +437,27 @@ export default function RenewalsPage() {
         </div>
 
         {approvalModal.isOpen && (
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-            <div className="w-full max-w-md bg-card rounded-2xl p-6 shadow-2xl border border-border">
-              <h3 className="m-0 mb-4 text-base font-extrabold text-[var(--success-text)]">
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
+            <div style={{ width: '400px', background: 'var(--paper-card)', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+              <h3 style={{ margin: '0 0 16px', fontSize: '15px', color: 'var(--stamp-green)' }}>
                 {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
               </h3>
-              <p className="text-xs text-muted mb-4 leading-relaxed font-bold">
-                سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة.
+              <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
+                سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. وسيتحول الطلب تلقائياً إلى السجلات &quot;المعتمدة&quot; لانتظار توقيع الموظف.
               </p>
               
+              {/* عرض تواريخ العقد للتأكيد (ل للموظف الواحد فقط) */}
               {approvalModal.type === 'single' && approvalModal.req && (
-                <div className="bg-background border border-border p-3 rounded-lg mb-4 text-xs font-bold text-primary space-y-1.5">
-                  <div><strong>تاريخ النهاية القديم:</strong> <span className="font-mono">{approvalModal.req.contract_end_date || 'غير مسجل'}</span></div>
-                  <div className="text-[var(--success-text)]"><strong>تاريخ البداية الجديد:</strong> <span className="font-mono">{calculateNewStartDate(approvalModal.req.contract_end_date)}</span></div>
-                  <div className="text-[var(--success-text)]"><strong>تاريخ النهاية المتوقع:</strong> <span className="font-mono">{calculateNewEndDateFromStart(calculateNewStartDate(approvalModal.req.contract_end_date), confirmedMonths)}</span></div>
+                <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: 'var(--ink)' }}>
+                  <div style={{ marginBottom: '6px' }}><strong>تاريخ النهاية القديم:</strong> {approvalModal.req.contract_end_date || 'غير مسجل'}</div>
+                  <div style={{ marginBottom: '6px', color: 'var(--stamp-green)' }}><strong>تاريخ البداية الجديد:</strong> {calculateNewStartDate(approvalModal.req.contract_end_date)}</div>
+                  <div style={{ color: 'var(--stamp-green)' }}><strong>تاريخ النهاية المتوقع:</strong> {calculateNewEndDateFromStart(calculateNewStartDate(approvalModal.req.contract_end_date), confirmedMonths)}</div>
                 </div>
               )}
 
-              <div className="mb-6">
-                <label className="block text-xs text-muted mb-2 font-bold">المدة المعتمدة للتجديد:</label>
-                <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} className="w-full bg-background border border-border text-primary p-2.5 rounded-lg text-xs font-bold outline-none focus:border-gold">
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 'bold' }}>المدة المعتمدة للتجديد:</label>
+                <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
                   <option value={1}>شهر واحد (1)</option>
                   <option value={2}>شهران (2)</option>
                   <option value={3}>3 شهور (ربع سنوي)</option>
@@ -450,10 +466,9 @@ export default function RenewalsPage() {
                   <option value={12}>12 شهر (سنة كاملة)</option>
                 </select>
               </div>
-              
-              <div className="flex justify-end gap-2">
-                <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} className="bg-background text-primary border border-border px-4 py-2 rounded-lg font-bold text-xs">إلغاء</button>
-                <button onClick={handleConfirmApproval} disabled={actionLoading} className="bg-[var(--success-text)] text-white px-4 py-2 rounded-lg font-bold text-xs disabled:opacity-50">
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', color: 'var(--ink)' }}>إلغاء</button>
+                <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
                   {actionLoading ? 'جاري الاعتماد...' : 'تأكيد الاعتماد ✅'}
                 </button>
               </div>
