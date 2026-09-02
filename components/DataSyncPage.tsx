@@ -38,7 +38,6 @@ export default function DataSyncPage() {
     return null;
   };
 
-  // 3. تنظيف الأرقام
   const sanitizeNumeric = (val: any): number | null => {
     if (val === undefined || val === null || val === '') return null;
     if (typeof val === 'string' && val.includes('-')) return null;
@@ -47,7 +46,6 @@ export default function DataSyncPage() {
     return num;
   };
 
-  // 4. تحميل تمبلت مخصص للبيانات الأساسية فقط (بدون عقود)
   const handleDownloadTemplate = () => {
     const headers = [
       'employee_id', 'employee_code', 'employee_name', 'department', 'job_title', 
@@ -60,6 +58,69 @@ export default function DataSyncPage() {
     XLSX.writeFile(wb, 'قالب_بيانات_الموظفين.xlsx');
   };
 
+  // 🌟 الدالة الجديدة: استرجاع العقود فقط من الشيت القديم لجدول contracts
+  const handleContractRecovery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return alert('يرجى اختيار ملف Excel القديم (employees_rows 3) أولاً');
+
+    setLoading(true);
+    setLogs(['جاري قراءة ملف العقود... ⏳']);
+    
+    try {
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
+
+      if (rawData.length === 0) {
+        setLoading(false);
+        return alert('الملف فارغ!');
+      }
+
+      setLogs(prev => [...prev, `جاري مسح العقود الفارغة القديمة لتهيئة الجدول...`]);
+      // تنظيف جدول العقود قبل الرفع لمنع التكرار (حذف كل العقود)
+      await supabase.from('contracts').delete().neq('status', 'NONE');
+
+      const contractsPayload = rawData.map(row => {
+        const empCode = sanitizeString(row.employee_code);
+        if (!empCode) return null;
+
+        const cType = sanitizeString(row.contract_type) || 'محدد المدة';
+        const cStart = sanitizeDate(row.contract_start_date);
+        const cEnd = sanitizeDate(row.contract_end_date);
+
+        return {
+          employee_code: empCode,
+          employee_id: sanitizeString(row.employee_id) || empCode,
+          contract_type: cType,
+          contract_start_date: cStart,
+          contract_end_date: cEnd,
+          status: 'Active'
+        };
+      }).filter((item): item is NonNullable<typeof item> => item !== null);
+
+      setLogs(prev => [...prev, `تم تجهيز ${contractsPayload.length} عقد للرفع، جاري الحفظ...`]);
+
+      const BATCH_SIZE = 300;
+      for (let i = 0; i < contractsPayload.length; i += BATCH_SIZE) {
+        const batch = contractsPayload.slice(i, i + BATCH_SIZE);
+        const { error } = await supabase.from('contracts').insert(batch);
+        if (error) throw error;
+      }
+
+      setLogs(prev => [...prev, '✅ تم استرجاع العقود بنجاح!']);
+      alert('تم استرجاع جميع العقود بنجاح! اذهب لصفحة العقود الآن لتراها. ✅');
+      await refresh();
+      setFile(null);
+    } catch (err: any) {
+      setLogs(prev => [...prev, `❌ خطأ: ${err.message}`]);
+      alert('حدث خطأ أثناء استرجاع العقود: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // الدالة الأساسية للمزامنة (تحديث الأساسيات فقط)
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -71,7 +132,6 @@ export default function DataSyncPage() {
       const buffer = await file.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      
       const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
 
       if (rawData.length === 0) {
@@ -104,15 +164,12 @@ export default function DataSyncPage() {
 
       const existingMap = new Map(existingEmps.map(emp => [emp.employee_code, emp]));
 
-      // دمج وتحديث البيانات الأساسية فقط
       const finalPayload = excelCodes.map(empCode => {
         const excelRow = excelUpdatesMap.get(empCode);
         const dbRecord = existingMap.get(empCode);
 
         if (dbRecord) {
-          // تحديث الموظف الحالي
           const updatedRecord = { ...dbRecord };
-          
           if ('employee_name' in excelRow) updatedRecord.employee_name = sanitizeString(excelRow.employee_name) || updatedRecord.employee_name;
           if ('department' in excelRow) updatedRecord.department = sanitizeString(excelRow.department);
           if ('job_title' in excelRow) updatedRecord.job_title = sanitizeString(excelRow.job_title);
@@ -127,10 +184,8 @@ export default function DataSyncPage() {
           if ('manager' in excelRow) updatedRecord.manager = sanitizeString(excelRow.manager);
           if ('termination_date' in excelRow) updatedRecord.termination_date = sanitizeDate(excelRow.termination_date);
           if ('termination_reason' in excelRow) updatedRecord.termination_reason = sanitizeString(excelRow.termination_reason);
-
           return updatedRecord;
         } else {
-          // إضافة موظف جديد
           return {
             employee_code: empCode,
             employee_id: sanitizeString(excelRow.employee_id) || empCode,
@@ -162,7 +217,6 @@ export default function DataSyncPage() {
         const { error } = await supabase
           .from('employees')
           .upsert(batch, { onConflict: 'employee_code' });
-
         if (error) throw error;
       }
 
@@ -194,23 +248,35 @@ export default function DataSyncPage() {
         </button>
       </div>
 
-      <form onSubmit={handleFileUpload} className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
+      <div className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
         <input
           type="file"
           accept=".xlsx, .xls"
           onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="mb-4 text-xs text-primary w-full"
+          className="mb-6 text-xs text-primary w-full"
         />
-        <div>
+        
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
           <button
-            type="submit"
+            onClick={handleFileUpload}
             disabled={loading || !file}
-            className="bg-gold text-white font-bold text-xs px-8 py-3 rounded-lg disabled:opacity-50 hover:bg-gold-hover transition-colors"
+            className="bg-gold text-white font-bold text-xs px-6 py-3 rounded-lg disabled:opacity-50 hover:bg-gold-hover transition-colors"
           >
             {loading ? 'جاري المزامنة...' : 'رفع وتحديث النظام 🚀'}
           </button>
+
+          {/* 🌟 زرار الطوارئ الجديد لاسترجاع العقود */}
+          <button
+            onClick={handleContractRecovery}
+            disabled={loading || !file}
+            style={{ background: 'var(--stamp-amber)', color: '#fff' }}
+            className="font-bold text-xs px-6 py-3 rounded-lg disabled:opacity-50 transition-colors"
+          >
+            {loading ? 'جاري الاسترجاع...' : 'استرجاع العقود المفقودة 🚑'}
+          </button>
         </div>
-      </form>
+        
+      </div>
       
       {logs.length > 0 && (
         <div className="mt-6 bg-[#0f172a] text-[#38bdf8] p-4 rounded-xl font-mono text-xs max-h-52 overflow-y-auto border border-border text-right">
