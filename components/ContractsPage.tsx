@@ -450,8 +450,8 @@ export default function ContractsPage() {
           border-radius: 16px;
           border: 1px solid var(--line);
           display: flex;
-          justify-content: space-between;
-          align-items: center;
+          justifyContent: space-between;
+          alignItems: center;
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           box-shadow: var(--shadow-card);
@@ -460,7 +460,7 @@ export default function ContractsPage() {
         }
         .stat-card:hover {
           transform: translateY(-4px);
-          box-shadow: 0 12px 20px -8px rgba(0,0,0,0.12);
+          boxShadow: 0 12px 20px -8px rgba(0,0,0,0.12);
           border-color: var(--muted);
         }
         
@@ -476,8 +476,8 @@ export default function ContractsPage() {
           height: 44px;
           border-radius: 12px;
           display: flex;
-          align-items: center;
-          justify-content: center;
+          alignItems: center;
+          justifyContent: center;
           font-size: 22px;
         }
       `}</style>
@@ -675,7 +675,7 @@ export default function ContractsPage() {
                     <td style={{ padding: '10px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '10px' }}><span style={{ color: statusInfo.color }}>{statusInfo.text}</span></td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '4px', justify-content: 'center' }}>
+                      <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                         <button
                           onClick={() => openSingleRenewal(emp)}
                           disabled={statusInfo.locked || actionLoading || isTerminated}
@@ -702,9 +702,9 @@ export default function ContractsPage() {
 
       {/* 🌟 نافذة إنهاء التعاقد */}
       {isTerminateModalOpen && (
-        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justify-content: 'center', zIndex: 9999, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
-            <div style={{ display: 'flex', justify-content: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-red)', fontWeight: '800' }}>❌ إنهاء تعاقد موظف</h3>
               <button onClick={() => setIsTerminateModalOpen(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -761,7 +761,7 @@ export default function ContractsPage() {
                 />
               </div>
 
-              <div style={{ display: 'flex', justify-content: 'flex-end', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsTerminateModalOpen(false)} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={actionLoading || !terminateEmployeeCode} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (actionLoading || !terminateEmployeeCode) ? 'not-allowed' : 'pointer' }}>
                   {actionLoading ? 'جاري التنفيذ...' : 'تأكيد الإنهاء'}
@@ -774,9 +774,9 @@ export default function ContractsPage() {
 
       {/* نافذة إنشاء عقد جديد */}
       {isNewContractModalOpen && (
-        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justify-content: 'center', zIndex: 9999, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
-            <div style={{ display: 'flex', justify-content: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>📝 طلب إنشاء عقد جديد تماماً</h3>
               <button onClick={() => setIsNewContractModalOpen(false)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -854,7 +854,7 @@ export default function ContractsPage() {
                 <div><label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>بداية العقد *</label><input type="date" required value={newContractStartDate} onChange={(e) => setNewContractStartDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} /></div>
                 <div><label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>نهاية العقد *</label><input type="date" required value={newContractEndDate} onChange={(e) => setNewContractEndDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} /></div>
               </div>
-              <div style={{ display: 'flex', justify-content: 'flex-end', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsNewContractModalOpen(false)} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء وتحديث العقد 📄'}</button>
               </div>
@@ -865,14 +865,14 @@ export default function ContractsPage() {
 
       {/* نافذة طلب التجديد */}
       {modalState.isOpen && (
-        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justify-content: 'center', zIndex: 100, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: 'var(--paper-card)', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
             
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: 'var(--ink)', textAlign: 'center', fontWeight: '800' }}>
               {modalState.type === 'single' ? `إنشاء طلب تجديد لـ (${modalState.emp?.employee_name})` : `إنشاء طلبات تجديد لـ (${selectedEmpCodes.length}) موظف`}
             </h3>
 
-            <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', display: 'flex', justify-content: 'space-around', alignItems: 'center' }}>
+            <div style={{ background: 'var(--paper)', border: '1px solid var(--line)', borderRadius: '12px', padding: '12px 20px', marginBottom: '20px', display: 'flex', justifyContent: 'space-around', alignItems: 'center' }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', fontWeight: 'bold', color: renewalMode === 'months' ? '#856404' : '#64748b', cursor: 'pointer' }}>
                 <input type="radio" name="renewalMode" checked={renewalMode === 'months'} onChange={() => setRenewalMode('months')} style={{ accentColor: '#b8934a' }} />
                 تجديد بالشهور (تلقائي)
@@ -915,7 +915,7 @@ export default function ContractsPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', justify-content: 'flex-start', gap: '10px', direction: 'rtl' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px', direction: 'rtl' }}>
               <button 
                 onClick={confirmRenewalAction} 
                 disabled={actionLoading} 
@@ -937,9 +937,9 @@ export default function ContractsPage() {
 
       {/* نافذة التعديل المباشرة */}
       {editModal.isOpen && editModal.emp && (
-        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justify-content: 'center', zIndex: 9999, padding: '20px' }}>
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
-            <div style={{ display: 'flex', justify-content: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>✏️ تعديل بيانات العقد</h3>
               <button onClick={() => setEditModal({ isOpen: false })} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -968,7 +968,7 @@ export default function ContractsPage() {
                   <input type="date" value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
                 </div>
               </div>
-              <div style={{ display: 'flex', justify-content: 'flex-end', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setEditModal({ isOpen: false })} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={actionLoading} style={{ background: 'var(--stamp-blue)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}</button>
               </div>
