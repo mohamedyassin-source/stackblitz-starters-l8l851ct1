@@ -28,10 +28,11 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
     setErrorMsg('');
 
+    // البحث باستخدام employee_code فقط وإزالة employee_id الملغاة
     const { data, error } = await supabase
       .from('employees')
       .select('*')
-      .or(`employee_code.eq.${employeeCode.trim()},employee_id.eq.${employeeCode.trim()}`)
+      .eq('employee_code', employeeCode.trim())
       .single();
 
     setLoading(false);
@@ -70,7 +71,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const { data, error } = await supabase
       .from('employees')
       .select('*')
-      .or(`employee_code.eq.${employeeCode.trim()},employee_id.eq.${employeeCode.trim()}`)
+      .eq('employee_code', employeeCode.trim())
       .single();
 
     setLoading(false);
@@ -128,11 +129,22 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   };
 
   const proceedToLogin = (data: any) => {
+    // تحديد دور المستخدم (Role) مع منح الأدمن صلاحية كاملة
+    let userRole = data.role;
+    
+    if (!userRole) {
+      if (data.department === 'الموارد البشرية' || data.department === 'HR') {
+        userRole = 'admin'; // منح صلاحية أدمن للموارد البشرية
+      } else {
+        userRole = 'Employee';
+      }
+    }
+
     const userData = {
       code: data.employee_code,
       name: data.employee_name,
       department: data.department,
-      role: data.role || (data.department === 'الموارد البشرية' ? 'HR' : 'Employee'),
+      role: userRole,
       company: data.company
     };
 
