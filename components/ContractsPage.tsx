@@ -10,7 +10,7 @@ export default function ContractsPage() {
   const [renewals, setRenewals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false); // 🌟 حالة الحذف النهائي
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
@@ -43,12 +43,12 @@ export default function ContractsPage() {
   const [empSearchTerm, setEmpSearchTerm] = useState(''); 
   const [showEmpDropdown, setShowEmpDropdown] = useState(false); 
 
-  // حالات نافذة إنهاء التعاقد المحدثة 🌟
+  // حالات نافذة إنهاء التعاقد المحدثة
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
   const [termSearchTerm, setTermSearchTerm] = useState(''); 
   const [terminateDate, setTerminateDate] = useState(new Date().toISOString().split('T')[0]);
-  const [termReason, setTermReason] = useState('إنهاء عقد'); // 🌟 سبب الإنهاء المضاف حديثاً
+  const [termReason, setTermReason] = useState('إنهاء عقد');
 
   // حالات نافذة التعديل المباشر للعقد
   const [editModal, setEditModal] = useState<{ isOpen: boolean; emp?: any }>({ isOpen: false });
@@ -105,17 +105,29 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // دمج بيانات العقد النشط مع بيانات الموظف
+    // 🌟 دمج دقيق لقراءة تاريخ نهاية العقد الصريح من جدول العقود فقط
     const mergedEmps = allEmps.map(emp => {
-      const activeContract = allContracts.find(
-        c => String(c.employee_code).trim() === String(emp.employee_code).trim()
+      const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
+
+      const empContracts = allContracts.filter(c => 
+        String(c.employee_code || '').trim().replace(/^0+/, '') === empCodeClean
       );
+
+      // ترتيب العقود حسب أحدث تاريخ نهاية
+      empContracts.sort((a, b) => {
+        const timeA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
+        const timeB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
+        return timeB - timeA;
+      });
+
+      const activeContract = empContracts[0];
+
       return {
         ...emp,
         contract_id: activeContract?.contract_id,
-        contract_type: activeContract?.contract_type || null,
-        contract_start_date: activeContract?.contract_start_date || null,
-        contract_end_date: activeContract?.contract_end_date || null,
+        contract_type: activeContract?.contract_type || emp.contract_type || '—',
+        contract_start_date: activeContract?.contract_start_date || emp.hiring_date || null,
+        contract_end_date: activeContract?.contract_end_date || null, // ⬅️ قراءة تاريخ الانتهاء الحقيقي الصريح
       };
     });
 
@@ -246,7 +258,6 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
-  // 🌟 دالة الحذف النهائي
   const handleDeleteSelected = async () => {
     if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpCodes.length} موظف بشكل نهائي من قاعدة البيانات؟\n(هذا الإجراء لا يمكن التراجع عنه وسيحذف العقود المرتبطة بهم أيضاً)`)) {
       return;
@@ -270,7 +281,6 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 دالة إنهاء التعاقد المحدثة (زي الموظفين)
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى اختيار الموظف.');
@@ -280,7 +290,6 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     
-    // 1. تحديث جدول الموظفين
     const { error: empError } = await supabase.from('employees').update({ 
       department: 'تحويلات تحت الاعتماد',
       status: 'Inactive',
@@ -288,7 +297,6 @@ export default function ContractsPage() {
       termination_reason: termReason 
     }).eq('employee_code', terminateEmployeeCode);
     
-    // 2. تحديث جدول العقود
     const { error: contractError } = await supabase.from('contracts').update({
       status: 'Inactive',
       contract_end_date: terminateDate
@@ -464,7 +472,6 @@ export default function ContractsPage() {
           .no-print { display: none !important; }
         }
 
-        /* تنسيقات الكروت الجديدة الجميلة */
         .stat-card {
           background: var(--paper-card);
           padding: 20px;
@@ -553,7 +560,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* الكروت التفاعلية الجديدة المفلترة */}
+      {/* الكروت التفاعلية */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px', direction: 'rtl' }}>
         
         <div className={`stat-card ${activeFilterCard === 'all' ? 'active-all' : ''}`} onClick={() => setActiveFilterCard('all')}>
@@ -613,7 +620,7 @@ export default function ContractsPage() {
 
       </div>
 
-      {/* 🌟 شريط الإجراءات السريعة للمحددين */}
+      {/* شريط الإجراءات السريعة */}
       {selectedEmpCodes.length > 0 && (
         <div className="db-action-bar">
           <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
@@ -746,7 +753,7 @@ export default function ContractsPage() {
         )}
       </div>
 
-      {/* 🌟 نافذة إنهاء التعاقد المحدثة */}
+      {/* نافذة إنهاء التعاقد */}
       {isTerminateModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '480px', background: 'var(--paper-card)', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', direction: 'rtl' }}>
