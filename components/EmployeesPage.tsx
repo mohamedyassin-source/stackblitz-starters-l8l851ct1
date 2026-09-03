@@ -13,7 +13,7 @@ export default function EmployeesPage() {
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedType, setSelectedType] = useState('');
-  const [selectedAgeRange, setSelectedAgeRange] = useState(''); // 🌟 فلتر مجال السن الجديد
+  const [selectedAgeRange, setSelectedAgeRange] = useState('');
 
   // حالات الترتيب والتحديد
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
@@ -53,7 +53,6 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 🎯 استخراج العمر الصريح مباشرة من عمود age
   const getEmployeeAge = (emp: any) => {
     const rawAge = getField(emp, 'age', 'Age');
     if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
@@ -62,17 +61,14 @@ export default function EmployeesPage() {
     return null;
   };
 
-  // 1. تصفية الموظفين النشطين واستبعاد من هم خارج الخدمة (مع إبقاء تحويلات تحت الاعتماد)
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // القوائم للفلاتر
   const deptsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployeesOnly]);
   const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
   const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
 
-  // 2. تطبيق البحث والتصفية بجميع الفلاتر بما فيها السن
   const baseFilteredEmployees = useMemo(() => {
     return activeEmployeesOnly.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -88,7 +84,6 @@ export default function EmployeesPage() {
       const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
       const matchesType = !selectedType || cType === selectedType;
 
-      // فلترة نطاق السن
       let matchesAge = true;
       if (selectedAgeRange === '60_plus') matchesAge = age !== null && age >= 60;
       else if (selectedAgeRange === '50_59') matchesAge = age !== null && age >= 50 && age < 60;
@@ -100,7 +95,6 @@ export default function EmployeesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
-  // 3. إحصائيات الكروت الديناميكية
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
@@ -117,7 +111,6 @@ export default function EmployeesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseFilteredEmployees]);
 
-  // 4. القائمة النهائية مع الترتيب والتصفية بالكروت
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -129,7 +122,6 @@ export default function EmployeesPage() {
     });
 
     return filtered.sort((a, b) => {
-      // 🌟 تم إضافة هذا الجزء الخاص بترتيب السن
       if (sortColumn === 'age') {
         const ageA = getEmployeeAge(a) !== null ? getEmployeeAge(a) : 0;
         const ageB = getEmployeeAge(b) !== null ? getEmployeeAge(b) : 0;
@@ -145,7 +137,6 @@ export default function EmployeesPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  // نتائج البحث لشاشة إنهاء الخدمة
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
@@ -175,6 +166,7 @@ export default function EmployeesPage() {
     setEditData({ emp: { ...emp }, loading: false });
   };
 
+  // 🌟 تعديل دالة الحفظ لفصل بيانات الموظف عن العقد
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -184,9 +176,11 @@ export default function EmployeesPage() {
       const empId = editData.emp.id || editData.emp.employee_id;
       const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
       const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
+      const empCode = getField(editData.emp, 'employee_code', 'EmployeeCode');
 
-      const updateData = {
-        employee_code: getField(editData.emp, 'employee_code', 'EmployeeCode'),
+      // 1. بيانات الموظف الأساسية (بدون بيانات العقد)
+      const employeeUpdateData = {
+        employee_code: empCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
         national_id: getField(editData.emp, 'national_id', 'NationalID'),
         age: editData.emp.age ? Number(editData.emp.age) : null,
@@ -194,23 +188,37 @@ export default function EmployeesPage() {
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
-        contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
-        contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
         status: getField(editData.emp, 'status', 'Status'),
         email: getField(editData.emp, 'email', 'Email'),
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
 
-      const { error } = await supabase
+      // تحديث جدول الموظفين
+      const { error: empError } = await supabase
         .from('employees')
-        .update(updateData)
+        .update(employeeUpdateData)
         .eq(editData.emp.id ? 'id' : 'employee_id', empId);
 
-      if (error) throw error;
+      if (empError) throw empError;
+
+      // 2. بيانات العقد
+      const contractUpdateData = {
+        contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
+        contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
+        status: getField(editData.emp, 'status', 'Status')
+      };
+
+      // تحديث جدول العقود بناءً على كود الموظف
+      const { error: contractError } = await supabase
+        .from('contracts')
+        .update(contractUpdateData)
+        .eq('employee_code', empCode);
+
+      if (contractError) throw contractError;
 
       alert('تم حفظ التعديلات بنجاح ✅');
       setEditData(null);
-      await fetchEmployees();
+      await fetchEmployees(); // تحديث الداتا في الواجهة
     } catch (err: any) {
       alert('حدث خطأ أثناء الحفظ: ' + err.message);
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
@@ -224,16 +232,26 @@ export default function EmployeesPage() {
     setTermSaving(true);
     try {
       const empId = selectedTermEmp.id || selectedTermEmp.employee_id;
-      const { error } = await supabase
+      const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
+
+      // إنهاء خدمة في الموظفين
+      const { error: empError } = await supabase
         .from('employees')
         .update({
           department: 'تحويلات تحت الاعتماد',
+          status: 'Inactive',
           termination_reason: termReason,
           termination_date: termDate
         })
         .eq(selectedTermEmp.id ? 'id' : 'employee_id', empId);
 
-      if (error) throw error;
+      if (empError) throw empError;
+
+      // إنهاء خدمة في العقود
+      await supabase
+        .from('contracts')
+        .update({ status: 'Inactive' })
+        .eq('employee_code', empCode);
 
       alert(`✅ تم تحويل الموظف (${getField(selectedTermEmp, 'employee_name', 'ArabicName')}) إلى قسم (تحويلات تحت الاعتماد) بنجاح.`);
       setShowTermModal(false);
@@ -280,10 +298,12 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 تعديل دالة الإضافة لفصل الإضافة على الجدولين
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { error } = await supabase.from('employees').insert([{
+      // 1. إضافة الموظف
+      const { error: empError } = await supabase.from('employees').insert([{
         employee_id: `EMP-${newEmp.employee_code}`,
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
@@ -292,16 +312,25 @@ export default function EmployeesPage() {
         company: newEmp.company,
         job_title: newEmp.job_title,
         hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
-        contract_type: newEmp.contract_type,
-        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
         status: newEmp.status,
         email: newEmp.email,
         mobile: newEmp.mobile
       }]);
 
-      if (error) throw error;
+      if (empError) throw empError;
 
-      alert('تم إضافة الموظف بنجاح ✅');
+      // 2. إضافة العقد التابع له
+      const { error: contractError } = await supabase.from('contracts').insert([{
+        employee_code: newEmp.employee_code,
+        contract_type: newEmp.contract_type,
+        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
+        contract_start_date: newEmp.hiring_date ? newEmp.hiring_date : null,
+        status: newEmp.status
+      }]);
+
+      if (contractError) throw contractError;
+
+      alert('تم إضافة الموظف وعقده بنجاح ✅');
       setShowAddModal(false);
       setNewEmp({
         employee_code: '', employee_name: '', national_id: '',
@@ -361,7 +390,6 @@ export default function EmployeesPage() {
     return <span style={{ color: 'var(--muted)' }}>—</span>;
   };
 
-  // 🌟 عرض العمر الصريح بتمييز بصري
   const renderAgeBadge = (emp: any) => {
     const age = getEmployeeAge(emp);
     if (age === null) return <span style={{ color: 'var(--muted)' }}>—</span>;
