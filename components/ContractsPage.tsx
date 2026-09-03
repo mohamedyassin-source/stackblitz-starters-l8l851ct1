@@ -789,7 +789,7 @@ export default function ContractsPage() {
                 
                 {terminateEmployeeCode && (
                   <div style={{ marginTop: '10px', fontSize: '12px', color: 'var(--stamp-red)', fontWeight: 'bold', background: 'var(--stamp-red-bg)', padding: '10px', borderRadius: '8px', border: '1px solid var(--stamp-red-bg)' }}>
-                    ⚠️ سيتم إيقاف الموظف المختار وتحويل إدارته إلى "تحويلات تحت الاعتماد".
+                    ⚠️ سيتم إيقاف الموظف المختار وتحويل إدارته إلى (تحويلات تحت الاعتماد).
                   </div>
                 )}
               </div>
