@@ -30,11 +30,11 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [loadingAppUsers, setLoadingAppUsers] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
-  // نموذج إضافة مستخدم جديد في app_users (مع الباسورد الافتراضي 123456) 🔑
+  // نموذج إضافة مستخدم جديد في app_users
   const [showAddUserModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
-    password: '123456', // 🌟 كلمة السر الافتراضية
+    password: '123456',
     employee_code: '',
     role: 'Admin',
   });
@@ -108,7 +108,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setLoadingRoles(false);
   };
 
-  // 3. إضافة مستخدم جديد في app_users مع إرسال الباسورد 🔑
+  // 3. إضافة مستخدم جديد في app_users
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
@@ -117,7 +117,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     try {
       const insertPayload: any = {
         username: newUser.username.trim(),
-        password: newUser.password.trim() || '123456', // 🌟 ضمان إرسال الباسورد
+        password: newUser.password.trim() || '123456',
         employee_code: newUser.employee_code.trim() || null,
         role: newUser.role,
         created_at: new Date().toISOString()
@@ -138,12 +138,20 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 4. حذف مستخدم من app_users
-  const handleDeleteAppUser = async (userId: any, username: string) => {
-    if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${username}) نهائياً من app_users؟`)) return;
+  // 🌟 4. حذف مستخدم بدلالة employee_code أو username لعدم وجود عمود id
+  const handleDeleteAppUser = async (user: any) => {
+    if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username}) نهائياً من app_users؟`)) return;
 
     try {
-      const { error } = await supabase.from('app_users').delete().eq('id', userId);
+      let query = supabase.from('app_users').delete();
+      
+      if (user.employee_code) {
+        query = query.eq('employee_code', user.employee_code);
+      } else {
+        query = query.eq('username', user.username);
+      }
+
+      const { error } = await query;
       if (error) throw error;
 
       alert('تم حذف المستخدم بنجاح 🗑️');
@@ -153,10 +161,18 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 5. تعديل صلاحية مستخدم في app_users
-  const handleAppUserRoleChange = async (userId: any, newRole: string) => {
+  // 🌟 5. تعديل صلاحية مستخدم بدلالة employee_code أو username
+  const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
-      const { error } = await supabase.from('app_users').update({ role: newRole }).eq('id', userId);
+      let query = supabase.from('app_users').update({ role: newRole });
+
+      if (user.employee_code) {
+        query = query.eq('employee_code', user.employee_code);
+      } else {
+        query = query.eq('username', user.username);
+      }
+
+      const { error } = await query;
       if (error) throw error;
 
       alert(`✅ تم تحديث الصلاحية إلى ${newRole}`);
@@ -299,14 +315,14 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                   ) : filteredAppUsers.length === 0 ? (
                     <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>لا توجد حسابات مسجلة 🚫</td></tr>
                   ) : (
-                    filteredAppUsers.map(user => (
-                      <tr key={user.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                    filteredAppUsers.map((user, idx) => (
+                      <tr key={user.employee_code || user.username || idx} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--ink)' }}>{user.username}</td>
                         <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--brass-600)' }}>{user.employee_code || '—'}</td>
                         <td style={{ padding: '12px' }}>
                           <select 
                             value={user.role || 'Admin'}
-                            onChange={(e) => handleAppUserRoleChange(user.id, e.target.value)}
+                            onChange={(e) => handleAppUserRoleChange(user, e.target.value)}
                             style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontWeight: 'bold', fontSize: '11px', outline: 'none' }}
                           >
                             <option value="Admin">Admin (مدير نظام كامل) 👑</option>
@@ -316,7 +332,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                         </td>
                         <td style={{ padding: '12px', textAlign: 'center' }}>
                           <button 
-                            onClick={() => handleDeleteAppUser(user.id, user.username)} 
+                            onClick={() => handleDeleteAppUser(user)} 
                             style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
                           >
                             حذف 🗑️
