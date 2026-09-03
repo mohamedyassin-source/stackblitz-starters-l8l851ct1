@@ -3,13 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, Re
 import { supabase } from './supabase';
 
 /**
- * مصدر بيانات موحّد لجدولي employees و renewal_requests.
- *
- * قبل هذا الملف: كل صفحة (Dashboard, Reports, Contracts, Alerts, Audit) كانت
- * تجيب الجدولين كاملين بنفسها بنفس كود الـ pagination المكرر — يعني عند فتح
- * التطبيق والتنقل بين الصفحات كان بيحصل 5 مرات fetch كامل لنفس البيانات.
- * دلوقتي: يتم الجلب مرة واحدة عند بدء التطبيق، ويُعاد استخدامها في كل صفحة عبر
- * useAppData()، مع إمكانية طلب تحديث فوري بعد أي عملية تعديل (إضافة/موافقة/رفض...).
+ * مصدر بيانات موحّد لجدولي employees و renewal_requests و contracts.
  */
 
 type Employee = any;
@@ -19,7 +13,6 @@ type DataContextValue = {
   employees: Employee[];
   renewals: Renewal[];
   loading: boolean;
-  /** أعد الجلب من Supabase الآن (استخدمها بعد أي إضافة/تعديل/حذف) */
   refresh: () => Promise<void>;
   lastFetchedAt: Date | null;
 };
@@ -48,13 +41,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const inFlight = useRef<Promise<void> | null>(null);
 
   const refresh = useCallback(async () => {
-    // لو فيه طلب تحديث شغال بالفعل، انتظره بدل ما تطلق نداء مكرر لـ Supabase
     if (inFlight.current) return inFlight.current;
 
     const run = (async () => {
       setLoading(true);
-      const [emps, rens] = await Promise.all([fetchAllRows('employees'), fetchAllRows('renewal_requests')]);
-      setEmployees(emps);
+      // 1. جلب الجداول الثلاثة (الموظفين، التجديدات، والعقود)
+      const [emps, rens, allContracts] = await Promise.all([
+        fetchAllRows('employees'),
+        fetchAllRows('renewal_requests'),
+        fetchAllRows('contracts') // ⬅️ جلب جدول العقود
+      ]);
+
+      // 2. دمج بيانات العقد مع بيانات الموظف
+      const mergedEmployees = emps.map((emp) => {
+        const empCode = String(emp.employee_code).trim();
+        
+        // البحث عن عقود الموظف في جدول العقود
+        const empContracts = allContracts.filter(c => String(c.employee_code).trim() === empCode);
+        
+        // ترتيب العقود بحيث نأخذ أحدث عقد بناءً على تاريخ النهاية
+        empContracts.sort((a, b) => new Date(b.contract_end_date).getTime() - new Date(a.contract_end_date).getTime());
+        
+        // اختيار العقد النشط (إن وجد) أو أحدث عقد
+        const activeContract = empContracts.find(c => c.status === 'Active' || c.status === 'نشط' || c.status === 'ساري') || empContracts[0];
+
+        // دمج الحقول في كائن الموظف
+        if (activeContract) {
+          return {
+            ...emp,
+            contract_type: activeContract.contract_type,
+            contract_start_date: activeContract.contract_start_date,
+            contract_end_date: activeContract.contract_end_date,
+            contract_status: activeContract.status
+          };
+        }
+
+        return emp;
+      });
+
+      setEmployees(mergedEmployees);
       setRenewals(rens);
       setLastFetchedAt(new Date());
       setLoading(false);
@@ -82,7 +107,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 export function useAppData() {
   const ctx = useContext(DataContext);
   if (!ctx) {
-    throw new Error('useAppData() لازم يُستخدم جوه <DataProvider> (مضاف في app/page.tsx)');
+    throw new Error('useAppData() لازم يُستخدم جوه <DataProvider>');
   }
   return ctx;
 }
