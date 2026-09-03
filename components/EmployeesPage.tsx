@@ -854,7 +854,7 @@ export default function EmployeesPage() {
                       <option value="دائم">دائم</option>
                       <option value="محدد المدة">محدد المدة</option>
                       <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                      <option value="عقد محدد المدة - مكافأة شاملة">عقد محدد المدة - مكافأة شاملة</option>
+                      <option value=" محدد المدة - مكافأة شاملة"> محدد المدة - مكافأة شاملة</option>
                     </select>
                   </div>
                   <div>
@@ -910,7 +910,7 @@ export default function EmployeesPage() {
                     <option value="دائم">دائم</option>
                     <option value="محدد المدة">محدد المدة</option>
                     <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                    <option value="عقد محدد المدة - مكافأة شاملة">عقد محدد المدة - مكافأة شاملة</option>
+                    <option value="عقد محدد المدة - مكافأة شاملة"> محدد المدة - مكافأة شاملة</option>
                   </select>
                 </div>
 
