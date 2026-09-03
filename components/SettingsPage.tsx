@@ -30,11 +30,11 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [loadingAppUsers, setLoadingAppUsers] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
-  // نموذج إضافة مستخدم جديد في app_users (البريد اختياري)
+  // نموذج إضافة مستخدم جديد في app_users (مع الباسورد الافتراضي 123456) 🔑
   const [showAddUserModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
-    email: '',
+    password: '123456', // 🌟 كلمة السر الافتراضية
     employee_code: '',
     role: 'Admin',
   });
@@ -108,16 +108,16 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setLoadingRoles(false);
   };
 
-  // 3. إضافة مستخدم جديد في app_users بدون إرسال حقل email غير الموجود
+  // 3. إضافة مستخدم جديد في app_users مع إرسال الباسورد 🔑
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
     
     setAddingUser(true);
     try {
-      // إرسال الحقول المسجلة في جدول app_users فقط
       const insertPayload: any = {
         username: newUser.username.trim(),
+        password: newUser.password.trim() || '123456', // 🌟 ضمان إرسال الباسورد
         employee_code: newUser.employee_code.trim() || null,
         role: newUser.role,
         created_at: new Date().toISOString()
@@ -127,9 +127,9 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
 
       if (error) throw error;
 
-      alert('تم إضافة المستخدم في جدول app_users بنجاح ✅');
+      alert('تم إضافة المستخدم بكلمة السر الافتراضية (123456) بنجاح ✅');
       setShowAddModal(false);
-      setNewUser({ username: '', email: '', employee_code: '', role: 'Admin' });
+      setNewUser({ username: '', password: '123456', employee_code: '', role: 'Admin' });
       fetchAppUsers();
     } catch (err: any) {
       alert('حدث خطأ أثناء إضافة المستخدم: ' + err.message);
@@ -481,6 +481,11 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>اسم المستخدم (Username) *</label>
                 <input required type="text" placeholder="مثال: Mohamed Yassin" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold' }} />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>كلمة السر (Password) *</label>
+                <input required type="text" placeholder="123456" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontFamily: 'monospace', fontWeight: 'bold' }} />
               </div>
 
               <div>
