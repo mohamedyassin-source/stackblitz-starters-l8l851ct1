@@ -76,7 +76,7 @@ export default function ContractsPage() {
     let from = 0;
     const step = 1000;
 
-    // 1. جلب الموظفين
+    // 1. جلب جميع الموظفين
     while (true) {
       const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
       if (error || !data || data.length === 0) break;
@@ -85,7 +85,7 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 2. جلب العقود النشطة فقط
+    // 2. جلب جميع العقود النشطة
     from = 0;
     while (true) {
       const { data, error } = await supabase.from('contracts').select('*').eq('status', 'Active').range(from, from + step - 1);
@@ -105,29 +105,31 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 🌟 دمج دقيق لقراءة تاريخ نهاية العقد الصريح من جدول العقود فقط
+    // 🌟 دمج قاطع ومضمون 100% يجلب تاريخ النهاية الصريح من عمود contract_end_date لجدول العقود
     const mergedEmps = allEmps.map(emp => {
       const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
 
+      // البحث عن كل عقود الموظف النشطة في جدول contracts
       const empContracts = allContracts.filter(c => 
         String(c.employee_code || '').trim().replace(/^0+/, '') === empCodeClean
       );
 
-      // ترتيب العقود حسب أحدث تاريخ نهاية
+      // ترتيب العقود لتحديد أحدث عقد بناءً على أبعد تاريخ نهاية contract_end_date
       empContracts.sort((a, b) => {
-        const timeA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
-        const timeB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
-        return timeB - timeA;
+        const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
+        const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
+        return dateB - dateA; // الأحدث والأبعد تاريخاً في الأول
       });
 
-      const activeContract = empContracts[0];
+      const latestContract = empContracts[0];
 
       return {
         ...emp,
-        contract_id: activeContract?.contract_id,
-        contract_type: activeContract?.contract_type || emp.contract_type || '—',
-        contract_start_date: activeContract?.contract_start_date || emp.hiring_date || null,
-        contract_end_date: activeContract?.contract_end_date || null, // ⬅️ قراءة تاريخ الانتهاء الحقيقي الصريح
+        contract_id: latestContract?.contract_id,
+        contract_type: latestContract?.contract_type || emp.contract_type || '—',
+        contract_start_date: latestContract?.contract_start_date || emp.hiring_date || null,
+        // ⬅️ جلب تاريخ النهاية المباشر والمنفصل تماماً من عمود contract_end_date بجدول العقود
+        contract_end_date: latestContract?.contract_end_date || null,
       };
     });
 
