@@ -18,7 +18,7 @@ export default function EmployeesPage() {
   // حالات الترتيب والتحديد
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
+  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]); // هنخزن فيها أكواد الموظفين
 
   // النوافذ المنبثقة
   const [showAddModal, setShowAddModal] = useState(false);
@@ -166,19 +166,17 @@ export default function EmployeesPage() {
     setEditData({ emp: { ...emp }, loading: false });
   };
 
-  // 🌟 تعديل دالة الحفظ لفصل بيانات الموظف عن العقد
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
     setEditData({ ...editData, saving: true });
 
     try {
-      const empId = editData.emp.id || editData.emp.employee_id;
       const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
       const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(editData.emp, 'employee_code', 'EmployeeCode');
 
-      // 1. بيانات الموظف الأساسية (بدون بيانات العقد)
+      // 1. بيانات الموظف الأساسية
       const employeeUpdateData = {
         employee_code: empCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -193,11 +191,11 @@ export default function EmployeesPage() {
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
 
-      // تحديث جدول الموظفين
+      // تحديث جدول الموظفين بناءً على كود الموظف
       const { error: empError } = await supabase
         .from('employees')
         .update(employeeUpdateData)
-        .eq(editData.emp.id ? 'id' : 'employee_id', empId);
+        .eq('employee_code', empCode);
 
       if (empError) throw empError;
 
@@ -218,7 +216,7 @@ export default function EmployeesPage() {
 
       alert('تم حفظ التعديلات بنجاح ✅');
       setEditData(null);
-      await fetchEmployees(); // تحديث الداتا في الواجهة
+      await fetchEmployees(); 
     } catch (err: any) {
       alert('حدث خطأ أثناء الحفظ: ' + err.message);
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
@@ -231,10 +229,9 @@ export default function EmployeesPage() {
 
     setTermSaving(true);
     try {
-      const empId = selectedTermEmp.id || selectedTermEmp.employee_id;
       const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
 
-      // إنهاء خدمة في الموظفين
+      // إنهاء خدمة في الموظفين بناءً على الكود
       const { error: empError } = await supabase
         .from('employees')
         .update({
@@ -243,7 +240,7 @@ export default function EmployeesPage() {
           termination_reason: termReason,
           termination_date: termDate
         })
-        .eq(selectedTermEmp.id ? 'id' : 'employee_id', empId);
+        .eq('employee_code', empCode);
 
       if (empError) throw empError;
 
@@ -276,14 +273,13 @@ export default function EmployeesPage() {
       if (bulkDept) updatePayload.department = bulkDept;
       if (bulkCompany) updatePayload.company = bulkCompany;
 
+      // تحديث مجمع بناءً على أكواد الموظفين
       const { error } = await supabase
         .from('employees')
         .update(updatePayload)
-        .in('id', selectedEmpIds);
+        .in('employee_code', selectedEmpIds);
 
-      if (error) {
-        await supabase.from('employees').update(updatePayload).in('employee_id', selectedEmpIds);
-      }
+      if (error) throw error;
 
       alert(`✅ تم نقل ${selectedEmpIds.length} موظف بنجاح.`);
       setShowBulkTransferModal(false);
@@ -298,13 +294,11 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 تعديل دالة الإضافة لفصل الإضافة على الجدولين
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 1. إضافة الموظف
+      // 1. إضافة الموظف (بدون employee_id)
       const { error: empError } = await supabase.from('employees').insert([{
-        employee_id: `EMP-${newEmp.employee_code}`,
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
@@ -345,7 +339,7 @@ export default function EmployeesPage() {
 
   const handleExportToExcel = (onlySelected = false) => {
     const listToExport = onlySelected 
-      ? finalTableEmployees.filter(e => selectedEmpIds.includes(e.id || e.employee_id))
+      ? finalTableEmployees.filter(e => selectedEmpIds.includes(getField(e, 'employee_code', 'EmployeeCode')))
       : finalTableEmployees;
 
     const exportData = listToExport.map(e => ({
@@ -563,7 +557,12 @@ export default function EmployeesPage() {
               <thead style={{ position: 'sticky', top: 0, background: 'var(--paper-card)', zIndex: 10 }}>
                 <tr>
                   <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', textAlign: 'center', width: '40px' }}>
-                    <input type="checkbox" checked={selectedEmpIds.length === finalTableEmployees.length && finalTableEmployees.length > 0} onChange={e => setSelectedEmpIds(e.target.checked ? finalTableEmployees.map(emp => emp.id || emp.employee_id) : [])} style={{ accentColor: 'var(--brass-600)' }} />
+                    <input 
+                      type="checkbox" 
+                      checked={selectedEmpIds.length === finalTableEmployees.length && finalTableEmployees.length > 0} 
+                      onChange={e => setSelectedEmpIds(e.target.checked ? finalTableEmployees.map(emp => getField(emp, 'employee_code', 'EmployeeCode')) : [])} 
+                      style={{ accentColor: 'var(--brass-600)' }} 
+                    />
                   </th>
                   <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
                   <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
@@ -581,7 +580,7 @@ export default function EmployeesPage() {
               </thead>
               <tbody>
                 {finalTableEmployees.map((emp, i) => {
-                  const empId = emp.id || emp.employee_id;
+                  const empCode = getField(emp, 'employee_code', 'EmployeeCode');
                   const nationalId = getField(emp, 'national_id', 'NationalID');
                   const mobile = getField(emp, 'mobile', 'Mobile');
                   const isMissingData = !nationalId || !mobile;
@@ -591,10 +590,15 @@ export default function EmployeesPage() {
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid var(--line, #f1f5f9)' }}>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <input type="checkbox" checked={selectedEmpIds.includes(empId)} onChange={e => setSelectedEmpIds(e.target.checked ? [...selectedEmpIds, empId] : selectedEmpIds.filter(id => id !== empId))} style={{ accentColor: 'var(--brass-600)' }} />
+                        <input 
+                          type="checkbox" 
+                          checked={selectedEmpIds.includes(empCode)} 
+                          onChange={e => setSelectedEmpIds(e.target.checked ? [...selectedEmpIds, empCode] : selectedEmpIds.filter(id => id !== empCode))} 
+                          style={{ accentColor: 'var(--brass-600)' }} 
+                        />
                       </td>
                       <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600, #0d9488)' }}>
-                        {getField(emp, 'employee_code', 'EmployeeCode')}
+                        {empCode}
                       </td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink, #0f172a)' }}>
                         {getField(emp, 'employee_name', 'ArabicName')}
