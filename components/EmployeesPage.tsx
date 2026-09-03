@@ -18,7 +18,7 @@ export default function EmployeesPage() {
   // حالات الترتيب والتحديد
   const [sortColumn, setSortColumn] = useState<string>('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]); // هنخزن فيها أكواد الموظفين
+  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
 
   // النوافذ المنبثقة
   const [showAddModal, setShowAddModal] = useState(false);
@@ -27,10 +27,11 @@ export default function EmployeesPage() {
   const [editData, setEditData] = useState<any>(null);
   const [profileEmp, setProfileEmp] = useState<any>(null);
 
-  // حالات النقل وإنهاء الخدمة
+  // حالات النقل والحذف وإنهاء الخدمة
   const [bulkDept, setBulkDept] = useState('');
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false); // 🌟 حالة الحذف
 
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
@@ -98,7 +99,7 @@ export default function EmployeesPage() {
   const kpiStats = useMemo(() => {
     const total = baseFilteredEmployees.length;
     const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
-    const fixed = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'محدد المدة').length;
+    const fixed = baseFilteredEmployees.filter(e => String(getField(e, 'contract_type', 'ContractType')).includes('محدد')).length;
     const aboveAge = baseFilteredEmployees.filter(e => {
       const cType = getField(e, 'contract_type', 'ContractType');
       const age = getEmployeeAge(e);
@@ -116,7 +117,7 @@ export default function EmployeesPage() {
       const cType = getField(emp, 'contract_type', 'ContractType');
       const age = getEmployeeAge(emp);
       if (activeCardFilter === 'PERM') return cType === 'دائم';
-      if (activeCardFilter === 'FIXED') return cType === 'محدد المدة';
+      if (activeCardFilter === 'FIXED') return String(cType).includes('محدد');
       if (activeCardFilter === 'ABOVE_AGE') return String(cType).includes('فوق السن') || (age !== null && age >= 60);
       return true;
     });
@@ -176,7 +177,6 @@ export default function EmployeesPage() {
       const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(editData.emp, 'employee_code', 'EmployeeCode');
 
-      // 1. بيانات الموظف الأساسية
       const employeeUpdateData = {
         employee_code: empCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -191,7 +191,6 @@ export default function EmployeesPage() {
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
 
-      // تحديث جدول الموظفين بناءً على كود الموظف
       const { error: empError } = await supabase
         .from('employees')
         .update(employeeUpdateData)
@@ -199,14 +198,12 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // 2. بيانات العقد
       const contractUpdateData = {
         contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
         contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
         status: getField(editData.emp, 'status', 'Status')
       };
 
-      // تحديث جدول العقود بناءً على كود الموظف
       const { error: contractError } = await supabase
         .from('contracts')
         .update(contractUpdateData)
@@ -231,7 +228,6 @@ export default function EmployeesPage() {
     try {
       const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
 
-      // إنهاء خدمة في الموظفين بناءً على الكود
       const { error: empError } = await supabase
         .from('employees')
         .update({
@@ -244,7 +240,6 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // إنهاء خدمة في العقود
       await supabase
         .from('contracts')
         .update({ status: 'Inactive' })
@@ -273,7 +268,6 @@ export default function EmployeesPage() {
       if (bulkDept) updatePayload.department = bulkDept;
       if (bulkCompany) updatePayload.company = bulkCompany;
 
-      // تحديث مجمع بناءً على أكواد الموظفين
       const { error } = await supabase
         .from('employees')
         .update(updatePayload)
@@ -294,10 +288,34 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 دالة الحذف النهائي المضافة حديثاً
+  const handleDeleteSelected = async () => {
+    if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف بشكل نهائي من قاعدة البيانات؟\n(هذا الإجراء لا يمكن التراجع عنه وسيحذف العقود المرتبطة بهم أيضاً)`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      // 1. حذف العقود الخاصة بالموظفين
+      await supabase.from('contracts').delete().in('employee_code', selectedEmpIds);
+      
+      // 2. حذف الموظفين
+      const { error: empError } = await supabase.from('employees').delete().in('employee_code', selectedEmpIds);
+      if (empError) throw empError;
+
+      alert('تم حذف الموظفين بنجاح 🗑️✅');
+      setSelectedEmpIds([]);
+      await fetchEmployees();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الحذف: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // 1. إضافة الموظف (بدون employee_id)
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
@@ -313,7 +331,6 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // 2. إضافة العقد التابع له
       const { error: contractError } = await supabase.from('contracts').insert([{
         employee_code: newEmp.employee_code,
         contract_type: newEmp.contract_type,
@@ -509,8 +526,12 @@ export default function EmployeesPage() {
             <button onClick={() => handleExportToExcel(true)} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               تصدير المحدد 📥
             </button>
+            {/* 🌟 زر الحذف النهائي الجديد */}
+            <button onClick={handleDeleteSelected} disabled={isDeleting} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.7 : 1 }}>
+              {isDeleting ? 'جاري الحذف...' : 'حذف نهائي 🗑️'}
+            </button>
             <button onClick={() => setSelectedEmpIds([])} style={{ background: 'transparent', border: '1px solid var(--muted)', color: 'var(--muted)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
-              إلغاء ✕
+              إلغاء التحديد ✕
             </button>
           </div>
         </div>
@@ -569,7 +590,6 @@ export default function EmployeesPage() {
                   <th onClick={() => handleSort('job_title')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                   <th onClick={() => handleSort('department')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
                   
-                  {/* 🌟 تعديل عمود السن ليقبل الترتيب */}
                   <th onClick={() => handleSort('age')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
                   
                   <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
@@ -609,7 +629,6 @@ export default function EmployeesPage() {
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
                       
-                      {/* 🌟 عمود السن الصريح */}
                       <td style={{ padding: '10px' }}>
                         {renderAgeBadge(emp)}
                       </td>
@@ -722,6 +741,8 @@ export default function EmployeesPage() {
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
                   <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
                   <option value="انقطاع عن العمل">انقطاع عن العمل</option>
+                  {/* 🌟 إضافة سبب النقل */}
+                  <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
                 </select>
               </div>
 
@@ -818,8 +839,12 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
+                    {/* 🌟 تعديل أنواع العقود */}
                     <select className="db-input" value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
-                      <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                      <option value="دائم">دائم</option>
+                      <option value="محدد المدة">محدد المدة</option>
+                      <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                      <option value="عقد محدد المدة - مكافأة شاملة">عقد محدد المدة - مكافأة شاملة</option>
                     </select>
                   </div>
                   <div>
@@ -866,8 +891,12 @@ export default function EmployeesPage() {
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ التعيين</label><input type="date" value={newEmp.hiring_date} onChange={e=>setNewEmp({...newEmp, hiring_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
                 <div>
                   <label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
+                  {/* 🌟 تعديل أنواع العقود */}
                   <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }}>
-                    <option value="دائم">دائم</option><option value="محدد المدة">محدد المدة</option><option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                    <option value="دائم">دائم</option>
+                    <option value="محدد المدة">محدد المدة</option>
+                    <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                    <option value="عقد محدد المدة - مكافأة شاملة">عقد محدد المدة - مكافأة شاملة</option>
                   </select>
                 </div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
