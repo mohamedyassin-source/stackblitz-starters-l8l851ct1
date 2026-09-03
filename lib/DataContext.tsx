@@ -1,6 +1,7 @@
 'use client';
 import { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
+
 /**
  * مصدر بيانات موحّد لجدولي employees و renewal_requests و contracts.
  */
@@ -53,10 +54,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
       // 2. دمج بيانات العقد مع بيانات الموظف
       const mergedEmployees = emps.map((emp) => {
-        const empCode = String(emp.employee_code).trim();
+        // تنظيف كود الموظف من المسافات والأصفار الوهمية على اليسار
+        const empCode = String(emp.employee_code).trim().replace(/^0+/, '');
         
-        // البحث عن عقود الموظف في جدول العقود
-        const empContracts = allContracts.filter(c => String(c.employee_code).trim() === empCode);
+        // البحث عن عقود الموظف في جدول العقود مع نفس التنظيف
+        const empContracts = allContracts.filter(c => 
+          String(c.employee_code).trim().replace(/^0+/, '') === empCode
+        );
         
         // ترتيب العقود بحيث نأخذ أحدث عقد بناءً على تاريخ النهاية
         empContracts.sort((a, b) => new Date(b.contract_end_date).getTime() - new Date(a.contract_end_date).getTime());
@@ -64,7 +68,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // اختيار العقد النشط (إن وجد) أو أحدث عقد
         const activeContract = empContracts.find(c => c.status === 'Active' || c.status === 'نشط' || c.status === 'ساري') || empContracts[0];
 
-        // دمج الحقول في كائن الموظف
+        // دمج الحقول في كائن الموظف المبعوث للداشبورد
         if (activeContract) {
           return {
             ...emp,
