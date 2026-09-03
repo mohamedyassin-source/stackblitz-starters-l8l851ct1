@@ -105,20 +105,18 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 🌟 دمج قاطع ومضمون 100% يجلب تاريخ النهاية الصريح من عمود contract_end_date لجدول العقود
+    // 🌟 دمج البيانات والربط بواسطة employee_code فقط
     const mergedEmps = allEmps.map(emp => {
       const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
 
-      // البحث عن كل عقود الموظف النشطة في جدول contracts
       const empContracts = allContracts.filter(c => 
         String(c.employee_code || '').trim().replace(/^0+/, '') === empCodeClean
       );
 
-      // ترتيب العقود لتحديد أحدث عقد بناءً على أبعد تاريخ نهاية contract_end_date
       empContracts.sort((a, b) => {
         const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
         const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
-        return dateB - dateA; // الأحدث والأبعد تاريخاً في الأول
+        return dateB - dateA;
       });
 
       const latestContract = empContracts[0];
@@ -128,7 +126,6 @@ export default function ContractsPage() {
         contract_id: latestContract?.contract_id,
         contract_type: latestContract?.contract_type || emp.contract_type || '—',
         contract_start_date: latestContract?.contract_start_date || emp.hiring_date || null,
-        // ⬅️ جلب تاريخ النهاية المباشر والمنفصل تماماً من عمود contract_end_date بجدول العقود
         contract_end_date: latestContract?.contract_end_date || null,
       };
     });
@@ -175,7 +172,7 @@ export default function ContractsPage() {
   };
 
   const getRenewalStatusInfo = (empCode: string) => {
-    const empRens = renewals.filter((r) => r.employee_code === empCode).sort((a, b) => b.request_id.localeCompare(a.request_id));
+    const empRens = renewals.filter((r) => String(r.employee_code).trim() === String(empCode).trim()).sort((a, b) => b.request_id.localeCompare(a.request_id));
     const latest = empRens[0];
     if (!latest) return { text: 'متاح للتجديد', color: 'var(--muted)', locked: false };
     if (latest.status === 'Pending') return { text: 'قيد المعالجة', color: 'var(--stamp-blue)', locked: true };
@@ -255,11 +252,6 @@ export default function ContractsPage() {
     setEditModal({ isOpen: true, emp });
   };
 
-  const getEmpId = (emp: any) => {
-    if (!emp) return '0';
-    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
-  };
-
   const handleDeleteSelected = async () => {
     if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpCodes.length} موظف بشكل نهائي من قاعدة البيانات؟\n(هذا الإجراء لا يمكن التراجع عنه وسيحذف العقود المرتبطة بهم أيضاً)`)) {
       return;
@@ -335,7 +327,6 @@ export default function ContractsPage() {
     } else {
       const { error } = await supabase.from('contracts').insert([{
         employee_code: editModal.emp.employee_code,
-        employee_id: getEmpId(editModal.emp),
         contract_type: editContractType,
         contract_start_date: editStartDate,
         contract_end_date: editEndDate,
@@ -352,6 +343,7 @@ export default function ContractsPage() {
     fetchData();
   };
 
+  // 🌟 تعديل عدم إرسال employee_id في طلب الإنشاء الجديد
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى اختيار الموظف من القائمة.');
@@ -364,7 +356,6 @@ export default function ContractsPage() {
 
     const payload: any = {
       request_id: reqId,
-      employee_id: getEmpId(emp),
       employee_code: emp.employee_code,
       employee_name: emp.employee_name,
       department: emp.department,
@@ -387,7 +378,6 @@ export default function ContractsPage() {
     
     await supabase.from('contracts').insert([{
       employee_code: emp.employee_code,
-      employee_id: getEmpId(emp),
       contract_type: newContractType,
       contract_start_date: newContractStartDate,
       contract_end_date: newContractEndDate,
@@ -402,6 +392,7 @@ export default function ContractsPage() {
     fetchData();
   };
 
+  // 🌟 تعديل عدم إرسال employee_id في طلب التجديد
   const confirmRenewalAction = async () => {
     if (renewalMode === 'custom' && !customEndDate) return alert('يرجى إدخال تاريخ الانتهاء المخصص.');
     setActionLoading(true);
@@ -412,7 +403,6 @@ export default function ContractsPage() {
       const [reqId] = generateSequentialIds(1);
       const payload: any = {
         request_id: reqId,
-        employee_id: getEmpId(emp),
         employee_code: emp.employee_code,
         employee_name: emp.employee_name,
         department: emp.department,
@@ -439,7 +429,6 @@ export default function ContractsPage() {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
         return {
           request_id: reqIds[index],
-          employee_id: getEmpId(emp),
           employee_code: emp.employee_code,
           employee_name: emp.employee_name,
           department: emp.department,
