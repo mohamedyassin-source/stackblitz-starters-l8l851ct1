@@ -58,7 +58,6 @@ export default function RenewalsPage() {
   const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean, type: 'single' | 'bulk', req?: any }>({ isOpen: false, type: 'single' });
   const [confirmedMonths, setConfirmedMonths] = useState<number>(12);
   
-  // 🌟 حالات التحكم التفاعلي بالتواريخ اليدوية داخل النافذة
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
@@ -70,7 +69,6 @@ export default function RenewalsPage() {
     setSelectedIds([]);
   }, [activeTab]);
 
-  // 🌟 تحديث التواريخ اليدوية تلقائياً عند فتح النافذة أو تغيير مدة الشهور
   useEffect(() => {
     if (approvalModal.isOpen && approvalModal.type === 'single' && approvalModal.req) {
       const start = calculateNewStartDate(approvalModal.req.contract_end_date) || '';
@@ -143,6 +141,7 @@ export default function RenewalsPage() {
           return alert('يرجى التأكد من إدخال تواريخ البداية والنهاية بشكل صحيح.');
         }
 
+        // 1. تحديث جدول طلبات التجديد
         const { error: reqError } = await supabase.from('renewal_requests').update({
           status: 'Approved',
           signature_status: 'في انتظار توقيع الموظف',
@@ -152,11 +151,13 @@ export default function RenewalsPage() {
 
         if (reqError) throw reqError;
 
-        const { error: empError } = await supabase.from('employees').update({ 
+        // 🌟 2. تحديث التواريخ في جدول العقود بدلاً من جدول الموظفين
+        const { error: contractError } = await supabase.from('contracts').update({ 
           contract_start_date: newStartDate,
           contract_end_date: newEndDate 
-        }).eq('employee_code', req.employee_code);
-        if (empError) throw empError;
+        }).eq('employee_code', req.employee_code).eq('status', 'Active');
+        
+        if (contractError) throw contractError;
 
         alert(`تم اعتماد الطلب وتحديث العقد بنجاح: \n يبدأ في: ${newStartDate} \n ينتهي في: ${newEndDate} ✅`);
         await refreshGlobalData();
@@ -167,6 +168,7 @@ export default function RenewalsPage() {
           const newStartDate = calculateNewStartDate(req.contract_end_date);
           const newEndDate = calculateNewEndDateFromStart(newStartDate, confirmedMonths);
           
+          // تحديث الطلب
           const { error: reqError } = await supabase.from('renewal_requests').update({
             status: 'Approved',
             signature_status: 'في انتظار توقيع الموظف',
@@ -176,17 +178,19 @@ export default function RenewalsPage() {
 
           if (reqError) throw reqError;
 
+          // 🌟 تحديث العقد النشط الخاص بالموظف
           if (newEndDate && newStartDate) {
-            const { error: empError } = await supabase.from('employees').update({ 
+            const { error: contractError } = await supabase.from('contracts').update({ 
               contract_start_date: newStartDate,
               contract_end_date: newEndDate 
-            }).eq('employee_code', req.employee_code);
-            if (empError) throw empError;
+            }).eq('employee_code', req.employee_code).eq('status', 'Active');
+            
+            if (contractError) throw contractError;
           }
         });
 
         await Promise.all(updatePromises);
-        alert(`تم اعتماد ${reqsToApprove.length} طلب تجديد وتحديث بيانات الموظفين بنجاح ✅`);
+        alert(`تم اعتماد ${reqsToApprove.length} طلب وتحديث عقود الموظفين بنجاح ✅`);
         await refreshGlobalData();
       }
 
@@ -195,13 +199,12 @@ export default function RenewalsPage() {
       await fetchRequests(); 
 
     } catch (err: any) {
-      alert('حدث خطأ أثناء الاعتماد أو تحديث بيانات الموظف: ' + err.message);
+      alert('حدث خطأ أثناء الاعتماد أو تحديث بيانات العقد: ' + err.message);
     } finally {
       setActionLoading(false);
     }
   };
 
-  // 🌟 دالة حذف طلب التجديد نهائياً
   const handleDeleteRequest = async (requestId: string) => {
     const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟\n\nتنبيه: سيتم إزالة الطلب وكأنه لم يكن.');
     if (!confirmDelete) return;
@@ -443,7 +446,6 @@ export default function RenewalsPage() {
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                             <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
                             <button onClick={() => handleReject(req.request_id)} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
-                            {/* 🌟 زر الحذف السريع بداخل السطر */}
                             <button onClick={() => handleDeleteRequest(req.request_id)} style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>حذف 🗑️</button>
                           </div>
                         ) : (
@@ -482,7 +484,6 @@ export default function RenewalsPage() {
                 سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. ويمكنك تعديل التواريخ يدوياً قبل الاعتماد.
               </p>
               
-              {/* 🌟 مدخلات قابلة للتعديل والكتابة اليدوية للتواريخ */}
               {approvalModal.type === 'single' && approvalModal.req && (
                 <div style={{ background: 'var(--paper)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: 'var(--ink)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ marginBottom: '2px' }}><strong>تاريخ النهاية القديم:</strong> {approvalModal.req.contract_end_date || 'غير مسجل'}</div>
