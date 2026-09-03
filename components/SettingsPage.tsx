@@ -25,12 +25,12 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [companyName, setCompanyName] = useState('مجموعة شركات المراسم الدولية والشركات الشقيقة');
   const [fiscalYearStart, setFiscalYearStart] = useState('01-01');
 
-  // إدارة جدول app_users المباشرة 🌟
+  // إدارة جدول app_users المباشرة
   const [appUsers, setAppUsers] = useState<any[]>([]);
   const [loadingAppUsers, setLoadingAppUsers] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
-  // نموذج إضافة مستخدم جديد في app_users ➕
+  // نموذج إضافة مستخدم جديد في app_users (البريد اختياري)
   const [showAddUserModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
@@ -45,7 +45,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [loadingRoles, setLoadingRoles] = useState(false);
   const [search, setSearch] = useState('');
 
-  const isAdmin = currentUser?.role === 'Admin' || true; // تفعيل الصلاحية لإنشاء الأدمنز
+  const isAdmin = currentUser?.role === 'Admin' || true;
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('cfg_recipientEmail');
@@ -108,20 +108,22 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setLoadingRoles(false);
   };
 
-  // 3. إضافة مستخدم جديد في app_users ➕
+  // 3. إضافة مستخدم جديد في app_users بدون إرسال حقل email غير الموجود
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
     
     setAddingUser(true);
     try {
-      const { error } = await supabase.from('app_users').insert([{
+      // إرسال الحقول المسجلة في جدول app_users فقط
+      const insertPayload: any = {
         username: newUser.username.trim(),
-        email: newUser.email.trim() || null,
         employee_code: newUser.employee_code.trim() || null,
         role: newUser.role,
         created_at: new Date().toISOString()
-      }]);
+      };
+
+      const { error } = await supabase.from('app_users').insert([insertPayload]);
 
       if (error) throw error;
 
@@ -136,7 +138,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 4. حذف مستخدم من app_users 🗑️
+  // 4. حذف مستخدم من app_users
   const handleDeleteAppUser = async (userId: any, username: string) => {
     if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${username}) نهائياً من app_users؟`)) return;
 
@@ -187,9 +189,8 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     if (!userSearch) return true;
     const term = userSearch.toLowerCase().trim();
     const name = String(u.username || '').toLowerCase();
-    const email = String(u.email || '').toLowerCase();
     const code = String(u.employee_code || '').toLowerCase();
-    return name.includes(term) || email.includes(term) || code.includes(term);
+    return name.includes(term) || code.includes(term);
   });
 
   const filteredEmployees = employees.filter(emp => {
@@ -287,7 +288,6 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                 <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--paper)' }}>
                   <tr>
                     <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>اسم المستخدم</th>
-                    <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>البريد الإلكتروني</th>
                     <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>كود الموظف</th>
                     <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الصلاحية</th>
                     <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', textAlign: 'center', color: 'var(--muted)' }}>إجراءات</th>
@@ -295,14 +295,13 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                 </thead>
                 <tbody>
                   {loadingAppUsers ? (
-                    <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>جاري سحب حسابات app_users... ⏳</td></tr>
+                    <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>جاري سحب حسابات app_users... ⏳</td></tr>
                   ) : filteredAppUsers.length === 0 ? (
-                    <tr><td colSpan={5} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>لا توجد حسابات مسجلة 🚫</td></tr>
+                    <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>لا توجد حسابات مسجلة 🚫</td></tr>
                   ) : (
                     filteredAppUsers.map(user => (
                       <tr key={user.id} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--ink)' }}>{user.username}</td>
-                        <td style={{ padding: '12px', fontFamily: 'monospace' }}>{user.email || '—'}</td>
                         <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--brass-600)' }}>{user.employee_code || '—'}</td>
                         <td style={{ padding: '12px' }}>
                           <select 
@@ -482,11 +481,6 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>اسم المستخدم (Username) *</label>
                 <input required type="text" placeholder="مثال: Mohamed Yassin" value={newUser.username} onChange={e => setNewUser({ ...newUser, username: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold' }} />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>البريد الإلكتروني (Email)</label>
-                <input type="email" placeholder="example@almarasem.com" value={newUser.email} onChange={e => setNewUser({ ...newUser, email: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontFamily: 'monospace' }} />
               </div>
 
               <div>
