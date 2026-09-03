@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
@@ -44,20 +44,42 @@ export default function ReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [selectedCompany, setSelectedCompany] = useState('');
-  const [selectedDept, setSelectedDept] = useState('');
   const [selectedContractType, setSelectedContractType] = useState('');
+
+  // 🌟 فلتر الإدارات المتعدد مع البحث والـ Checkbox
+  const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
+  const [deptSearchTerm, setDeptSearchTerm] = useState('');
+  const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
+  const deptDropdownRef = useRef<HTMLDivElement>(null);
+
+  // إغلاق القائمة عند النقر خارجها
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (deptDropdownRef.current && !deptDropdownRef.current.contains(event.target as Node)) {
+        setIsDeptDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // استخراج القوائم المتاحة للفلاتر
   const companiesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const contractTypesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
 
+  // الإدارات المفلترة داخل قائمة البحث
+  const filteredDeptsList = useMemo(() => {
+    if (!deptSearchTerm.trim()) return deptsList;
+    return deptsList.filter(d => String(d).toLowerCase().includes(deptSearchTerm.toLowerCase().trim()));
+  }, [deptsList, deptSearchTerm]);
+
   // تجهيز البيانات النشطة فقط
   const activeEmployees = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // 🌟 فلترة البيانات حسب التقرير المختار
+  // 🌟 فلترة البيانات حسب التقرير والإدارات المحددة
   const reportData = useMemo(() => {
     return activeEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -85,15 +107,15 @@ export default function ReportsPage() {
         if (!isAbove60 && !isAboveAgeType) return false;
       }
 
-      // 2. تطبيق الفلاتر الإضافية (الشركة - الإدارة - نوع العقد - البحث)
+      // 2. تطبيق الفلاتر الإضافية (الشركة - الإدارات المتعددة - نوع العقد - البحث)
       const matchesSearch = !searchTerm || code.includes(searchTerm.toLowerCase()) || name.includes(searchTerm.toLowerCase());
       const matchesComp = !selectedCompany || comp === selectedCompany;
-      const matchesDept = !selectedDept || dept === selectedDept;
+      const matchesDept = selectedDepts.length === 0 || selectedDepts.includes(dept);
       const matchesType = !selectedContractType || cType === selectedContractType;
 
       return matchesSearch && matchesComp && matchesDept && matchesType;
     });
-  }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDept, selectedContractType, searchTerm]);
+  }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm]);
 
   // 📊 ملخص الإدارات (مخصص لتقرير dept_summary)
   const deptSummaryData = useMemo(() => {
@@ -116,6 +138,13 @@ export default function ReportsPage() {
 
     return Object.entries(summary).map(([dept, counts]) => ({ dept, ...counts }));
   }, [reportData]);
+
+  // تبديل اختيار إدارة معينة
+  const toggleDeptSelection = (deptName: string) => {
+    setSelectedDepts(prev => 
+      prev.includes(deptName) ? prev.filter(d => d !== deptName) : [...prev, deptName]
+    );
+  };
 
   // تصدير Excel
   const handleExportExcel = () => {
@@ -166,7 +195,7 @@ export default function ReportsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات</h3>
-          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>تقارير منظمة ومباشرة حسب الشهر، الإدارة، والشركات</p>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>تقارير منظمة ومباشرة حسب الشهر، الإدارات المحددة، والشركات</p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -179,7 +208,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 🌟 كروت اختيار نوع التقرير */}
+      {/* كروت اختيار نوع التقرير */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
           { id: 'monthly', icon: '🗓️', title: 'تقرير انتهاء العقود الشهري', desc: 'حسب الشهر والسنة المحددة' },
@@ -208,10 +237,10 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      {/* 🛠️ شريط الفلاتر الذكي والمرن */}
+      {/* 🛠️ شريط الفلاتر مع قائمة الإدارات المتعددة والبحث */}
       <div className="no-print" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         
-        {/* فلتر الشهر والسنة يظهر في تقرير انتهاء العقود */}
+        {/* فلتر الشهر والسنة */}
         {activeReport === 'monthly' && (
           <div style={{ display: 'flex', gap: '6px', background: 'var(--paper)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--line)', alignItems: 'center' }}>
             <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--stamp-blue)' }}>🗓️ استحقاق شهر:</span>
@@ -229,12 +258,13 @@ export default function ReportsPage() {
           </div>
         )}
 
+        {/* بحث بالاسم أو الكود */}
         <input
           type="text"
           placeholder="بحث بالاسم أو الكود..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px', fontWeight: 'bold' }}
+          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '160px', fontWeight: 'bold' }}
         />
 
         {/* فلتر الشركة */}
@@ -243,11 +273,102 @@ export default function ReportsPage() {
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        {/* فلتر الإدارة */}
-        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', fontWeight: 'bold' }}>
-          <option value="">💼 كل الإدارات</option>
-          {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
-        </select>
+        {/* 🌟 فلتر الإدارات المطور (مربع بحث + Checkbox متعدد) */}
+        <div style={{ position: 'relative' }} ref={deptDropdownRef}>
+          <button
+            type="button"
+            onClick={() => setIsDeptDropdownOpen(!isDeptDropdownOpen)}
+            style={{
+              padding: '8px 14px',
+              borderRadius: '8px',
+              border: selectedDepts.length > 0 ? '2px solid var(--stamp-blue)' : '1px solid var(--line)',
+              background: selectedDepts.length > 0 ? 'var(--stamp-blue-bg)' : 'var(--paper-card)',
+              color: selectedDepts.length > 0 ? 'var(--stamp-blue)' : 'var(--navy-950)',
+              fontSize: '11px',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              minWidth: '160px',
+              justify: 'space-between'
+            }}
+          >
+            <span>💼 الإدارات ({selectedDepts.length === 0 ? 'الكل' : selectedDepts.length})</span>
+            <span>▼</span>
+          </button>
+
+          {isDeptDropdownOpen && (
+            <div style={{
+              position: 'absolute',
+              top: '100%',
+              right: 0,
+              width: '260px',
+              background: 'var(--paper-card, #fff)',
+              border: '1px solid var(--line)',
+              borderRadius: '12px',
+              padding: '12px',
+              marginTop: '6px',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+              zIndex: 100,
+            }}>
+              {/* مربع البحث داخل القائمة */}
+              <input
+                type="text"
+                placeholder="🔍 ابحث اسم الإدارة..."
+                value={deptSearchTerm}
+                onChange={e => setDeptSearchTerm(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--line)',
+                  fontSize: '11px',
+                  outline: 'none',
+                  marginBottom: '10px',
+                  boxSizing: 'border-box'
+                }}
+              />
+
+              {/* أزرار التحكم السريع */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid var(--line)' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDepts([...deptsList])}
+                  style={{ background: 'transparent', border: 0, color: 'var(--stamp-blue)', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  تحديد الكل
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedDepts([])}
+                  style={{ background: 'transparent', border: 0, color: 'var(--stamp-red)', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  إلغاء التحديد
+                </button>
+              </div>
+
+              {/* قائمة الإدارات المفلترة مع الـ Checkboxes */}
+              <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {filteredDeptsList.length === 0 ? (
+                  <div style={{ fontSize: '11px', color: 'var(--muted)', textAlign: 'center', padding: '8px' }}>لا توجد إدارة بهذا الاسم</div>
+                ) : (
+                  filteredDeptsList.map((d, i) => (
+                    <label key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: selectedDepts.includes(d) ? 'bold' : 'normal', color: 'var(--navy-950)' }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedDepts.includes(d)}
+                        onChange={() => toggleDeptSelection(d)}
+                        style={{ accentColor: 'var(--stamp-blue)', cursor: 'pointer' }}
+                      />
+                      {d}
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* فلتر نوع العقد */}
         <select value={selectedContractType} onChange={e => setSelectedContractType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', fontWeight: 'bold' }}>
@@ -259,7 +380,8 @@ export default function ReportsPage() {
           onClick={() => {
             setSearchTerm('');
             setSelectedCompany('');
-            setSelectedDept('');
+            setSelectedDepts([]);
+            setDeptSearchTerm('');
             setSelectedContractType('');
             setSelectedMonth(String(new Date().getMonth() + 1));
             setSelectedYear(new Date().getFullYear().toString());
@@ -287,7 +409,7 @@ export default function ReportsPage() {
               {activeReport === 'dept_summary' && 'تقرير ملخص إحصائيات العقود موزعة حسب الإدارات'}
               {activeReport === 'full_roster' && 'السجل الموحد العام لجميع الموظفين النشطين'}
               {selectedCompany && ` - شركة: ${selectedCompany}`}
-              {selectedDept && ` - إدارة: ${selectedDept}`}
+              {selectedDepts.length > 0 && ` - الإدارات: (${selectedDepts.join('، ')})`}
             </p>
           </div>
 
@@ -297,7 +419,7 @@ export default function ReportsPage() {
           </div>
         </div>
 
-        {/* عرض البيانات بناءً على التقرير المختار */}
+        {/* عرض البيانات */}
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري إعداد التقرير... ⏳</div>
         ) : activeReport === 'dept_summary' ? (
