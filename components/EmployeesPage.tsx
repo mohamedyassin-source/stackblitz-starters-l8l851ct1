@@ -31,7 +31,7 @@ export default function EmployeesPage() {
   const [bulkDept, setBulkDept] = useState('');
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false); // 🌟 حالة الحذف
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const [termSearch, setTermSearch] = useState('');
   const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
@@ -39,11 +39,21 @@ export default function EmployeesPage() {
   const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
   const [termSaving, setTermSaving] = useState(false);
 
-  // الموظف الجديد
+  // 🌟 الموظف الجديد مع إضافة تاريخ الميلاد وتاريخ نهاية العقد
   const [newEmp, setNewEmp] = useState({
-    employee_code: '', employee_name: '', national_id: '',
-    department: '', company: '', job_title: '', hiring_date: '',
-    contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: ''
+    employee_code: '', 
+    employee_name: '', 
+    national_id: '',
+    birth_date: '', // 🎂 جديد
+    department: '', 
+    company: '', 
+    job_title: '', 
+    hiring_date: '',
+    contract_type: 'محدد المدة', 
+    contract_end_date: '', // 📄 جديد برمي في جدول العقود
+    status: 'Active', 
+    email: '', 
+    mobile: ''
   });
 
   const getField = (obj: any, ...keys: string[]) => {
@@ -288,7 +298,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 دالة الحذف النهائي المضافة حديثاً
   const handleDeleteSelected = async () => {
     if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف بشكل نهائي من قاعدة البيانات؟\n(هذا الإجراء لا يمكن التراجع عنه وسيحذف العقود المرتبطة بهم أيضاً)`)) {
       return;
@@ -296,10 +305,8 @@ export default function EmployeesPage() {
 
     setIsDeleting(true);
     try {
-      // 1. حذف العقود الخاصة بالموظفين
       await supabase.from('contracts').delete().in('employee_code', selectedEmpIds);
       
-      // 2. حذف الموظفين
       const { error: empError } = await supabase.from('employees').delete().in('employee_code', selectedEmpIds);
       if (empError) throw empError;
 
@@ -313,13 +320,25 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 دالة الإضافة مع ربط تاريخ الميلاد بجدول الموظفين وتاريخ نهاية العقد بجدول العقود
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // حساب السن بناءً على تاريخ الميلاد إن وجد
+      let calculatedAge = null;
+      if (newEmp.birth_date) {
+        const birth = new Date(newEmp.birth_date);
+        const today = new Date();
+        calculatedAge = today.getFullYear() - birth.getFullYear();
+      }
+
+      // 1. إضافة بيانات الموظف في جدول employees
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
+        birth_date: newEmp.birth_date ? newEmp.birth_date : null, // 🎂 رمي تاريخ الميلاد
+        age: calculatedAge,
         department: newEmp.department,
         company: newEmp.company,
         job_title: newEmp.job_title,
@@ -331,10 +350,11 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
+      // 2. إضافة العقد التابع للموظف في جدول contracts
       const { error: contractError } = await supabase.from('contracts').insert([{
         employee_code: newEmp.employee_code,
         contract_type: newEmp.contract_type,
-        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
+        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date, // 📄 رمي نهاية العقد
         contract_start_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         status: newEmp.status
       }]);
@@ -344,7 +364,7 @@ export default function EmployeesPage() {
       alert('تم إضافة الموظف وعقده بنجاح ✅');
       setShowAddModal(false);
       setNewEmp({
-        employee_code: '', employee_name: '', national_id: '',
+        employee_code: '', employee_name: '', national_id: '', birth_date: '',
         department: '', company: '', job_title: '', hiring_date: '',
         contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: ''
       });
@@ -526,7 +546,6 @@ export default function EmployeesPage() {
             <button onClick={() => handleExportToExcel(true)} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               تصدير المحدد 📥
             </button>
-            {/* 🌟 زر الحذف النهائي الجديد */}
             <button onClick={handleDeleteSelected} disabled={isDeleting} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.7 : 1 }}>
               {isDeleting ? 'جاري الحذف...' : 'حذف نهائي 🗑️'}
             </button>
@@ -537,7 +556,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* الفلاتر والبحث مع فلتر مجال السن الجديد 🎂 */}
+      {/* الفلاتر والبحث */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '200px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
         
@@ -552,7 +571,6 @@ export default function EmployeesPage() {
           {typesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
         </select>
 
-        {/* 🌟 فلتر السن المطور */}
         <select value={selectedAgeRange} onChange={e => setSelectedAgeRange(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)', fontWeight: 'bold' }}>
           <option value="">فئة السن (الكل)</option>
           <option value="60_plus">💼 فوق السن (60 سنة فأكثر)</option>
@@ -568,7 +586,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* الجدول الرئيسي للموظفين مع عرض السن صراحة */}
+      {/* الجدول الرئيسي */}
       <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
@@ -589,9 +607,7 @@ export default function EmployeesPage() {
                   <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
                   <th onClick={() => handleSort('job_title')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                   <th onClick={() => handleSort('department')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
-                  
                   <th onClick={() => handleSort('age')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
-                  
                   <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
                   <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
                   <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('contract_end_date')}</th>
@@ -628,17 +644,12 @@ export default function EmployeesPage() {
                       </td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
                       <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
-                      
-                      <td style={{ padding: '10px' }}>
-                        {renderAgeBadge(emp)}
-                      </td>
-
+                      <td style={{ padding: '10px' }}>{renderAgeBadge(emp)}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', color: 'var(--ink, #0f172a)' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{cType || '—'}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
                         {getContractStatusBadge(cType, endDate)}
                       </td>
-
                       <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
                         <button onClick={() => setProfileEmp(emp)} style={{ background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--line)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
                         <button onClick={() => handleOpenEdit(emp)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
@@ -665,6 +676,7 @@ export default function EmployeesPage() {
               <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
               <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
               <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل'}</div>
+              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>تاريخ الميلاد:</strong> {getField(profileEmp, 'birth_date', 'BirthDate') || 'غير مسجل'}</div>
               <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
               <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
               <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
@@ -681,7 +693,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* 🚫 نافذة إنهاء الخدمة / تحويل تحت الاعتماد */}
+      {/* 🚫 نافذة إنهاء الخدمة */}
       {showTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -692,7 +704,7 @@ export default function EmployeesPage() {
 
             <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف (اكتب كود أو اسم الموظف):</label>
+                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف:</label>
                 <div style={{ position: 'relative' }}>
                   <input 
                     type="text"
@@ -741,7 +753,6 @@ export default function EmployeesPage() {
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
                   <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
                   <option value="انقطاع عن العمل">انقطاع عن العمل</option>
-                  {/* 🌟 إضافة سبب النقل */}
                   <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
                 </select>
               </div>
@@ -799,7 +810,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ✏️ نافذة التعديل الفردي الشامل مع تعديل السن */}
+      {/* ✏️ نافذة التعديل الفردي */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -839,7 +850,6 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
-                    {/* 🌟 تعديل أنواع العقود */}
                     <select className="db-input" value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
                       <option value="دائم">دائم</option>
                       <option value="محدد المدة">محدد المدة</option>
@@ -871,10 +881,10 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ➕ نافذة الإضافة المباشرة */}
+      {/* ➕ نافذة الإضافة المباشرة مع إضافة حقول الميلاد ونهاية العقد 🎂📄 */}
       {showAddModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '650px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+          <div className="db-card" style={{ width: '700px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>إضافة موظف جديد</h3>
               <button onClick={() => setShowAddModal(false)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
@@ -885,13 +895,17 @@ export default function EmployeesPage() {
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>كود الموظف *</label><input required value={newEmp.employee_code} onChange={e=>setNewEmp({...newEmp, employee_code: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الاسم *</label><input required value={newEmp.employee_name} onChange={e=>setNewEmp({...newEmp, employee_name: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الرقم القومي</label><input value={newEmp.national_id} onChange={e=>setNewEmp({...newEmp, national_id: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                
+                {/* 🎂 حقل تاريخ الميلاد الجديد */}
+                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ الميلاد</label><input type="date" value={newEmp.birth_date} onChange={e=>setNewEmp({...newEmp, birth_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الإدارة</label><input value={newEmp.department} onChange={e=>setNewEmp({...newEmp, department: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الشركة</label><input value={newEmp.company} onChange={e=>setNewEmp({...newEmp, company: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الوظيفة</label><input value={newEmp.job_title} onChange={e=>setNewEmp({...newEmp, job_title: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ التعيين</label><input type="date" value={newEmp.hiring_date} onChange={e=>setNewEmp({...newEmp, hiring_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                
                 <div>
                   <label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
-                  {/* 🌟 تعديل أنواع العقود */}
                   <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }}>
                     <option value="دائم">دائم</option>
                     <option value="محدد المدة">محدد المدة</option>
@@ -899,11 +913,15 @@ export default function EmployeesPage() {
                     <option value="عقد محدد المدة - مكافأة شاملة">عقد محدد المدة - مكافأة شاملة</option>
                   </select>
                 </div>
+
+                {/* 📄 حقل تاريخ نهاية العقد الجديد المربوط بجدول العقود */}
+                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (للعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? 'var(--paper)' : 'transparent', color:'var(--ink)' }} /></div>
+
                 <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
                 <button type="button" onClick={() => setShowAddModal(false)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف</button>
+                <button type="submit" style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف وعقده</button>
               </div>
             </form>
           </div>
