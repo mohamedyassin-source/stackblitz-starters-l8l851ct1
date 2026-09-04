@@ -1012,7 +1012,7 @@ export default function EmployeesPage() {
       openRequestedEmployee
     );
   };
-}, [employees, loading]);
+[employees, loading]);
   ]);
 
   // ============================================================
