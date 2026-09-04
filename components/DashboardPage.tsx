@@ -318,7 +318,7 @@ export default function DashboardPage() {
     });
   }, [dashboardData.allTurning60List, ageModalFilterMode, ageModalSelectedMonth, ageModalSelectedYear]);
 
-  // 🌟 معالجة ضغط الصفوف والتنقل بدون أخطاء القيم الفارغة
+  // 🌟 دالة التنقل المحصنة بدون وسائط إضافية لـ navigateTo لتجنب أي أخطاء
   const handleRowClick = (rawCode: any, targetPage: 'contracts' | 'employees' = 'contracts') => {
     const code = String(rawCode || '').trim();
     if (!code) return;
@@ -334,7 +334,7 @@ export default function DashboardPage() {
 
     localStorage.setItem('jumpSearch', code);
     localStorage.setItem('employeeSearch', code);
-    navigateTo(targetPage, { jumpSearch: code });
+    navigateTo(targetPage);
   };
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -342,6 +342,7 @@ export default function DashboardPage() {
   
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
+  // 🎨 ثيم الألوان المحدث للرسمة الخماسية
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.rewardCount + dashboardData.aboveAgeCount + dashboardData.shortTermTotal;
   const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
   const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
@@ -431,7 +432,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* الرسم البياني الشهري */}
+        {/* 📈 الرسم البياني الشهري التفاعلي */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-6 text-[13.5px] font-black" style={{ color: '#0f172a' }}>
             📈 التوزيع الشهري لبدايات العقود النشطة والمجددة (اضغط على الشهر للتفاصيل)
@@ -531,8 +532,7 @@ export default function DashboardPage() {
                           )}
                         </td>
                       </tr>
-                    );
-                  })}
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -540,7 +540,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ⚠️ نافذة نواقص البيانات (تم إصلاح زر التحديث ليوجه مباشرة لصفحة الموظف) */}
+      {/* ⚠️ نافذة نواقص البيانات المحدثة */}
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -574,9 +574,9 @@ export default function DashboardPage() {
                             {!emp.mobile && <span>- الموبايل </span>}
                           </td>
                           <td style={{ padding: '10px', textAlign: 'center' }}>
-                            {/* ✅ توجيه مباشر ومضمون لصفحة الموظفين مع فتح الكود المعني */}
+                            {/* ✅ توجيه مباشر ومضمون لصفحة الموظفين مع اختيار كود الموظف */}
                             <button 
-                              onClick={() => handleRowClick(employee_code, 'employees')} 
+                              onClick={() => handleRowClick(empCode, 'employees')} 
                               style={{ background: '#2563eb', color: '#ffffff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                             >
                               تحديث السجل ✏️
@@ -593,7 +593,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* النوافذ المنبثقة التفاعلية للرسومات واللوحات */}
+      {/* باقي النوافذ المنبثقة التفاعلية */}
       {selectedDeptDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
