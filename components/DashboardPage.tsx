@@ -576,7 +576,7 @@ export default function DashboardPage() {
                           <td style={{ padding: '10px', textAlign: 'center' }}>
                             {/* ✅ توجيه مباشر ومضمون لصفحة الموظفين مع فتح الكود المعني */}
                             <button 
-                              onClick={() => handleRowClick(empCode, 'employees')} 
+                              onClick={() => handleRowClick(employee_code, 'employees')} 
                               style={{ background: '#2563eb', color: '#ffffff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                             >
                               تحديث السجل ✏️
