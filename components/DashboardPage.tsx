@@ -23,14 +23,18 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // حساب الأيام المتبقية بدقة مع تصفير التوقيع الزمني لليوم
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;
-    const end = new Date(endDateStr);
+    const cleanStr = String(endDateStr).split('T')[0].trim();
+    const end = new Date(cleanStr);
     if (isNaN(end.getTime())) return null;
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
+  // استخراج تاريخ بلوغ الـ 60 من الرقم القومي (14 رقم)
   const getAge60Info = (nationalId: string) => {
     if (!nationalId || String(nationalId).trim().length !== 14) return null;
     const idStr = String(nationalId).trim();
@@ -45,6 +49,7 @@ export default function DashboardPage() {
     const age60Date = new Date(birthDate);
     age60Date.setFullYear(age60Date.getFullYear() + 60);
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const daysUntil60 = Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
     return { birthDate: birthDate.toISOString().split('T')[0], age60Date: age60Date.toISOString().split('T')[0], daysUntil60 };
@@ -54,7 +59,6 @@ export default function DashboardPage() {
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    // التأكد من استبعاد الموظفين المرفوضين أو المنتهين بناء على حالة الموظف نفسه
     const activeEmployeesOnly = allEmployees.filter(emp => (emp.status || 'Active') === 'Active' && emp.department !== 'تحويلات تحت الاعتماد');
 
     const filteredEmps = activeEmployeesOnly.filter((emp) => {
@@ -88,7 +92,6 @@ export default function DashboardPage() {
       const type = emp.contract_type || '';
       const dept = emp.department || 'غير محدد';
       
-      // قراءة حالة العقد اللي جابها DataContext
       const isContractActive = !emp.contract_status || 
                                emp.contract_status === 'Active' || 
                                emp.contract_status === 'ساري' || 
@@ -100,7 +103,6 @@ export default function DashboardPage() {
         missingDataList.push(emp);
       }
 
-      // حساب شهور العقود النشطة
       if (emp.contract_start_date && isContractActive) {
         const dateStr = String(emp.contract_start_date).trim();
         let monthIdx = -1;
@@ -125,7 +127,7 @@ export default function DashboardPage() {
         }
       }
 
-      if (type === 'دائم') {
+      if (type === 'دائم' || type.includes('غير محدد')) {
         perm++;
         const ageInfo = getAge60Info(emp.national_id);
         if (ageInfo && ageInfo.daysUntil60 <= 60) {
@@ -137,7 +139,7 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      if (type !== 'دائم' && isContractActive) {
+      if (type !== 'دائم' && !type.includes('غير محدد') && isContractActive) {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
           if (days < 0) {
@@ -192,7 +194,7 @@ export default function DashboardPage() {
     const shortTermList = Object.entries(shortTermByDept)
       .map(([deptName, emps]) => ({ 
         deptName, 
-        emps: emps.sort((a, b) => getDaysRemaining(a.contract_end_date)! - getDaysRemaining(b.contract_end_date)!) 
+        emps: emps.sort((a, b) => (getDaysRemaining(a.contract_end_date) ?? 9999) - (getDaysRemaining(b.contract_end_date) ?? 9999)) 
       }))
       .sort((a, b) => b.emps.length - a.emps.length);
 
@@ -267,13 +269,14 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* الكروت السريعة */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      {/* الكروت السريعة الشاملة (7 كروت) */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         <KpiCard loading={loading} tone="brass" title="إجمالي القوة" value={dashboardData.totalEmps} sub="عرض السجل 👁️" icon="👥" onClick={() => navigateTo('employees')} />
         <KpiCard loading={loading} tone="blue" title="طلبات معلقة" value={dashboardData.pendingCount} sub={`+ ${dashboardData.waitingSignCount} توقيع`} icon="⏳" onClick={() => navigateTo('renewals')} />
         <KpiCard loading={loading} tone="blue" title="عقود مؤقتة" value={dashboardData.shortTermTotal} sub="عرض القائمة ⏱️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
         <KpiCard loading={loading} tone="amber" title="تنتهي قريباً" value={dashboardData.expiringSoonCount} sub="إدارة العقود 👁️" icon="📆" onClick={() => navigateTo('contracts')} />
         <KpiCard loading={loading} tone="red" title="عقود منتهية" value={dashboardData.expiredCount} sub="إدارة العقود 🚨" icon="🚨" onClick={() => navigateTo('contracts')} />
+        <KpiCard loading={loading} tone="amber" title="بلوغ الـ 60" value={dashboardData.turning60List.length} sub="عرض الكشف 🎂" icon="🎂" onClick={() => setShowAgeModal(true)} />
         <KpiCard loading={loading} tone="red" title="نواقص بيانات" value={dashboardData.missingDataList.length} sub="عرض القائمة ⚠️" icon="⚠️" onClick={() => setShowMissingDataModal(true)} />
       </div>
 
@@ -378,7 +381,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* النوافذ المنبثقة (Modals) */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
