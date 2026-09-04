@@ -326,7 +326,7 @@ export default function ReportsPage() {
               alignItems: 'center',
               gap: '6px',
               minWidth: '160px',
-              justify: 'space-between'
+              justifyContent: 'space-between'
             }}
           >
             <span>💼 الإدارات ({selectedDepts.length === 0 ? 'الكل' : selectedDepts.length})</span>
