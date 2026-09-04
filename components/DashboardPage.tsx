@@ -34,12 +34,12 @@ export default function DashboardPage() {
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
-  // 🌟 فلاتر مخصصة داخل نافذة بلوغ سن الـ 60
+  // فلاتر مخصصة داخل نافذة بلوغ سن الـ 60
   const [ageModalFilterMode, setAgeModalFilterMode] = useState<'60days' | 'byMonth' | 'allYear'>('60days');
   const [ageModalSelectedMonth, setAgeModalSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [ageModalSelectedYear, setAgeModalSelectedYear] = useState<string>(new Date().getFullYear().toString());
 
-  // 🌟 نوافذ الرسومات البيانية المنبثقة (Interactive Charts Modals)
+  // نوافذ الرسومات البيانية المنبثقة
   const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ name: string; emps: any[] } | null>(null);
   const [selectedDonutDetails, setSelectedDonutDetails] = useState<{ title: string; emps: any[] } | null>(null);
   const [selectedDeptDetails, setSelectedDeptDetails] = useState<{ name: string; emps: any[] } | null>(null);
@@ -318,7 +318,8 @@ export default function DashboardPage() {
     });
   }, [dashboardData.allTurning60List, ageModalFilterMode, ageModalSelectedMonth, ageModalSelectedYear]);
 
-  const handleRowClick = (empCode: string) => {
+  // ✅ الانتقال السريع والمباشر لكافة النوافذ المنبثقة
+  const handleRowClick = (empCode: string, targetPage: 'contracts' | 'employees' = 'contracts') => {
     setShowTotalEmpsModal(false);
     setShowExpiringSoonModal(false);
     setShowAgeModal(false);
@@ -327,7 +328,9 @@ export default function DashboardPage() {
     setSelectedMonthDetails(null);
     setSelectedDonutDetails(null);
     setSelectedDeptDetails(null);
-    navigateTo('contracts', { jumpSearch: empCode });
+
+    localStorage.setItem('jumpSearch', empCode);
+    navigateTo(targetPage, { jumpSearch: empCode });
   };
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -335,7 +338,7 @@ export default function DashboardPage() {
   
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // 🎨 ثيم الألوان المحدث بالكامل لرسمة الدونت الحيوية المتميزة
+  // 🎨 ثيم الألوان المحدث بالكامل للرسمة الخماسية
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.rewardCount + dashboardData.aboveAgeCount + dashboardData.shortTermTotal;
   const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
   const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
@@ -346,7 +349,7 @@ export default function DashboardPage() {
     ? 'conic-gradient(#e2e8f0 0% 100%)' 
     : `conic-gradient(
         #10b981 0% ${p1}%, 
-        #3b82f6 ${p1}% ${p2}%, 
+        #2563eb ${p1}% ${p2}%, 
         #f59e0b ${p2}% ${p3}%, 
         #8b5cf6 ${p3}% ${p4}%, 
         #06b6d4 ${p4}% 100%
@@ -355,7 +358,7 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px' }}>
       
-      {/* رأس الصفحة بأسلوب مريح وأنيق */}
+      {/* رأس الصفحة */}
       <div className="card flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 sm:px-6 py-5" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
         <div>
           <h2 className="m-0 text-lg sm:text-xl font-black tracking-tight" style={{ color: '#0f172a' }}>
@@ -364,7 +367,7 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3 mt-2 text-[12px] font-bold" style={{ color: '#64748b' }}>
             <span>📅 {dateFormatted}</span>
             <span style={{ color: '#cbd5e1' }}>|</span>
-            <span className="font-mono" style={{ color: '#d97706' }}>⏰ {timeFormatted}</span>
+            <span className="font-mono" style={{ color: '#2563eb' }}>⏰ {timeFormatted}</span>
           </div>
         </div>
 
@@ -395,7 +398,7 @@ export default function DashboardPage() {
       {/* الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
         
-        {/* 🌟 📊 كارت أكبر 5 إدارات (تفرد بالضغط لعرض قائمة الموظفين) */}
+        {/* كارت أكبر 5 إدارات */}
         <div className="card px-5 sm:px-6 py-5" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-5 text-[13.5px] font-black" style={{ color: '#0f172a' }}>
             📊 أكبر 5 إدارات (اضغط لعرض الموظفين)
@@ -425,10 +428,10 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 الرسم البياني الشهري التفاعلي */}
+        {/* 📈 الرسم البياني الشهري التفاعلي بالألوان الزاهية */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
-          <h4 className="m-0 mb-4 text-[13.5px] font-black" style={{ color: '#0f172a' }}>
-            📈 التوزيع الشهري لبدايات العقود المكتملة والمجددة (اضغط على الشهر للتفاصيل)
+          <h4 className="m-0 mb-6 text-[13.5px] font-black" style={{ color: '#0f172a' }}>
+            📈 التوزيع الشهري لبدايات العقود النشطة والمجددة (اضغط على الشهر للتفاصيل)
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: '#e2e8f0' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
@@ -439,12 +442,12 @@ export default function DashboardPage() {
                   onClick={() => month.count > 0 && setSelectedMonthDetails({ name: month.name, emps: month.emps })}
                   className={`flex-1 flex flex-col items-center justify-end h-full ${month.count > 0 ? 'cursor-pointer group' : ''}`}
                 >
-                  <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? '#10b981' : 'transparent' }}>
+                  <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? '#2563eb' : 'transparent' }}>
                     {month.count.toLocaleString('en-US')}
                   </span>
                   <div 
                     className="w-full max-w-[32px] rounded-t-md transition-all duration-300 group-hover:opacity-80 group-hover:scale-105" 
-                    style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, #d97706, #b45309)' : '#f1f5f9' }} 
+                    style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, #3b82f6, #1d4ed8)' : '#f1f5f9' }} 
                   />
                   <span className="text-[10px] font-bold mt-2" style={{ color: month.count > 0 ? '#0f172a' : '#94a3b8' }}>{month.name}</span>
                 </div>
@@ -456,7 +459,7 @@ export default function DashboardPage() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         
-        {/* 🎨 🎯 رسمة الدونت الخماسية الملونة بالتصميم المشرق */}
+        {/* 🎨 🎯 رسمة الدونت بالألوان الواضحة الخمسة */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-4 text-[13.5px] font-black w-full text-right" style={{ color: '#0f172a' }}>
             📑 توزيع هيكل العقود (اضغط للعرض)
@@ -471,23 +474,23 @@ export default function DashboardPage() {
 
           <div className="w-full grid grid-cols-2 gap-2 mt-5 text-[10.5px] font-bold px-1">
             <div onClick={() => setSelectedDonutDetails({ title: 'العقود الدائمة', emps: dashboardData.permEmps })} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#10b981]" />دائم ({dashboardData.permCount})
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#10b981' }} />دائم ({dashboardData.permCount})
             </div>
             
             <div onClick={() => setSelectedDonutDetails({ title: 'العقود المحددة', emps: dashboardData.fixedEmps })} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#3b82f6]" />محدد ({dashboardData.fixedCount})
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#2563eb' }} />محدد ({dashboardData.fixedCount})
             </div>
             
             <div onClick={() => setSelectedDonutDetails({ title: 'عقود المكافأة الشاملة', emps: dashboardData.rewardEmps })} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#f59e0b]" />مكافأة ({dashboardData.rewardCount})
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f59e0b' }} />مكافأة ({dashboardData.rewardCount})
             </div>
 
             <div onClick={() => setSelectedDonutDetails({ title: 'عقود فوق السن', emps: dashboardData.aboveAgeEmps })} className="flex items-center gap-1.5 cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#8b5cf6]" />فوق السن ({dashboardData.aboveAgeCount})
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#8b5cf6' }} />فوق السن ({dashboardData.aboveAgeCount})
             </div>
 
             <div onClick={() => setSelectedDonutDetails({ title: 'العقود المؤقتة (بالأشهر)', emps: dashboardData.shortTermEmpsList })} className="flex items-center gap-1.5 col-span-2 justify-center cursor-pointer hover:bg-slate-50 p-1.5 rounded-lg transition-colors">
-              <div className="w-2.5 h-2.5 rounded-full bg-[#06b6d4]" />عقود مؤقتة بالأشهر ({dashboardData.shortTermTotal})
+              <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#06b6d4' }} />عقود مؤقتة بالأشهر ({dashboardData.shortTermTotal})
             </div>
           </div>
         </div>
@@ -510,8 +513,8 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {dashboardData.urgentAlerts.map((alert) => (
-                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} className="cursor-pointer hover:bg-slate-50 transition-colors">
-                      <td className="font-mono font-bold" style={{ color: '#d97706' }}>{alert.employee_code}</td>
+                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code, 'contracts')} className="cursor-pointer hover:bg-slate-50 transition-colors">
+                      <td className="font-mono font-bold" style={{ color: '#2563eb' }}>{alert.employee_code}</td>
                       <td className="font-bold">{alert.employee_name}</td>
                       <td style={{ color: '#64748b', fontSize: '11px' }}>{alert.department || '—'}</td>
                       <td className="font-mono font-bold">{alert.contract_end_date}</td>
@@ -531,7 +534,51 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 🏢 نافذة تفاصيل الإدارة المحددة عند الضغط على أشرطة أكبر الإدارات */}
+      {/* ⚠️ نافذة نواقص البيانات المحدثة مع توجيه الصفحة الصحيح */}
+      {showMissingDataModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
+              <button onClick={() => setShowMissingDataModal(false)} style={{ background: '#f8fafc', border: 0, color: '#64748b', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            {dashboardData.missingDataList.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#16a34a', fontWeight: 'bold' }}>بيانات جميع الموظفين مكتملة بنجاح! ✅</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      <th style={{ padding: '10px', color: '#64748b' }}>الكود</th>
+                      <th style={{ padding: '10px', color: '#64748b' }}>الموظف</th>
+                      <th style={{ padding: '10px', color: '#64748b' }}>النواقص</th>
+                      <th style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.missingDataList.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', color: '#dc2626', fontWeight: 'bold' }}>
+                          {!emp.national_id && <span>الرقم القومي </span>}
+                          {!emp.mobile && <span>- الموبايل </span>}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {/* ✅ ينتقل للسجل مباشرة ويبحث عن الموظف */}
+                          <button onClick={() => handleRowClick(emp.employee_code, 'employees')} style={{ background: '#2563eb', color: '#ffffff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* باقي النوافذ المنبثقة التفاعلية */}
       {selectedDeptDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -562,13 +609,13 @@ export default function DashboardPage() {
                 <tbody>
                   {selectedDeptDetails.emps.map((emp) => (
                     <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#d97706' }}>{emp.employee_code}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#2563eb' }}>{emp.employee_code}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                       <td style={{ padding: '10px', color: '#64748b' }}>{emp.job_title || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{emp.contract_type || '—'}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.contract_end_date || '—'}</td>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
+                        <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
                       </td>
                     </tr>
                   ))}
@@ -579,7 +626,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 🎂 نافذة العقود الدائمة وبلوغ سن الـ 60 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', height: '85vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -702,7 +748,7 @@ export default function DashboardPage() {
                     <tbody>
                       {displayTurning60List.map((emp) => (
                         <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9', background: emp.daysLeft < 0 ? '#fef2f2' : 'transparent' }}>
-                          <td style={{ padding: '10px', fontWeight: 'bold', color: '#d97706', fontFamily: 'monospace' }}>{emp.employee_code}</td>
+                          <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb', fontFamily: 'monospace' }}>{emp.employee_code}</td>
                           <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                           <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                           <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate || '—'}</td>
@@ -717,7 +763,7 @@ export default function DashboardPage() {
                             )}
                           </td>
                           <td style={{ padding: '10px', textAlign: 'center' }}>
-                            <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#d97706', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل/إنشاء عقد جديد ✏️</button>
+                            <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل/إنشاء عقد جديد ✏️</button>
                           </td>
                         </tr>
                       ))}
@@ -730,7 +776,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* باقي النوافذ المنبثقة */}
       {selectedMonthDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -761,13 +806,13 @@ export default function DashboardPage() {
                 <tbody>
                   {selectedMonthDetails.emps.map((emp) => (
                     <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#d97706' }}>{emp.employee_code}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#2563eb' }}>{emp.employee_code}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                       <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_type || '—'}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.contract_start_date || '—'}</td>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
+                        <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
                       </td>
                     </tr>
                   ))}
@@ -811,13 +856,13 @@ export default function DashboardPage() {
                   <tbody>
                     {selectedDonutDetails.emps.map((emp) => (
                       <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#d97706' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#2563eb' }}>{emp.employee_code}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.job_title || '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_type || '—'}</td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
+                          <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
                         </td>
                       </tr>
                     ))}
@@ -859,13 +904,13 @@ export default function DashboardPage() {
                 <tbody>
                   {dashboardData.filteredEmps.map((emp) => (
                     <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#d97706' }}>{emp.employee_code}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#2563eb' }}>{emp.employee_code}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                       <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                       <td style={{ padding: '10px', color: '#64748b' }}>{emp.job_title || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_type || '—'}</td>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
+                        <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
                       </td>
                     </tr>
                   ))}
@@ -910,7 +955,7 @@ export default function DashboardPage() {
                   <tbody>
                     {dashboardData.expiringSoonList.map((emp) => (
                       <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#d97706' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#2563eb' }}>{emp.employee_code}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>
@@ -921,7 +966,7 @@ export default function DashboardPage() {
                           <span style={{ color: '#d97706', fontWeight: 'bold' }}>متبقي {emp.days} يوم</span>
                         </td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#fffbe1', color: '#b45309', border: '1px solid #fde68a', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تجديد العقد ↗️</button>
+                          <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#fffbe1', color: '#b45309', border: '1px solid #fde68a', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تجديد العقد ↗️</button>
                         </td>
                       </tr>
                     ))}
@@ -991,7 +1036,7 @@ export default function DashboardPage() {
                           <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
                             <td style={{ padding: '10px' }}>
                               <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</div>
-                              <div style={{ fontSize: '10px', color: '#d97706', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employee_code}</div>
+                              <div style={{ fontSize: '10px', color: '#2563eb', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employee_code}</div>
                             </td>
                             <td style={{ padding: '10px' }}>
                               <span style={{ background: '#f8fafc', color: '#0f172a', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px dashed #cbd5e1' }}>{emp.historyDesc}</span>
@@ -1001,7 +1046,7 @@ export default function DashboardPage() {
                               {daysLeft !== null && <div style={{ fontSize: '9px', color: daysLeft < 0 ? '#dc2626' : '#d97706', fontWeight: 'bold' }}>{daysLeft < 0 ? `منتهي` : `متبقي ${daysLeft} يوم`}</div>}
                             </td>
                             <td style={{ padding: '10px', textAlign: 'center' }}>
-                              <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>العقد ↗️</button>
+                              <button onClick={() => handleRowClick(emp.employee_code, 'contracts')} style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>العقد ↗️</button>
                             </td>
                           </tr>
                         );
@@ -1011,48 +1056,6 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {showMissingDataModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
-              <button onClick={() => setShowMissingDataModal(false)} style={{ background: '#f8fafc', border: 0, color: '#64748b', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            {dashboardData.missingDataList.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#16a34a', fontWeight: 'bold' }}>بيانات جميع الموظفين مكتملة بنجاح! ✅</div>
-            ) : (
-              <div className="table-responsive">
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                      <th style={{ padding: '10px', color: '#64748b' }}>الكود</th>
-                      <th style={{ padding: '10px', color: '#64748b' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: '#64748b' }}>النواقص</th>
-                      <th style={{ padding: '10px', color: '#64748b', textAlign: 'center' }}>إجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboardData.missingDataList.map((emp) => (
-                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_code}</td>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
-                        <td style={{ padding: '10px', color: '#dc2626', fontWeight: 'bold' }}>
-                          {!emp.national_id && <span>الرقم القومي </span>}
-                          {!emp.mobile && <span>- الموبايل </span>}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} style={{ background: '#0f172a', color: '#ffffff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
         </div>
       )}
