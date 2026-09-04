@@ -34,6 +34,19 @@ const getEmployeeAge = (emp: any) => {
   return null;
 };
 
+// 🌟 دالة تقطيع التاريخ النصية المباشرة لمنع أخطاء التوقيت الزمني (Timezone Shift)
+const parseDateParts = (dateStr: any) => {
+  if (!dateStr) return null;
+  const clean = String(dateStr).split('T')[0].split(' ')[0].trim();
+  const parts = clean.split('-');
+  if (parts.length < 3) return null;
+  const y = parseInt(parts[0], 10);
+  const m = parseInt(parts[1], 10);
+  const d = parseInt(parts[2], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+  return { year: String(y), month: String(m), day: d };
+};
+
 export default function ReportsPage() {
   const { employees, loading } = useAppData();
 
@@ -46,13 +59,12 @@ export default function ReportsPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedContractType, setSelectedContractType] = useState('');
 
-  // 🌟 فلتر الإدارات المتعدد مع البحث والـ Checkbox
+  // فلتر الإدارات المتعدد
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [deptSearchTerm, setDeptSearchTerm] = useState('');
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
 
-  // إغلاق القائمة عند النقر خارجها
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (deptDropdownRef.current && !deptDropdownRef.current.contains(event.target as Node)) {
@@ -63,23 +75,20 @@ export default function ReportsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // استخراج القوائم المتاحة للفلاتر
   const companiesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const contractTypesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
 
-  // الإدارات المفلترة داخل قائمة البحث
   const filteredDeptsList = useMemo(() => {
     if (!deptSearchTerm.trim()) return deptsList;
     return deptsList.filter(d => String(d).toLowerCase().includes(deptSearchTerm.toLowerCase().trim()));
   }, [deptsList, deptSearchTerm]);
 
-  // تجهيز البيانات النشطة فقط
   const activeEmployees = useMemo(() => {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // 🌟 فلترة البيانات الشاملة مع معالجة بداية ونهاية العقود شهرياً
+  // 🌟 فلترة التقرير الدقيقة المحصنة ضد أخطاء التوقيت والمتضمنة لتواريخ 30/09 و 01/10
   const reportData = useMemo(() => {
     return activeEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -91,45 +100,30 @@ export default function ReportsPage() {
       const name = String(getField(emp, 'employee_name', 'ArabicName')).toLowerCase();
       const age = getEmployeeAge(emp);
 
-      // 1. تصفية التقرير المختار
+      // 1. تصفية التقرير الشهري
       if (activeReport === 'monthly') {
-        const startDate = startDateVal ? new Date(startDateVal) : null;
-        const endDate = endDateVal ? new Date(endDateVal) : null;
+        const start = parseDateParts(startDateVal);
+        const end = parseDateParts(endDateVal);
 
-        const validStart = startDate && !isNaN(startDate.getTime());
-        const validEnd = endDate && !isNaN(endDate.getTime());
+        if (!start && !end) return false;
 
-        if (!validStart && !validEnd) return false;
+        const targetM = selectedMonth ? String(parseInt(selectedMonth, 10)) : '';
+        const targetY = selectedYear ? String(parseInt(selectedYear, 10)) : '';
 
-        const matchesMonthYear = (d: Date | null, monthFilter: string, yearFilter: string) => {
-          if (!d) return false;
-          const m = String(d.getMonth() + 1);
-          const y = String(d.getFullYear());
-          const matchM = !monthFilter || m === monthFilter;
-          const matchY = !yearFilter || y === yearFilter;
-          return matchM && matchY;
-        };
+        // أ) هل تاريخ النهاية يقع في هذا الشهر؟
+        const endMatches = end && (!targetM || end.month === targetM) && (!targetY || end.year === targetY);
 
-        // أ) تاريخ نهاية العقد يقع في الشهر المختار
-        const endMatches = validEnd && matchesMonthYear(endDate, selectedMonth, selectedYear);
+        // ب) هل تاريخ البداية يقع في هذا الشهر (مثل 01/10)؟
+        const startMatches = start && (!targetM || start.month === targetM) && (!targetY || start.year === targetY);
 
-        // ب) تاريخ بداية العقد أو التعيين يقع في الشهر المختار (مثل العقود التي تبدأ يوم 01 من الشهر)
-        const startMatches = validStart && matchesMonthYear(startDate, selectedMonth, selectedYear);
-
-        // ج) عقود تنتهي في أواخر الشهر السابق (مثل 28-31 من الشهر السابق) وتكون مستحقة للتجديد في هذا الشهر
+        // ج) العقود المنتهية يوم 28-31 من الشهر السابق (مثل 30/09) المستحقة للتجديد لشهر 10
         let prevMonthEndMatches = false;
-        if (validEnd && selectedMonth) {
-          const targetM = Number(selectedMonth);
-          const targetY = selectedYear ? Number(selectedYear) : endDate.getFullYear();
+        if (end && targetM) {
+          const currentMNum = parseInt(targetM, 10);
+          const prevMNum = currentMNum === 1 ? 12 : currentMNum - 1;
+          const prevYNum = currentMNum === 1 && targetY ? parseInt(targetY, 10) - 1 : (targetY ? parseInt(targetY, 10) : null);
 
-          const prevMonthDate = new Date(targetY, targetM - 1, 0); // آخر يوم في الشهر السابق
-          const prevM = String(prevMonthDate.getMonth() + 1);
-          const prevY = String(prevMonthDate.getFullYear());
-
-          const endM = String(endDate.getMonth() + 1);
-          const endY = String(endDate.getFullYear());
-
-          if (endM === prevM && (!selectedYear || endY === prevY) && endDate.getDate() >= 25) {
+          if (end.month === String(prevMNum) && (!prevYNum || end.year === String(prevYNum)) && end.day >= 28) {
             prevMonthEndMatches = true;
           }
         }
@@ -142,7 +136,7 @@ export default function ReportsPage() {
         if (!isAbove60 && !isAboveAgeType) return false;
       }
 
-      // 2. تطبيق الفلاتر الإضافية (الشركة - الإدارات المتعددة - نوع العقد - البحث)
+      // 2. تطبيق الفلاتر الإضافية
       const matchesSearch = !searchTerm || code.includes(searchTerm.toLowerCase()) || name.includes(searchTerm.toLowerCase());
       const matchesComp = !selectedCompany || comp === selectedCompany;
       const matchesDept = selectedDepts.length === 0 || selectedDepts.includes(dept);
@@ -152,7 +146,6 @@ export default function ReportsPage() {
     });
   }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm]);
 
-  // 📊 ملخص الإدارات (مخصص لتقرير dept_summary)
   const deptSummaryData = useMemo(() => {
     const summary: Record<string, { total: number; fixed: number; perm: number; above60: number }> = {};
 
@@ -174,14 +167,12 @@ export default function ReportsPage() {
     return Object.entries(summary).map(([dept, counts]) => ({ dept, ...counts }));
   }, [reportData]);
 
-  // تبديل اختيار إدارة معينة
   const toggleDeptSelection = (deptName: string) => {
     setSelectedDepts(prev => 
       prev.includes(deptName) ? prev.filter(d => d !== deptName) : [...prev, deptName]
     );
   };
 
-  // تصدير Excel
   const handleExportExcel = () => {
     if (reportData.length === 0) return alert('لا توجد بيانات للتصدير.');
 
@@ -202,7 +193,7 @@ export default function ReportsPage() {
         'الشركة': getField(e, 'company', 'Company'),
         'الوظيفة': getField(e, 'job_title', 'JobTitle'),
         'نوع العقد': getField(e, 'contract_type', 'ContractType'),
-        'تاريخ التعيين / بداية العقد': getField(e, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate') || '—',
+        'تاريخ بداية العقد': getField(e, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate') || '—',
         'تاريخ نهاية العقد': getField(e, 'contract_end_date', 'ContractEndDate') || '—',
         'السن': getEmployeeAge(e) ? `${getEmployeeAge(e)} سنة` : '—',
       }));
@@ -226,7 +217,7 @@ export default function ReportsPage() {
         }
       `}</style>
 
-      {/* الهيدر الأكبر */}
+      {/* الهيدر */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات</h3>
@@ -246,7 +237,7 @@ export default function ReportsPage() {
       {/* كروت اختيار نوع التقرير */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
-          { id: 'monthly', icon: '🗓️', title: 'تقرير انتهاء وتجديد العقود الشهري', desc: 'حسب بداية ونهاية العقود للشهر المحدد' },
+          { id: 'monthly', icon: '🗓️', title: 'تقرير انتهاء وتجديد العقود الشهري', desc: 'شامل استحقاقات وتجديدات الشهر المحدد' },
           { id: 'above_60', icon: '💼', title: 'تقرير العمالة فوق السن (60+)', desc: 'متابعة عقود المتقاعدين' },
           { id: 'dept_summary', icon: '📊', title: 'ملخص توزيع العقود بالإدارات', desc: 'إحصائيات مجمعة لكل إدارة' },
           { id: 'full_roster', icon: '📂', title: 'السجل العام للقوة الحالية', desc: 'كشف شمول لكافة الموظفين' },
@@ -278,7 +269,7 @@ export default function ReportsPage() {
         {/* فلتر الشهر والسنة */}
         {activeReport === 'monthly' && (
           <div style={{ display: 'flex', gap: '6px', background: 'var(--paper)', padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--line)', alignItems: 'center' }}>
-            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--stamp-blue)' }}>🗓️ استحقاق شهر:</span>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--stamp-blue)' }}>🗓️ شهر:</span>
             <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', fontWeight: 'bold', outline: 'none' }}>
               <option value="">كل الأشهر</option>
               {MONTHS_LIST.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
@@ -308,7 +299,7 @@ export default function ReportsPage() {
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        {/* 🌟 فلتر الإدارات المطور */}
+        {/* فلتر الإدارات */}
         <div style={{ position: 'relative' }} ref={deptDropdownRef}>
           <button
             type="button"
@@ -428,7 +419,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 📄 منطقة عرض وطباعة التقرير */}
+      {/* 📄 منطقة عرض التقرير */}
       <div className="print-area" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line)', borderRadius: '12px', padding: '24px' }}>
         
         {/* ترويسة التقرير */}
@@ -436,7 +427,7 @@ export default function ReportsPage() {
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)', fontWeight: 'bold' }}>
-              {activeReport === 'monthly' && `تقرير العقود المستحقة للإنهاء/التجديد والبادئة لشهر (${selectedMonth || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
+              {activeReport === 'monthly' && `تقرير العقود المستحقة للإنهاء/التجديد لشهر (${selectedMonth || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
               {activeReport === 'above_60' && 'كشف العمالة فوق السن والبالغين لسن التقاعد (60+)'}
               {activeReport === 'dept_summary' && 'تقرير ملخص إحصائيات العقود موزعة حسب الإدارات'}
               {activeReport === 'full_roster' && 'السجل الموحد العام لجميع الموظفين النشطين'}
@@ -456,7 +447,6 @@ export default function ReportsPage() {
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري إعداد التقرير... ⏳</div>
         ) : activeReport === 'dept_summary' ? (
           
-          /* 📊 جدول إحصائيات الإدارات */
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
             <thead>
               <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
@@ -486,7 +476,6 @@ export default function ReportsPage() {
 
         ) : (
 
-          /* 📄 جدول تفاصيل الموظفين العادي */
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
             <thead>
               <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
@@ -497,7 +486,7 @@ export default function ReportsPage() {
                 <th style={{ padding: '10px' }}>الشركة</th>
                 <th style={{ padding: '10px' }}>الوظيفة</th>
                 <th style={{ padding: '10px' }}>نوع العقد</th>
-                <th style={{ padding: '10px' }}>تاريخ البداية / التعيين</th>
+                <th style={{ padding: '10px' }}>تاريخ بداية العقد</th>
                 <th style={{ padding: '10px' }}>تاريخ نهاية العقد</th>
                 <th style={{ padding: '10px' }}>السن</th>
               </tr>
@@ -540,7 +529,6 @@ export default function ReportsPage() {
 
         )}
 
-        {/* توقيعات الاعتماد لتقارير الطباعة */}
         <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'space-between', padding: '0 20px', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>
           <div>مُعد التقرير: ........................</div>
           <div>مراجعة الموارد البشرية: ........................</div>
