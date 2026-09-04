@@ -55,33 +55,165 @@ export default function ContractsPage() {
     fetchData();
   }, []);
 
+  // تحميل الموظفين + العقود + طلبات التجديد ثم دمج العقد الحالي مع الموظف
   const fetchData = async () => {
     setLoading(true);
-    let allEmps: any[] = [];
-    let allRens: any[] = [];
-    let from = 0;
-    const step = 1000;
 
-    while (true) {
-      const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
+    try {
+      const fetchAll = async (table: string, select = '*') => {
+        const rows: any[] = [];
+        let from = 0;
+        const step = 1000;
+
+        while (true) {
+          const { data, error } = await supabase
+            .from(table)
+            .select(select)
+            .range(from, from + step - 1);
+
+          if (error) throw new Error(`${table}: ${error.message}`);
+          if (!data || data.length === 0) break;
+
+          rows.push(...data);
+          if (data.length < step) break;
+          from += step;
+        }
+
+        return rows;
+      };
+
+      const [allEmps, allContracts, allRens] = await Promise.all([
+        fetchAll('employees'),
+        fetchAll('contracts'),
+        fetchAll('renewal_requests', 'employee_code, status, signature_status, request_id, request_date')
+      ]);
+
+      // توحيد أسماء الحقول المحتملة في جدول العقود حتى لا تعتمد الصفحة على اسم واحد فقط.
+      const asText = (value: any) => value === null || value === undefined ? '' : String(value).trim();
+      const normalizeDate = (value: any) => {
+        if (!value) return null;
+        const d = new Date(value);
+        if (isNaN(d.getTime())) return null;
+        return d.toISOString().split('T')[0];
+      };
+
+      const getContractId = (c: any) =>
+        c?.contract_id ?? c?.id ?? c?.contractId ?? null;
+
+      const getContractEmployeeId = (c: any) =>
+        c?.employee_id ?? c?.emp_id ?? c?.employeeId ?? null;
+
+      const getContractEmployeeCode = (c: any) =>
+        c?.employee_code ?? c?.emp_code ?? c?.employeeCode ?? c?.code ?? null;
+
+      const getContractType = (c: any) =>
+        c?.contract_type ?? c?.type ?? c?.contractType ?? null;
+
+      const getContractStartDate = (c: any) =>
+        normalizeDate(
+          c?.contract_start_date ??
+          c?.start_date ??
+          c?.startDate ??
+          c?.from_date ??
+          c?.fromDate
+        );
+
+      const getContractEndDate = (c: any) =>
+        normalizeDate(
+          c?.contract_end_date ??
+          c?.end_date ??
+          c?.endDate ??
+          c?.to_date ??
+          c?.toDate
+        );
+
+      const isTruthyFlag = (value: any) =>
+        value === true || value === 1 || ['true', '1', 'yes', 'active', 'current', 'ساري', 'سارية'].includes(asText(value).toLowerCase());
+
+      const isCurrentContract = (c: any) => {
+        if (isTruthyFlag(c?.is_current) || isTruthyFlag(c?.current) || isTruthyFlag(c?.isCurrent)) return true;
+        const status = asText(c?.status ?? c?.contract_status ?? c?.state).toLowerCase();
+        return ['active', 'current', 'ساري', 'سارية', 'نشط', 'نشطة'].includes(status);
+      };
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const contractScore = (c: any) => {
+        const currentFlag = isCurrentContract(c) ? 1000000000000 : 0;
+        const end = getContractEndDate(c);
+        const start = getContractStartDate(c);
+        const endTime = end ? new Date(end).getTime() : -1;
+        const startTime = start ? new Date(start).getTime() : -1;
+
+        // نفضل العقد الحالي، ثم العقد غير المنتهي، ثم أحدث نهاية/بداية.
+        const notExpiredBonus = end && new Date(end) >= today ? 1000000000 : 0;
+        return currentFlag + notExpiredBonus + Math.max(endTime, startTime, -1);
+      };
+
+      // فهارس سريعة حسب EmployeeID و EmployeeCode.
+      const contractsByEmployeeId = new Map<string, any[]>();
+      const contractsByEmployeeCode = new Map<string, any[]>();
+
+      allContracts.forEach((contract: any) => {
+        const employeeId = asText(getContractEmployeeId(contract));
+        const employeeCode = asText(getContractEmployeeCode(contract));
+
+        if (employeeId) {
+          const list = contractsByEmployeeId.get(employeeId) || [];
+          list.push(contract);
+          contractsByEmployeeId.set(employeeId, list);
+        }
+
+        if (employeeCode) {
+          const list = contractsByEmployeeCode.get(employeeCode) || [];
+          list.push(contract);
+          contractsByEmployeeCode.set(employeeCode, list);
+        }
+      });
+
+      const mergedEmployees = allEmps.map((emp: any) => {
+        const employeeId = asText(emp?.employee_id ?? emp?.id ?? emp?.emp_id);
+        const employeeCode = asText(emp?.employee_code ?? emp?.employeeCode ?? emp?.code);
+
+        let candidates = employeeId
+          ? (contractsByEmployeeId.get(employeeId) || [])
+          : [];
+
+        // fallback للكود في حالة عدم وجود EmployeeID متطابق.
+        if (candidates.length === 0 && employeeCode) {
+          candidates = contractsByEmployeeCode.get(employeeCode) || [];
+        }
+
+        const currentContract = candidates.length > 0
+          ? [...candidates].sort((a, b) => contractScore(b) - contractScore(a))[0]
+          : null;
+
+        const contractType = getContractType(currentContract) ?? emp?.contract_type ?? null;
+        const contractStartDate = getContractStartDate(currentContract) ?? normalizeDate(emp?.contract_start_date);
+        const contractEndDate = getContractEndDate(currentContract) ?? normalizeDate(emp?.contract_end_date);
+        const contractId = getContractId(currentContract);
+
+        return {
+          ...emp,
+          contract_id: contractId,
+          contract_type: contractType,
+          contract_start_date: contractStartDate,
+          contract_end_date: contractEndDate,
+          current_contract: currentContract,
+        };
+      });
+
+      setEmployees(mergedEmployees);
+      setRenewals(allRens);
+    } catch (error: any) {
+      console.error('ContractsPage fetchData error:', error);
+      alert(`تعذر تحميل بيانات العقود: ${error?.message || 'خطأ غير معروف'}`);
+      setEmployees([]);
+      setRenewals([]);
+    } finally {
+      setLoading(false);
     }
-
-    from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('renewal_requests').select('employee_code, status, signature_status, request_id').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allRens = [...allRens, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    setEmployees(allEmps);
-    setRenewals(allRens);
-    setLoading(false);
   };
 
   const getDaysRemaining = (endDateStr: string) => {
@@ -135,25 +267,36 @@ export default function ContractsPage() {
   const typesList = Array.from(new Set(employees.map((e) => e.contract_type).filter(Boolean)));
 
   const filteredContracts = employees.filter((emp) => {
-    const term = searchTerm.toLowerCase();
+    const term = searchTerm.toLowerCase().trim();
     const days = getDaysRemaining(emp.contract_end_date);
-    const matchesSearch = !term || String(emp.employee_code).toLowerCase().includes(term) || String(emp.employee_name).toLowerCase().includes(term) || String(emp.department).toLowerCase().includes(term);
+
+    const matchesSearch = !term ||
+      String(emp.employee_code ?? '').toLowerCase().includes(term) ||
+      String(emp.employee_name ?? '').toLowerCase().includes(term) ||
+      String(emp.department ?? '').toLowerCase().includes(term) ||
+      String(emp.national_id ?? '').toLowerCase().includes(term);
+
     const matchesDept = !selectedDept || emp.department === selectedDept;
-    
-    // ✅ دعم الفلترة الخاصة بالكروت التفاعلية الجديدة مع الحفاظ على الفلتر الأساسي
+
     let matchesType = true;
     if (selectedType) {
-      if (selectedType === 'filter_permanent') matchesType = emp.contract_type?.includes('دائم') || emp.contract_type?.includes('غير محدد');
-      else if (selectedType === 'filter_fixed') matchesType = emp.contract_type?.includes('محدد') && !emp.contract_type?.includes('فوق السن');
-      else if (selectedType === 'filter_overage') matchesType = emp.contract_type?.includes('فوق السن');
-      else if (selectedType === 'filter_reward') matchesType = emp.contract_type?.includes('مكافأة') || emp.contract_type?.includes('مكافأه');
-      else matchesType = emp.contract_type === selectedType;
+      if (selectedType === 'filter_permanent') {
+        matchesType = emp.contract_type?.includes('دائم') || emp.contract_type?.includes('غير محدد');
+      } else if (selectedType === 'filter_fixed') {
+        matchesType = emp.contract_type?.includes('محدد') && !emp.contract_type?.includes('فوق السن');
+      } else if (selectedType === 'filter_overage') {
+        matchesType = emp.contract_type?.includes('فوق السن');
+      } else if (selectedType === 'filter_reward') {
+        matchesType = emp.contract_type?.includes('مكافأة') || emp.contract_type?.includes('مكافأه');
+      } else {
+        matchesType = emp.contract_type === selectedType;
+      }
     }
 
     let matchesExpiry = true;
     if (expiryStatus === 'expiring_60') matchesExpiry = days !== null && days <= 60 && days >= 0;
     if (expiryStatus === 'expired') matchesExpiry = days !== null && days < 0;
-    
+
     return matchesSearch && matchesDept && matchesType && matchesExpiry;
   });
 
@@ -184,7 +327,7 @@ export default function ContractsPage() {
   });
 
   // 📊 حسابات قوة العمل والنسب المئوية للكروت (باستخدام نفس متغيراتك الأصلية)
-  const activeWorkforce = employees.filter(e => e.contract_type !== 'إنهاء تعاقد').length || 1;
+  const activeWorkforce = employees.filter(e => e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد').length || 1;
   const permanentCount = employees.filter(e => e.contract_type?.includes('دائم') || e.contract_type?.includes('غير محدد')).length;
   const permanentPct = ((permanentCount / activeWorkforce) * 100).toFixed(1);
   const fixedCount = employees.filter(e => e.contract_type?.includes('محدد') && !e.contract_type?.includes('فوق السن')).length;
@@ -256,7 +399,7 @@ export default function ContractsPage() {
       job_title: emp.job_title,
       company: emp.company,
       contract_start_date: newContractStartDate || null, // ✅ إصلاح إرسال قيم فارغة
-      contract_end_date: newContractStartDate || null, // ✅ إصلاح إرسال قيم فارغة
+      contract_end_date: newContractEndDate || null, // ✅ إصلاح إرسال قيم فارغة
       new_contract_end_date: newContractEndDate || null, // ✅ إصلاح إرسال قيم فارغة
       status: 'Pending',
       signature_status: 'قيد التوقيع',
@@ -389,7 +532,7 @@ export default function ContractsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)' }}>العقود الحالية السارية</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل لعقود الموظفين النشطين (الخطوة الأولى لإنشاء طلبات التجديد)</p>
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل لعقود الموظفين النشطين — يتم جلب بيانات العقد الحالية من جدول العقود</p>
         </div>
         
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -819,7 +962,7 @@ export default function ContractsPage() {
                 <div>كود الموظف: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.employee_code}</strong></div>
                 <div>الإدارة / القسم: <strong>{createdRequestData.department || '—'}</strong></div>
                 <div>المسمى الوظيفي: <strong>{createdRequestData.job_title || '—'}</strong></div>
-                <div>تاريخ بداية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.contract_end_date}</strong></div>
+                <div>تاريخ بداية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.contract_start_date}</strong></div>
                 <div>تاريخ نهاية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.new_contract_end_date}</strong></div>
               </div>
               <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}><strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.</div>
