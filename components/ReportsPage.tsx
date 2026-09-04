@@ -34,7 +34,24 @@ const getEmployeeAge = (emp: any) => {
   return null;
 };
 
-// 🌟 دالة تقطيع التاريخ النصية المباشرة لمنع أخطاء التوقيت الزمني (Timezone Shift)
+// 🌟 دالة استخراج تاريخ بلوغ سن الـ 60 من الرقم القومي
+const getAge60DateStr = (nationalId: string) => {
+  if (!nationalId || String(nationalId).trim().length !== 14) return null;
+  const idStr = String(nationalId).trim();
+  const centuryDigit = idStr.charAt(0);
+  const yearDigits = idStr.substring(1, 3);
+  const monthDigits = idStr.substring(3, 5);
+  const dayDigits = idStr.substring(5, 7);
+  const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+  const birthDate = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+  if (isNaN(birthDate.getTime())) return null;
+
+  const age60Date = new Date(birthDate);
+  age60Date.setFullYear(age60Date.getFullYear() + 60);
+  return age60Date.toISOString().split('T')[0];
+};
+
+// 🌟 دالة تقطيع التاريخ النصية المباشرة لمنع أخطاء التوقيت الزمني
 const parseDateParts = (dateStr: any) => {
   if (!dateStr) return null;
   const clean = String(dateStr).split('T')[0].split(' ')[0].trim();
@@ -88,9 +105,16 @@ export default function ReportsPage() {
     return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
   }, [employees]);
 
-  // 🌟 فلترة التقرير الدقيقة المحصنة ضد أخطاء التوقيت والمتضمنة لتواريخ 30/09 و 01/10
+  // 🌟 فلترة التقرير الشاملة (تأخذ في الاعتبار تاريخ النهاية + بداية العقد + بلوغ سن الـ 60)
   const reportData = useMemo(() => {
-    return activeEmployees.filter(emp => {
+    return activeEmployees.map(emp => {
+      const nationalId = getField(emp, 'national_id', 'NationalId', 'NationalID');
+      const age60Str = getAge60DateStr(nationalId);
+      return {
+        ...emp,
+        _age60DateStr: age60Str,
+      };
+    }).filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
       const endDateVal = getField(emp, 'contract_end_date', 'ContractEndDate');
       const startDateVal = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
@@ -104,8 +128,7 @@ export default function ReportsPage() {
       if (activeReport === 'monthly') {
         const start = parseDateParts(startDateVal);
         const end = parseDateParts(endDateVal);
-
-        if (!start && !end) return false;
+        const age60 = parseDateParts(emp._age60DateStr);
 
         const targetM = selectedMonth ? String(parseInt(selectedMonth, 10)) : '';
         const targetY = selectedYear ? String(parseInt(selectedYear, 10)) : '';
@@ -113,10 +136,10 @@ export default function ReportsPage() {
         // أ) هل تاريخ النهاية يقع في هذا الشهر؟
         const endMatches = end && (!targetM || end.month === targetM) && (!targetY || end.year === targetY);
 
-        // ب) هل تاريخ البداية يقع في هذا الشهر (مثل 01/10)؟
+        // ب) هل تاريخ البداية يقع في هذا الشهر؟
         const startMatches = start && (!targetM || start.month === targetM) && (!targetY || start.year === targetY);
 
-        // ج) العقود المنتهية يوم 28-31 من الشهر السابق (مثل 30/09) المستحقة للتجديد لشهر 10
+        // ج) هل ينتهي عقده أواخر الشهر السابق (مثل 30/09)؟
         let prevMonthEndMatches = false;
         if (end && targetM) {
           const currentMNum = parseInt(targetM, 10);
@@ -128,7 +151,11 @@ export default function ReportsPage() {
           }
         }
 
-        if (!endMatches && !startMatches && !prevMonthEndMatches) return false;
+        // 🎂 د) هل يبلغ سن الـ 60 في هذا الشهر والعميل لديه عقد دائم؟
+        const isPermanent = String(cType).includes('دائم') || String(cType).includes('غير محدد');
+        const age60Matches = isPermanent && age60 && (!targetM || age60.month === targetM) && (!targetY || age60.year === targetY);
+
+        if (!endMatches && !startMatches && !prevMonthEndMatches && !age60Matches) return false;
 
       } else if (activeReport === 'above_60') {
         const isAbove60 = age !== null && age >= 60;
@@ -159,7 +186,7 @@ export default function ReportsPage() {
       }
 
       summary[dept].total += 1;
-      if (cType === 'دائم') summary[dept].perm += 1;
+      if (String(cType).includes('دائم')) summary[dept].perm += 1;
       if (String(cType).includes('محدد')) summary[dept].fixed += 1;
       if (String(cType).includes('فوق السن') || (age && age >= 60)) summary[dept].above60 += 1;
     });
@@ -195,6 +222,7 @@ export default function ReportsPage() {
         'نوع العقد': getField(e, 'contract_type', 'ContractType'),
         'تاريخ بداية العقد': getField(e, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate') || '—',
         'تاريخ نهاية العقد': getField(e, 'contract_end_date', 'ContractEndDate') || '—',
+        'تاريخ بلوغ الـ 60': e._age60DateStr || '—',
         'السن': getEmployeeAge(e) ? `${getEmployeeAge(e)} سنة` : '—',
       }));
     }
@@ -237,7 +265,7 @@ export default function ReportsPage() {
       {/* كروت اختيار نوع التقرير */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '20px' }}>
         {[
-          { id: 'monthly', icon: '🗓️', title: 'تقرير انتهاء وتجديد العقود الشهري', desc: 'شامل استحقاقات وتجديدات الشهر المحدد' },
+          { id: 'monthly', icon: '🗓️', title: 'تقرير انتهاء وتجديد العقود الشهري', desc: 'شامل استحقاقات وتجديدات وبلوغ الـ 60 للشهر المحدد' },
           { id: 'above_60', icon: '💼', title: 'تقرير العمالة فوق السن (60+)', desc: 'متابعة عقود المتقاعدين' },
           { id: 'dept_summary', icon: '📊', title: 'ملخص توزيع العقود بالإدارات', desc: 'إحصائيات مجمعة لكل إدارة' },
           { id: 'full_roster', icon: '📂', title: 'السجل العام للقوة الحالية', desc: 'كشف شمول لكافة الموظفين' },
@@ -427,7 +455,7 @@ export default function ReportsPage() {
           <div>
             <h2 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2>
             <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--muted)', fontWeight: 'bold' }}>
-              {activeReport === 'monthly' && `تقرير العقود المستحقة للإنهاء/التجديد لشهر (${selectedMonth || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
+              {activeReport === 'monthly' && `تقرير العقود المستحقة للإنهاء/التجديد وبلوغ الـ 60 لشهر (${selectedMonth || 'الكل'}) لسنة ${selectedYear || 'الكل'}`}
               {activeReport === 'above_60' && 'كشف العمالة فوق السن والبالغين لسن التقاعد (60+)'}
               {activeReport === 'dept_summary' && 'تقرير ملخص إحصائيات العقود موزعة حسب الإدارات'}
               {activeReport === 'full_roster' && 'السجل الموحد العام لجميع الموظفين النشطين'}
@@ -488,7 +516,7 @@ export default function ReportsPage() {
                 <th style={{ padding: '10px' }}>نوع العقد</th>
                 <th style={{ padding: '10px' }}>تاريخ بداية العقد</th>
                 <th style={{ padding: '10px' }}>تاريخ نهاية العقد</th>
-                <th style={{ padding: '10px' }}>السن</th>
+                <th style={{ padding: '10px' }}>السن / بلوغ الـ 60</th>
               </tr>
             </thead>
             <tbody>
@@ -505,11 +533,25 @@ export default function ReportsPage() {
                 const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
                 const age = getEmployeeAge(emp);
 
+                // فحص إذا كان الموظف أدرج بسبب بلوغ سن الـ 60 في هذا الشهر
+                const isPermanent = String(cType).includes('دائم') || String(cType).includes('غير محدد');
+                const age60Parts = parseDateParts(emp._age60DateStr);
+                const targetM = selectedMonth ? String(parseInt(selectedMonth, 10)) : '';
+                const targetY = selectedYear ? String(parseInt(selectedYear, 10)) : '';
+                const isTurning60ThisMonth = isPermanent && age60Parts && (!targetM || age60Parts.month === targetM) && (!targetY || age60Parts.year === targetY);
+
                 return (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--line)' }}>
+                  <tr key={i} style={{ borderBottom: '1px solid var(--line)', background: isTurning60ThisMonth ? '#fffbe1' : 'transparent' }}>
                     <td style={{ padding: '10px', color: 'var(--muted)' }}>{i + 1}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{code}</td>
-                    <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--navy-950)' }}>{name}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--navy-950)' }}>
+                      {name}
+                      {isTurning60ThisMonth && (
+                        <span style={{ marginRight: '6px', fontSize: '10px', background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                          🎂 بلوغ 60 ({emp._age60DateStr})
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>{dept || '—'}</td>
                     <td style={{ padding: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>{comp || '—'}</td>
                     <td style={{ padding: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>{job || '—'}</td>
