@@ -1311,98 +1311,82 @@ export default function DashboardPage() {
   // ============================================================
 
   const handleRowClick = (
-    rawCode: any,
-    targetPage:
-      | 'contracts'
-      | 'employees' = 'contracts',
-    employee?: any
-  ) => {
-    const code =
-      String(rawCode || '').trim();
+  rawCode: any,
+  targetPage: 'contracts' | 'employees' = 'contracts',
+  employee?: any
+) => {
+  const code = String(rawCode || '').trim();
 
-    if (!code) return;
+  if (!code) return;
 
-    setShowTotalEmpsModal(
-      false
-    );
-    setShowExpiringSoonModal(
-      false
-    );
-    setShowAgeModal(false);
-    setShowShortTermModal(false);
-    setShowMissingDataModal(
-      false
-    );
+  // إغلاق النوافذ الحالية
+  setShowTotalEmpsModal(false);
+  setShowExpiringSoonModal(false);
+  setShowAgeModal(false);
+  setShowShortTermModal(false);
+  setShowMissingDataModal(false);
 
-    setSelectedMonthDetails(
-      null
-    );
-    setSelectedDonutDetails(
-      null
-    );
-    setSelectedDeptDetails(
-      null
-    );
+  setSelectedMonthDetails(null);
+  setSelectedDonutDetails(null);
+  setSelectedDeptDetails(null);
 
-    const employeeId =
-      getEmployeeId(
-        employee
-      );
+  // =========================================
+  // حفظ بيانات الموظف قبل الانتقال
+  // =========================================
 
-    const employeeCode =
-      getEmployeeCode(
-        employee
-      ) || code;
+  const employeeId = String(
+    firstValue(
+      employee?.employee_id,
+      employee?.EmployeeID,
+      employee?.employeeId,
+      ''
+    )
+  ).trim();
 
-    // مفاتيح الربط الجديدة
+  const employeeCode =
+    getEmployeeCode(employee) || code;
+
+  localStorage.setItem(
+    'selectedEmployeeCode',
+    employeeCode
+  );
+
+  localStorage.setItem(
+    'employeeSearch',
+    employeeCode
+  );
+
+  localStorage.setItem(
+    'jumpSearch',
+    employeeCode
+  );
+
+  if (employeeId) {
     localStorage.setItem(
-      'selectedEmployeeCode',
-      employeeCode
+      'selectedEmployeeId',
+      employeeId
     );
+  }
 
-    localStorage.setItem(
-      'employeeSearch',
-      employeeCode
-    );
+  // =========================================
+  // الانتقال
+  // =========================================
 
-    localStorage.setItem(
-      'jumpSearch',
-      employeeCode
-    );
+  navigateTo(targetPage);
 
-    if (employeeId) {
-      localStorage.setItem(
-        'selectedEmployeeId',
-        employeeId
+  // =========================================
+  // إجبار التطبيق على إعادة قراءة الصفحة
+  // بعد تغيير الـ active page
+  // =========================================
+
+  if (targetPage === 'employees') {
+    setTimeout(() => {
+      window.dispatchEvent(
+        new Event('storage')
       );
-
-      localStorage.setItem(
-        'employeeId',
-        employeeId
-      );
-    }
-
-    // sessionStorage كنسخة احتياطية
-    sessionStorage.setItem(
-      'employeeSearch',
-      employeeCode
-    );
-
-    sessionStorage.setItem(
-      'jumpSearch',
-      employeeCode
-    );
-
-    if (employeeId) {
-      sessionStorage.setItem(
-        'selectedEmployeeId',
-        employeeId
-      );
-    }
-
-    navigateTo(targetPage);
-  };
-
+    }, 50);
+  }
+};
   const dateFormatted =
     currentTime.toLocaleDateString(
       'ar-EG',
