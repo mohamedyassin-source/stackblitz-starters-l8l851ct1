@@ -14,6 +14,9 @@ export default function ContractsPage() {
   const [selectedType, setSelectedType] = useState('');
   const [expiryStatus, setExpiryStatus] = useState('');
 
+  // 🔄 حالة الترتيب (Sorting State)
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
+
   // حالة التحديد المجمع (Checkboxes)
   const [selectedEmpCodes, setSelectedEmpCodes] = useState<string[]>([]);
 
@@ -30,7 +33,7 @@ export default function ContractsPage() {
   // ✅ حالات نافذة إنشاء عقد جديد
   const [isNewContractModalOpen, setIsNewContractModalOpen] = useState(false);
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
-  const [empSearchTerm, setEmpSearchTerm] = useState(''); // خاص بحقل البحث
+  const [empSearchTerm, setEmpSearchTerm] = useState('');
   const [newContractStartDate, setNewContractStartDate] = useState('');
   const [newContractEndDate, setNewContractEndDate] = useState('');
   const [newContractType, setNewContractType] = useState('محدد المدة');
@@ -38,7 +41,7 @@ export default function ContractsPage() {
   // ✅ حالة نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
-  const [terminateSearchTerm, setTerminateSearchTerm] = useState(''); // خاص بحقل البحث
+  const [terminateSearchTerm, setTerminateSearchTerm] = useState('');
 
   // حالة نموذج الـ PDF
   const [createdRequestData, setCreatedRequestData] = useState<any>(null);
@@ -81,7 +84,7 @@ export default function ContractsPage() {
     setLoading(false);
   };
 
-  // ✅ دالة التحقق من صحة التاريخ وصيغته (السنة 4 أرقام حصراً)
+  // ✅ دالة التحقق من صحة التاريخ وصيغته (السنة 4 أرقام)
   const isValidDateString = (dateStr: string | null | undefined): boolean => {
     if (!dateStr) return false;
     const regex = /^\d{4}-\d{2}-\d{2}$/;
@@ -138,9 +141,19 @@ export default function ContractsPage() {
     return { text: 'متاح للتجديد', color: 'var(--muted)', locked: false };
   };
 
+  // 🔄 دالة معالجة الترتيب عند الضغط على أطراف الهيدر
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
   const deptsList = Array.from(new Set(employees.map((e) => e.department).filter(Boolean)));
   const typesList = Array.from(new Set(employees.map((e) => e.contract_type).filter(Boolean)));
 
+  // تصفية العقود
   const filteredContracts = employees.filter((emp) => {
     const term = searchTerm.toLowerCase();
     const days = getDaysRemaining(emp.contract_end_date);
@@ -153,16 +166,48 @@ export default function ContractsPage() {
     return matchesSearch && matchesDept && matchesType && matchesExpiry;
   });
 
+  // 🔄 تطبيق الفرز (Sorting Logic)
   const sortedContracts = [...filteredContracts].sort((a, b) => {
-    const daysA = getDaysRemaining(a.contract_end_date);
-    const daysB = getDaysRemaining(b.contract_end_date);
-    if (daysA === null) return 1;
-    if (daysB === null) return -1;
-    return daysA - daysB;
+    if (!sortConfig) {
+      const daysA = getDaysRemaining(a.contract_end_date);
+      const daysB = getDaysRemaining(b.contract_end_date);
+      if (daysA === null) return 1;
+      if (daysB === null) return -1;
+      return daysA - daysB;
+    }
+
+    const { key, direction } = sortConfig;
+    let valA: any;
+    let valB: any;
+
+    if (key === 'days_remaining') {
+      valA = getDaysRemaining(a.contract_end_date) ?? 99999;
+      valB = getDaysRemaining(b.contract_end_date) ?? 99999;
+    } else {
+      valA = a[key] ? String(a[key]).toLowerCase() : '';
+      valB = b[key] ? String(b[key]).toLowerCase() : '';
+    }
+
+    if (valA < valB) return direction === 'asc' ? -1 : 1;
+    if (valA > valB) return direction === 'asc' ? 1 : -1;
+    return 0;
   });
 
-  const totalFixedContracts = employees.filter(e => e.contract_type?.includes('محدد')).length;
-  const overAgeContracts = employees.filter(e => e.contract_type?.includes('فوق السن')).length;
+  // 📊 حسابات قوة العمل والنسب المئوية للكروت الحديثة
+  const activeWorkforce = employees.filter(e => e.contract_type !== 'إنهاء تعاقد').length || 1;
+
+  const permanentCount = employees.filter(e => e.contract_type?.includes('دائم') || e.contract_type?.includes('غير محدد')).length;
+  const permanentPct = ((permanentCount / activeWorkforce) * 100).toFixed(1);
+
+  const fixedCount = employees.filter(e => e.contract_type?.includes('محدد') && !e.contract_type?.includes('فوق السن')).length;
+  const fixedPct = ((fixedCount / activeWorkforce) * 100).toFixed(1);
+
+  const overAgeCount = employees.filter(e => e.contract_type?.includes('فوق السن')).length;
+  const overAgePct = ((overAgeCount / activeWorkforce) * 100).toFixed(1);
+
+  const rewardCount = employees.filter(e => e.contract_type?.includes('مكافأة') || e.contract_type?.includes('مكافأه')).length;
+  const rewardPct = ((rewardCount / activeWorkforce) * 100).toFixed(1);
+
   const expiringSoonCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
   const expiredCount = employees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d < 0; }).length;
 
@@ -211,9 +256,8 @@ export default function ContractsPage() {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
     
-    // ✅ التحقق من صحة التواريخ
     if (!isValidDateString(newContractStartDate) || !isValidDateString(newContractEndDate)) {
-      return alert('يرجى كتابة تواريخ صحيحة بصيغة (YYYY-MM-DD) وسنة مكونة من 4 أرقام بين 2000 و 2100.');
+      return alert('يرجى كتابة تواريخ صحيحة بصيغة (YYYY-MM-DD) وسنة مكونة من 4 أرقام.');
     }
     if (new Date(newContractEndDate) <= new Date(newContractStartDate)) {
       return alert('تاريخ نهاية العقد يجب أن يكون بعد تاريخ البداية.');
@@ -330,8 +374,36 @@ export default function ContractsPage() {
 
   const handlePrintPDF = () => window.print();
 
+  // 🔄 دالة لمساعدة رسم رؤوس الأعمدة مع أسهم الترتيب
+  const renderSortableHeader = (label: string, sortKey: string, align: 'right' | 'center' = 'right') => {
+    const isSorted = sortConfig?.key === sortKey;
+    const direction = sortConfig?.direction;
+    return (
+      <th
+        onClick={() => handleSort(sortKey)}
+        style={{
+          padding: '12px 10px',
+          background: isSorted ? '#e2e8f0' : '#f8fafc',
+          borderBottom: '1px solid var(--line)',
+          color: isSorted ? '#0f172a' : '#475569',
+          cursor: 'pointer',
+          userSelect: 'none',
+          textAlign: align,
+          transition: 'background 0.2s',
+        }}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <span>{label}</span>
+          <span style={{ fontSize: '10px', color: isSorted ? '#2563eb' : '#a1a1aa' }}>
+            {isSorted ? (direction === 'asc' ? '▲' : '▼') : '↕'}
+          </span>
+        </div>
+      </th>
+    );
+  };
+
   return (
-    <div style={{ paddingBottom: '40px' }}>
+    <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <style>{`
         @media print {
           body * { visibility: hidden; }
@@ -339,13 +411,30 @@ export default function ContractsPage() {
           #pdf-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; direction: rtl; background: #fff !important; color: #000 !important; }
           .no-print { display: none !important; }
         }
+        .erp-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+          transition: all 0.2s ease-in-out;
+          cursor: pointer;
+        }
+        .erp-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+          border-color: #cbd5e1;
+        }
       `}</style>
 
       {/* الهيدر والزراير العلوية */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)' }}>العقود الحالية السارية</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل لعقود الموظفين النشطين (الخطوة الأولى لإنشاء طلبات التجديد)</p>
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>سجل شامل لعقود الموظفين مع إحصائيات ERP التفاعلية وإدارة الطلبات</p>
         </div>
         
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -370,7 +459,7 @@ export default function ContractsPage() {
             }}
             style={{ background: '#fff', color: '#000', border: '1px solid var(--line)', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
           >
-            📄 طلب إنشاء عقد جديد تماماً
+            📄 طلب إنشاء عقد جديد
           </button>
 
           <button
@@ -383,37 +472,122 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* الكروت الإحصائية */}
-      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '20px' }}>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>العقود المحددة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>عقود محددة المدة</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{totalFixedContracts.toLocaleString()}</div>
+      {/* 📊 الكروت الإحصائية بتصميم ERP الحديث والمستطيل */}
+      <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+        
+        {/* 1. كارت العقود الدائمة */}
+        <div 
+          className="erp-card" 
+          onClick={() => { setSelectedType('غير محدد المدة'); setExpiryStatus(''); }}
+          style={{ borderRight: '4px solid #0284c7' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>العقود الدائمة</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🏢</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a' }}>{permanentCount.toLocaleString()}</span>
+            <span style={{ fontSize: '11px', fontWeight: '800', background: '#f0f9ff', color: '#0284c7', padding: '2px 6px', borderRadius: '12px' }}>{permanentPct}%</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>عقود فوق السن</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تجديد سنوي</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{overAgeContracts.toLocaleString()}</div>
+
+        {/* 2. كارت العقود المحددة */}
+        <div 
+          className="erp-card" 
+          onClick={() => { setSelectedType('محدد المدة'); setExpiryStatus(''); }}
+          style={{ borderRight: '4px solid #2563eb' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>العقود المحددة</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#dbeafe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>⏳</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a' }}>{fixedCount.toLocaleString()}</span>
+            <span style={{ fontSize: '11px', fontWeight: '800', background: '#eff6ff', color: '#2563eb', padding: '2px 6px', borderRadius: '12px' }}>{fixedPct}%</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>تقترب من الانتهاء</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>متبقي 60 يوم أو أقل</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#ea580c' }}>{expiringSoonCount.toLocaleString()}</div>
+
+        {/* 3. كارت عقود فوق السن */}
+        <div 
+          className="erp-card" 
+          onClick={() => { setSelectedType('محدد المدة - فوق السن'); setExpiryStatus(''); }}
+          style={{ borderRight: '4px solid #7c3aed' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>عقود فوق السن</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🎖️</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a' }}>{overAgeCount.toLocaleString()}</span>
+            <span style={{ fontSize: '11px', fontWeight: '800', background: '#f5f3ff', color: '#7c3aed', padding: '2px 6px', borderRadius: '12px' }}>{overAgePct}%</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
-        <div style={{ background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-          <div><p style={{ margin: 0, fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>عقود منتهية المدة</p><p style={{ margin: '4px 0 0', fontSize: '10px', color: 'var(--muted)' }}>تحتاج تسوية أو تجديد</p></div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>{expiredCount.toLocaleString()}</div>
+
+        {/* 4. كارت المكافأة الشاملة */}
+        <div 
+          className="erp-card" 
+          onClick={() => { setSelectedType('مكافأة شاملة'); setExpiryStatus(''); }}
+          style={{ borderRight: '4px solid #059669' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>المكافأة الشاملة</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#d1fae5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>💼</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a' }}>{rewardCount.toLocaleString()}</span>
+            <span style={{ fontSize: '11px', fontWeight: '800', background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: '12px' }}>{rewardPct}%</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
+
+        {/* 5. كارت تنتهي قريباً */}
+        <div 
+          className="erp-card" 
+          onClick={() => { setExpiryStatus('expiring_60'); setSelectedType(''); }}
+          style={{ borderRight: '4px solid #ea580c' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>تقترب من الانتهاء</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#ffedd5', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>⚠️</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '22px', fontWeight: '900', color: '#ea580c' }}>{expiringSoonCount.toLocaleString()}</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>متبقي 60 يوم أو أقل</span>
+        </div>
+
+        {/* 6. كارت منتهية المدة */}
+        <div 
+          className="erp-card" 
+          onClick={() => { setExpiryStatus('expired'); setSelectedType(''); }}
+          style={{ borderRight: '4px solid #dc2626' }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>منتهية الصلاحية</span>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px' }}>🚨</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <span style={{ fontSize: '22px', fontWeight: '900', color: '#dc2626' }}>{expiredCount.toLocaleString()}</span>
+          </div>
+          <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>تحتاج تجديد أو تسوية</span>
+        </div>
+
       </div>
 
       {/* شريط الفلاتر */}
-      <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
+      <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input 
             type="text" 
             placeholder="بحث بالاسم، الكود، الإدارة..." 
             value={searchTerm} 
             onChange={(e) => setSearchTerm(e.target.value)} 
-            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '250px' }} 
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '220px' }} 
           />
-          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '180px' }}>
+          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '160px' }}>
             <option value="">الإدارة (الكل)</option>
             {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
           </select>
@@ -426,7 +600,7 @@ export default function ContractsPage() {
             <option value="expiring_60">ينتهي خلال 60 يوم</option>
             <option value="expired">منتهي الصلاحية</option>
           </select>
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryStatus(''); setSortConfig(null); }} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
             إعادة ضبط
           </button>
         </div>
@@ -435,7 +609,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* الجدول */}
+      {/* 📋 الجدول مع خاصية الفرز (Sorting) */}
       <div className="no-print table-responsive" style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: '10px', overflowX: 'auto' }}>
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري سحب البيانات...</div>
@@ -446,13 +620,13 @@ export default function ContractsPage() {
                 <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', textAlign: 'center' }}>
                   <input type="checkbox" checked={selectedEmpCodes.length > 0 && selectedEmpCodes.length === sortedContracts.length} onChange={toggleAll} style={{ cursor: 'pointer' }} />
                 </th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>الكود</th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>الموظف</th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>الإدارة</th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>الوظيفة</th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>النوع</th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>الانتهاء</th>
-                <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569', textAlign: 'center' }}>المتبقي</th>
+                {renderSortableHeader('الكود', 'employee_code')}
+                {renderSortableHeader('الموظف', 'employee_name')}
+                {renderSortableHeader('الإدارة', 'department')}
+                {renderSortableHeader('الوظيفة', 'job_title')}
+                {renderSortableHeader('النوع', 'contract_type')}
+                {renderSortableHeader('الانتهاء', 'contract_end_date')}
+                {renderSortableHeader('المتبقي', 'days_remaining', 'center')}
                 <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569' }}>حالة التجديد</th>
                 <th style={{ padding: '12px 10px', background: '#f8fafc', borderBottom: '1px solid var(--line)', color: '#475569', textAlign: 'center' }}>إجراء</th>
               </tr>
@@ -502,13 +676,12 @@ export default function ContractsPage() {
       {/* 🔴 نافذة إنهاء التعاقد */}
       {isTerminateModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
+          <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>❌ إنهاء تعاقد موظف</h3>
               <button onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: 0, color: '#475569', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
             <form onSubmit={handleTerminateContract}>
-              
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
                   ابحث عن الموظف (بالاسم أو الكود) *
@@ -551,10 +724,10 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد (محدثة بالتحقق من التاريخ) */}
+      {/* 📝 نافذة إنشاء عقد جديد */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
+          <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>📝 طلب إنشاء عقد جديد تماماً</h3>
               <button onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
@@ -599,6 +772,8 @@ export default function ContractsPage() {
                 <select value={newContractType} onChange={(e) => setNewContractType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
+                  <option value="مكافأة شاملة">مكافأة شاملة</option>
+                  <option value="غير محدد المدة">غير محدد المدة (دائم)</option>
                   <option value="مهمة/مشروع">عقد مشروع/مهمة محدودة</option>
                 </select>
               </div>
@@ -640,7 +815,7 @@ export default function ContractsPage() {
       {/* نافذة طلب التجديد */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-          <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
+          <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
             
             <h3 style={{ margin: '0 0 20px', fontSize: '16px', color: '#334155', textAlign: 'center', fontWeight: '800' }}>
               {modalState.type === 'single' ? `إنشاء طلب تجديد لـ (${modalState.emp?.employee_name})` : `إنشاء طلبات تجديد لـ (${selectedEmpCodes.length}) موظف`}
@@ -696,7 +871,7 @@ export default function ContractsPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px', direction: 'rtl' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px' }}>
               <button 
                 onClick={confirmRenewalAction} 
                 disabled={actionLoading} 
