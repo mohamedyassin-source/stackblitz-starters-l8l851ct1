@@ -19,6 +19,10 @@ export default function DashboardPage() {
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
+  // 🌟 نوافذ الرسومات البيانية المنبثقة (Interactive Charts Modals)
+  const [selectedMonthDetails, setSelectedMonthDetails] = useState<{ name: string; emps: any[] } | null>(null);
+  const [selectedDonutDetails, setSelectedDonutDetails] = useState<{ title: string; emps: any[] } | null>(null);
+
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,7 +30,6 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // حساب الأيام المتبقية بدقة مع تصفير الوقت
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;
     const cleanStr = String(endDateStr).split('T')[0].trim();
@@ -37,7 +40,6 @@ export default function DashboardPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // استخراج بيانات بلوغ الـ 60 من الرقم القومي
   const getAge60Info = (nationalId: string) => {
     if (!nationalId || String(nationalId).trim().length !== 14) return null;
     const idStr = String(nationalId).trim();
@@ -76,7 +78,7 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, rewardCount = 0, shortTermTotal = 0;
+    let expired = 0, expiring = 0;
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
     const expiringSoonList: any[] = [];
@@ -84,8 +86,15 @@ export default function DashboardPage() {
     const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
     
+    // قوائم تفصيلية للرسومات البيانية التفاعلية
+    const permEmps: any[] = [];
+    const fixedEmps: any[] = [];
+    const rewardEmps: any[] = [];
+    const aboveAgeEmps: any[] = [];
+    const shortTermEmpsList: any[] = [];
+
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
+    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0, emps: [] as any[] }));
 
     const monthMap: Record<string, number> = {
       jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
@@ -107,7 +116,7 @@ export default function DashboardPage() {
         missingDataList.push(emp);
       }
 
-      // 🎯 حساب الشغل الفعلي فقط للرسم البياني (عقود تم تجديدها/العمل عليها أو تنتهي في 2027 وما بعدها)
+      // حساب الشغل الفعلي للرسم البياني الشهري
       const hasRenewal = filteredRens.some(r => String(r.employee_code).trim() === String(emp.employee_code).trim());
       const endYear = emp.contract_end_date ? new Date(emp.contract_end_date).getFullYear() : 0;
       const isWorkedContract = hasRenewal || endYear >= 2027;
@@ -133,10 +142,11 @@ export default function DashboardPage() {
 
         if (monthIdx >= 0 && monthIdx < 12) {
           contractsByMonth[monthIdx].count++;
+          contractsByMonth[monthIdx].emps.push(emp);
         }
       }
 
-      // حساب نوع العقد
+      // تصنيف العقود
       const isPermanent = type === 'دائم' || type.includes('غير محدد');
       const isReward = type.includes('مكافأة') || type.includes('مكافأه');
       const isAboveAgeType = type.includes('فوق السن');
@@ -145,19 +155,19 @@ export default function DashboardPage() {
       const isTurning60In60Days = ageInfo && ageInfo.daysUntil60 >= 0 && ageInfo.daysUntil60 <= 60;
 
       if (isPermanent) {
-        perm++;
+        permEmps.push(emp);
         if (isTurning60In60Days) {
           turning60List.push({ ...emp, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date, daysLeft: ageInfo.daysUntil60 });
         }
       } else if (isReward) {
-        rewardCount++;
+        rewardEmps.push(emp);
       } else if (isAboveAgeType) {
-        aboveAge++;
+        aboveAgeEmps.push(emp);
       } else {
-        fixed++;
+        fixedEmps.push(emp);
       }
 
-      // فحص العقود التي تنتهي قريباً (من 0 إلى 60 يوم فقط)
+      // فحص العقود التي تنتهي قريباً
       if (isContractActive) {
         const days = getDaysRemaining(emp.contract_end_date);
         
@@ -166,7 +176,6 @@ export default function DashboardPage() {
             expired++;
             alerts.push({ ...emp, days, status: 'expired' });
           } else if (days >= 0 && days <= 60) {
-            // لا تدرج العقد الدائم إلا إذا كان صاحبه سينهي الـ 60 خلال الستين يوماً
             if (!isPermanent || isTurning60In60Days) {
               expiring++;
               alerts.push({ ...emp, days, status: 'expiring' });
@@ -176,7 +185,7 @@ export default function DashboardPage() {
         }
       }
 
-      // العقود المؤقتة (بالأشهر)
+      // العقود المؤقتة
       if (type === 'محدد المدة' && isContractActive) {
         const empRens = filteredRens
           .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
@@ -206,7 +215,7 @@ export default function DashboardPage() {
         }
 
         if (isShort) {
-          shortTermTotal++;
+          shortTermEmpsList.push(emp);
           if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
           shortTermByDept[dept].push({ ...emp, historyDesc });
         }
@@ -236,10 +245,15 @@ export default function DashboardPage() {
     return {
       filteredEmps,
       totalEmps: filteredEmps.length,
-      permCount: perm,
-      fixedCount: fixed,
-      aboveAgeCount: aboveAge,
-      rewardCount,
+      permCount: permEmps.length,
+      fixedCount: fixedEmps.length,
+      aboveAgeCount: aboveAgeEmps.length,
+      rewardCount: rewardEmps.length,
+      permEmps,
+      fixedEmps,
+      rewardEmps,
+      aboveAgeEmps,
+      shortTermEmpsList,
       expiredCount: expired,
       expiringSoonCount: expiring,
       expiringSoonList,
@@ -250,7 +264,7 @@ export default function DashboardPage() {
       topDepts,
       urgentAlerts,
       contractsByMonth,
-      shortTermTotal,
+      shortTermTotal: shortTermEmpsList.length,
       shortTermList
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
@@ -261,6 +275,8 @@ export default function DashboardPage() {
     setShowAgeModal(false);
     setShowShortTermModal(false);
     setShowMissingDataModal(false);
+    setSelectedMonthDetails(null);
+    setSelectedDonutDetails(null);
     navigateTo('contracts', { jumpSearch: empCode });
   };
 
@@ -269,7 +285,7 @@ export default function DashboardPage() {
   
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // 🎯 رسمة الدونت مع الأقسام الخمسة
+  // رسمة الدونت الخماسية
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.rewardCount + dashboardData.aboveAgeCount + dashboardData.shortTermTotal;
   const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
   const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
@@ -315,7 +331,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* الكروت السريعة (تأكيد عمل الضغط لتعرض النوافذ) */}
+      {/* الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         <KpiCard loading={loading} tone="brass" title="إجمالي القوة" value={dashboardData.totalEmps} sub="عرض الكشف 👁️" icon="👥" onClick={() => setShowTotalEmpsModal(true)} />
         <KpiCard loading={loading} tone="blue" title="طلبات معلقة" value={dashboardData.pendingCount} sub={`+ ${dashboardData.waitingSignCount} توقيع`} icon="⏳" onClick={() => navigateTo('renewals')} />
@@ -349,23 +365,31 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* 🌟 الرسم البياني التفاعلي (أعمدة الشهور قابلة للضغط) */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <h4 className="m-0 mb-2 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التوزيع الشهري لبدايات العقود المكتملة والمجددة (الشغل الفعلي)
+            📈 التوزيع الشهري لبدايات العقود المكتملة والمجددة (اضغط على الشهر للتفاصيل)
           </h4>
           <p style={{ margin: '0 0 16px', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>
-            يعرض فقط العقود المجددة أو التي تم بدء العمل عليها فعلياً لتجنب إظهار الأشهر القادمة التي لم تُنجز بعد.
+            يعرض فقط العقود المجددة أو التي تم بدء العمل عليها فعلياً لتجنب إظهار الأشهر القادمة غير المنجزة.
           </p>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
               return (
-                <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full">
+                <div 
+                  key={idx} 
+                  onClick={() => month.count > 0 && setSelectedMonthDetails({ name: month.name, emps: month.emps })}
+                  className={`flex-1 flex flex-col items-center justify-end h-full ${month.count > 0 ? 'cursor-pointer group' : ''}`}
+                >
                   <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? 'var(--stamp-green)' : 'transparent' }}>
                     {month.count.toLocaleString('en-US')}
                   </span>
-                  <div className="w-full max-w-[32px] rounded-t-md transition-all duration-700" style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--paper)' }} />
-                  <span className="text-[10px] font-bold mt-2" style={{ color: 'var(--muted)' }}>{month.name}</span>
+                  <div 
+                    className="w-full max-w-[32px] rounded-t-md transition-all duration-300 group-hover:opacity-80 group-hover:scale-105" 
+                    style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, var(--brass-400), var(--brass-600))' : 'var(--paper)' }} 
+                  />
+                  <span className="text-[10px] font-bold mt-2" style={{ color: month.count > 0 ? 'var(--navy-950)' : 'var(--muted)' }}>{month.name}</span>
                 </div>
               );
             })}
@@ -375,23 +399,56 @@ export default function DashboardPage() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         
-        {/* 🎯 رسمة الدونت مع الأقسام الخمسة */}
+        {/* 🌟 رسمة الدونت التفاعلية الخماسية (تفتح نافذة عند ضغط الأجزاء أو العناوين) */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1">
-          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>📑 توزيع هيكل العقود التفصيلي</h4>
+          <h4 className="m-0 mb-4 text-[13.5px] font-extrabold w-full text-right" style={{ color: 'var(--navy-950)' }}>
+            📑 توزيع هيكل العقود (اضغط للعرض)
+          </h4>
           
-          <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div 
+            style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+          >
             <div style={{ width: '105px', height: '110px', background: 'var(--paper-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>إجمالي الهيكل</span>
               <span style={{ fontSize: '17px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
             </div>
           </div>
 
-          <div className="w-full grid grid-cols-2 gap-2 mt-6 text-[10.5px] font-bold px-1">
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#16a34a]" />دائم ({dashboardData.permCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#2563eb]" />محدد ({dashboardData.fixedCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#059669]" />مكافأة ({dashboardData.rewardCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-2.5 h-2.5 rounded-full bg-[#7c3aed]" />فوق السن ({dashboardData.aboveAgeCount})</div>
-            <div className="flex items-center gap-1.5 col-span-2 justify-center"><div className="w-2.5 h-2.5 rounded-full bg-[#0284c7]" />عقود مؤقتة بالأشهر ({dashboardData.shortTermTotal})</div>
+          <div className="w-full grid grid-cols-2 gap-2 mt-5 text-[10.5px] font-bold px-1">
+            <div 
+              onClick={() => setSelectedDonutDetails({ title: 'العقود الدائمة', emps: dashboardData.permEmps })}
+              className="flex items-center gap-1.5 cursor-pointer hover:opacity-75 p-1 rounded-md transition-colors"
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-[#16a34a]" />دائم ({dashboardData.permCount})
+            </div>
+            
+            <div 
+              onClick={() => setSelectedDonutDetails({ title: 'العقود المحددة', emps: dashboardData.fixedEmps })}
+              className="flex items-center gap-1.5 cursor-pointer hover:opacity-75 p-1 rounded-md transition-colors"
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-[#2563eb]" />محدد ({dashboardData.fixedCount})
+            </div>
+            
+            <div 
+              onClick={() => setSelectedDonutDetails({ title: 'عقود المكافأة الشاملة', emps: dashboardData.rewardEmps })}
+              className="flex items-center gap-1.5 cursor-pointer hover:opacity-75 p-1 rounded-md transition-colors"
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-[#059669]" />مكافأة ({dashboardData.rewardCount})
+            </div>
+
+            <div 
+              onClick={() => setSelectedDonutDetails({ title: 'عقود فوق السن', emps: dashboardData.aboveAgeEmps })}
+              className="flex items-center gap-1.5 cursor-pointer hover:opacity-75 p-1 rounded-md transition-colors"
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-[#7c3aed]" />فوق السن ({dashboardData.aboveAgeCount})
+            </div>
+
+            <div 
+              onClick={() => setSelectedDonutDetails({ title: 'العقود المؤقتة (بالأشهر)', emps: dashboardData.shortTermEmpsList })}
+              className="flex items-center gap-1.5 col-span-2 justify-center cursor-pointer hover:opacity-75 p-1 rounded-md transition-colors"
+            >
+              <div className="w-2.5 h-2.5 rounded-full bg-[#0284c7]" />عقود مؤقتة بالأشهر ({dashboardData.shortTermTotal})
+            </div>
           </div>
         </div>
 
@@ -434,7 +491,107 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 1️⃣ نافذة إجمالي القوة */}
+      {/* 🌟 1️⃣ نافذة تفاصيل شهر محدد عند الضغط على أشرطة الرسم البياني */}
+      {selectedMonthDetails && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '800px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>
+                  📈 عقود بدأ العمل عليها لشهر ({selectedMonthDetails.name})
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>إجمالي الموظفين: {selectedMonthDetails.emps.length} موظف</p>
+              </div>
+              <button onClick={() => setSelectedMonthDetails(null)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+                إغلاق ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                <thead>
+                  <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                    <th style={{ padding: '10px' }}>الكود</th>
+                    <th style={{ padding: '10px' }}>الموظف</th>
+                    <th style={{ padding: '10px' }}>الإدارة</th>
+                    <th style={{ padding: '10px' }}>نوع العقد</th>
+                    <th style={{ padding: '10px' }}>بداية العقد</th>
+                    <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedMonthDetails.emps.map((emp) => (
+                    <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{emp.employee_code}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.employee_name}</td>
+                      <td style={{ padding: '10px', color: 'var(--muted)' }}>{emp.department || '—'}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_type || '—'}</td>
+                      <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.contract_start_date || '—'}</td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: 'var(--paper-card)', color: 'var(--stamp-blue)', border: '1px solid var(--stamp-blue-bg)', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 2️⃣ نافذة تفاصيل فئة عقد محددة عند الضغط على رسمة الدونت أو أقسامها */}
+      {selectedDonutDetails && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '800px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>
+                  📑 كشف الموظفين: {selectedDonutDetails.title}
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>إجمالي الموظفين: {selectedDonutDetails.emps.length} موظف</p>
+              </div>
+              <button onClick={() => setSelectedDonutDetails(null)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+                إغلاق ✕
+              </button>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+              {selectedDonutDetails.emps.length === 0 ? (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا يوجد موظفون في هذه الفئة حالياً.</div>
+              ) : (
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={{ padding: '10px' }}>الكود</th>
+                      <th style={{ padding: '10px' }}>الموظف</th>
+                      <th style={{ padding: '10px' }}>الإدارة</th>
+                      <th style={{ padding: '10px' }}>الوظيفة</th>
+                      <th style={{ padding: '10px' }}>نوع العقد</th>
+                      <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDonutDetails.emps.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', color: 'var(--muted)' }}>{emp.department || '—'}</td>
+                        <td style={{ padding: '10px', color: 'var(--muted)' }}>{emp.job_title || '—'}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_type || '—'}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: 'var(--paper-card)', color: 'var(--stamp-blue)', border: '1px solid var(--stamp-blue-bg)', padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>عرض العقد ↗️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3️⃣ نافذة إجمالي القوة */}
       {showTotalEmpsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -482,7 +639,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 2️⃣ نافذة العقود المنتهية قريباً (من 0 إلى 60 يوم فقط) */}
+      {/* 4️⃣ نافذة العقود المنتهية قريباً */}
       {showExpiringSoonModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -540,7 +697,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 3️⃣ نافذة العقود الدائمة وبلوغ سن 60 في الـ 60 يوم القادمين */}
+      {/* 5️⃣ نافذة العقود الدائمة وبلوغ سن 60 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '750px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -574,7 +731,6 @@ export default function DashboardPage() {
                           <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>⏳ متبقي {emp.daysLeft} يوم</span>
                         </td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
-                          {/* ✅ عند النقر يذهب مباشرة لصفحة العقود لإنشاء عقد جديد */}
                           <button onClick={() => handleRowClick(emp.employee_code)} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل/إنشاء عقد جديد ✏️</button>
                         </td>
                       </tr>
@@ -587,7 +743,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 4️⃣ نافذة العقود المؤقتة */}
+      {/* 6️⃣ نافذة العقود المؤقتة */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -670,7 +826,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 5️⃣ نافذة نواقص البيانات */}
+      {/* 7️⃣ نافذة نواقص البيانات */}
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
