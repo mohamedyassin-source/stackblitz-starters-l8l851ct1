@@ -55,7 +55,7 @@ export default function ContractsPage() {
     fetchData();
   }, []);
 
-  // تحميل الموظفين + العقود + طلبات التجديد ثم دمج العقد الحالي مع الموظف (الكود الأصلي بتاعك)
+  // تحميل الموظفين + العقود + طلبات التجديد ثم دمج العقد الحالي مع الموظف
   const fetchData = async () => {
     setLoading(true);
 
@@ -212,7 +212,7 @@ export default function ContractsPage() {
     }
   };
 
-  // ✅ دالة حماية للتحقق من سنة التاريخ (ترفض 027 أو 222027)
+  // ✅ دالة حماية للتحقق من سنة التاريخ 
   const isValidYear = (dateStr: string) => {
     if (!dateStr) return false;
     const year = parseInt(dateStr.split('-')[0], 10);
@@ -228,9 +228,9 @@ export default function ContractsPage() {
   };
 
   const calculateNewEndDate = (oldDateStr: string | undefined, months: number) => {
-    if (!oldDateStr) return null; // ✅ التعديل هنا: null لمنع خطأ قاعدة البيانات
+    if (!oldDateStr) return null; 
     const date = new Date(oldDateStr);
-    if (isNaN(date.getTime())) return null; // ✅ التعديل هنا: null
+    if (isNaN(date.getTime())) return null; 
     date.setMonth(date.getMonth() + months);
     return date.toISOString().split('T')[0];
   };
@@ -369,6 +369,23 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
+  // ✅ دالة الحذف الجديدة
+  const handleDeleteEmployee = async (employeeCode: string, employeeName: string) => {
+    const confirmDelete = window.confirm(`هل أنت متأكد من حذف الموظف (${employeeName}) نهائياً؟ \n\n⚠️ تنبيه: لا يمكن التراجع عن هذا الإجراء.`);
+    if (!confirmDelete) return;
+
+    setActionLoading(true);
+    const { error } = await supabase.from('employees').delete().eq('employee_code', employeeCode);
+    setActionLoading(false);
+
+    if (error) {
+      alert('حدث خطأ أثناء الحذف (قد يكون هناك بيانات مرتبطة به في جداول أخرى): ' + error.message);
+    } else {
+      alert('تم حذف الموظف بنجاح 🗑️');
+      fetchData(); // إعادة تحميل البيانات لتحديث الجدول والكروت
+    }
+  };
+
   // دالة إنهاء التعاقد
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -388,7 +405,6 @@ export default function ContractsPage() {
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
     if (!newContractStartDate || !newContractEndDate) return alert('يرجى استكمال جميع البيانات.');
     
-    // ✅ حماية التواريخ
     if (!isValidYear(newContractStartDate) || !isValidYear(newContractEndDate)) {
       return alert('يرجى إدخال سنة صحيحة ومكتملة من 4 أرقام (مثال: 2024).');
     }
@@ -406,9 +422,9 @@ export default function ContractsPage() {
       department: emp.department,
       job_title: emp.job_title,
       company: emp.company,
-      contract_start_date: newContractStartDate || null, // ✅ إصلاح إرسال قيم فارغة
-      contract_end_date: newContractEndDate || null, // ✅ إصلاح إرسال قيم فارغة
-      new_contract_end_date: newContractEndDate || null, // ✅ إصلاح إرسال قيم فارغة
+      contract_start_date: newContractStartDate || null,
+      contract_end_date: newContractEndDate || null,
+      new_contract_end_date: newContractEndDate || null,
       status: 'Pending',
       signature_status: 'قيد التوقيع',
       request_date: new Date().toISOString().split('T')[0],
@@ -434,7 +450,6 @@ export default function ContractsPage() {
 
   const confirmRenewalAction = async () => {
     if (renewalMode === 'custom' && !customEndDate) return alert('يرجى إدخال تاريخ الانتهاء المخصص.');
-    // ✅ حماية التاريخ المخصص
     if (renewalMode === 'custom' && !isValidYear(customEndDate)) return alert('يرجى إدخال تاريخ انتهاء صحيح وسنة من 4 أرقام.');
 
     setActionLoading(true);
@@ -452,8 +467,8 @@ export default function ContractsPage() {
         department: emp.department,
         job_title: emp.job_title,
         company: emp.company,
-        contract_end_date: emp.contract_end_date || null, // ✅ إصلاح
-        new_contract_end_date: targetEndDate || null, // ✅ إصلاح
+        contract_end_date: emp.contract_end_date || null, 
+        new_contract_end_date: targetEndDate || null, 
         renewal_months: renewalMode === 'months' ? renewalMonths : null,
         status: 'Pending',
         signature_status: 'قيد التوقيع',
@@ -478,8 +493,8 @@ export default function ContractsPage() {
           department: emp.department,
           job_title: emp.job_title,
           company: emp.company,
-          contract_end_date: emp.contract_end_date || null, // ✅ إصلاح
-          new_contract_end_date: targetEndDate || null, // ✅ إصلاح
+          contract_end_date: emp.contract_end_date || null, 
+          new_contract_end_date: targetEndDate || null, 
           renewal_months: renewalMode === 'months' ? renewalMonths : null,
           status: 'Pending',
           signature_status: 'قيد التوقيع',
@@ -543,7 +558,7 @@ export default function ContractsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)' }}>العقود الحالية السارية</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل لعقود الموظفين النشطين (الخطوة الأولى لإنشاء طلبات التجديد)</p>
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل لعقود الموظفين النشطين</p>
         </div>
         
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -747,13 +762,28 @@ export default function ContractsPage() {
                     <td style={{ padding: '10px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '10px' }}><span style={{ color: statusInfo.color }}>{statusInfo.text}</span></td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <button
-                        onClick={() => openSingleRenewal(emp)}
-                        disabled={statusInfo.locked || actionLoading || isTerminated}
-                        style={{ background: statusInfo.locked || isTerminated ? '#e2e8f0' : '#b8934a', color: statusInfo.locked || isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
-                      >
-                        + إنشاء طلب
-                      </button>
+                      
+                      {/* ✅ إضافة الحاوية لزرار التجديد وزرار الحذف */}
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+                        <button
+                          onClick={() => openSingleRenewal(emp)}
+                          disabled={statusInfo.locked || actionLoading || isTerminated}
+                          style={{ background: statusInfo.locked || isTerminated ? '#e2e8f0' : '#b8934a', color: statusInfo.locked || isTerminated ? '#94a3b8' : '#fff', border: 0, padding: '6px 12px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading || isTerminated ? 'not-allowed' : 'pointer' }}
+                        >
+                          + إنشاء طلب
+                        </button>
+                        
+                        {/* ✅ زرار الحذف الجديد */}
+                        <button
+                          onClick={() => handleDeleteEmployee(emp.employee_code, emp.employee_name)}
+                          disabled={actionLoading}
+                          style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #f87171', padding: '6px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer' }}
+                          title="حذف الموظف"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+
                     </td>
                   </tr>
                 );
@@ -763,7 +793,7 @@ export default function ContractsPage() {
         )}
       </div>
 
-      {/* 🔴 نافذة إنهاء التعاقد (محدثة بخاصية البحث) */}
+      {/* 🔴 نافذة إنهاء التعاقد */}
       {isTerminateModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -773,7 +803,6 @@ export default function ContractsPage() {
             </div>
             <form onSubmit={handleTerminateContract}>
               
-              {/* شريط البحث لإنهاء التعاقد */}
               <div style={{ marginBottom: '20px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
                   ابحث عن الموظف (بالاسم أو الكود) *
@@ -787,7 +816,7 @@ export default function ContractsPage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     setTerminateSearchTerm(val);
-                    const code = val.split(' - ')[0]; // استخراج الكود من النص المختار
+                    const code = val.split(' - ')[0]; 
                     const isValidEmp = employees.some(emp => emp.employee_code === code && emp.contract_type !== 'إنهاء تعاقد');
                     if (isValidEmp) setTerminateEmployeeCode(code);
                     else setTerminateEmployeeCode('');
@@ -826,7 +855,6 @@ export default function ContractsPage() {
             </div>
             <form onSubmit={handleCreateBrandNewContract}>
               
-              {/* شريط البحث لإنشاء عقد جديد */}
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>
                   ابحث عن الموظف (بالاسم أو الكود) *
@@ -840,7 +868,7 @@ export default function ContractsPage() {
                   onChange={(e) => {
                     const val = e.target.value;
                     setEmpSearchTerm(val);
-                    const code = val.split(' - ')[0]; // استخراج الكود من النص المختار
+                    const code = val.split(' - ')[0]; 
                     const isValidEmp = employees.some(emp => emp.employee_code === code && emp.contract_type !== 'إنهاء تعاقد');
                     if (isValidEmp) setSelectedEmployeeCode(code);
                     else setSelectedEmployeeCode('');
