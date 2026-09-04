@@ -405,7 +405,7 @@ export default function ContractsPage() {
     setIsEditModalOpen(true);
   };
 
-  // ✅ تنفيذ التعديل السريع
+  // ✅ تنفيذ التعديل السريع في جدول العقود
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEmpData) return;
@@ -414,7 +414,9 @@ export default function ContractsPage() {
     if (editEmpData.contract_end_date && !isValidYear(editEmpData.contract_end_date)) return alert('يرجى إدخال سنة نهاية صحيحة.');
 
     setActionLoading(true);
-    const { error } = await supabase.from('employees').update({
+    
+    // تحديث جدول العقود (contracts)
+    const { error } = await supabase.from('contracts').update({
       contract_type: editEmpData.contract_type,
       contract_start_date: editEmpData.contract_start_date || null,
       contract_end_date: editEmpData.contract_end_date || null,
@@ -431,31 +433,43 @@ export default function ContractsPage() {
     }
   };
 
-  // 🔄 تنفيذ إعادة تفعيل وعودة الموظف غير النشط
+  // 🔄 تنفيذ إعادة تفعيل وعودة الموظف غير النشط (تحديث جدول الموظفين والعقود)
   const handleReactivateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmployeeCode) return alert('يرجى اختيار الموظف المراد إعادة تفعيله.');
     if (!reactivateDept) return alert('يرجى تحديد الإدارة التي سيعود إليها الموظف.');
 
     setActionLoading(true);
-    const { error } = await supabase.from('employees').update({
+
+    // 1️⃣ تحديث جدول الموظفين (employees)
+    const { error: empError } = await supabase.from('employees').update({
       status: 'Active',
       department: reactivateDept,
+    }).eq('employee_code', reactivateEmployeeCode);
+
+    if (empError) {
+      setActionLoading(false);
+      return alert('حدث خطأ أثناء تحديث الموظف: ' + empError.message);
+    }
+
+    // 2️⃣ تحديث جدول العقود (contracts)
+    const { error: contractError } = await supabase.from('contracts').update({
       contract_type: 'محدد المدة',
+      status: 'Active',
     }).eq('employee_code', reactivateEmployeeCode);
 
     setActionLoading(false);
 
-    if (error) {
-      alert('حدث خطأ أثناء إعادة تفعيل الموظف: ' + error.message);
-    } else {
-      alert('تم إعادة تفعيل الموظف ونقله للإدارة المحددة بنجاح ✅');
-      setIsReactivateModalOpen(false);
-      setReactivateEmployeeCode('');
-      setReactivateSearchTerm('');
-      setReactivateDept('');
-      fetchData();
+    if (contractError) {
+      console.warn('تنبيه في جدول العقود:', contractError.message);
     }
+
+    alert('تم إعادة تفعيل الموظف وتحديث إدارته وعقده بنجاح ✅');
+    setIsReactivateModalOpen(false);
+    setReactivateEmployeeCode('');
+    setReactivateSearchTerm('');
+    setReactivateDept('');
+    fetchData();
   };
 
   const handleTerminateContract = async (e: React.FormEvent) => {
@@ -463,10 +477,16 @@ export default function ContractsPage() {
     if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
     const confirmTerm = window.confirm('هل أنت متأكد من إنهاء تعاقد هذا الموظف نهائياً؟');
     if (!confirmTerm) return;
+
     setActionLoading(true);
-    const { error } = await supabase.from('employees').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    
+    // تحديث الموظف
+    const { error: empError } = await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    // تحديث العقد
+    await supabase.from('contracts').update({ status: 'Terminated', contract_type: 'إنهاء تعاقد' }).eq('employee_code', terminateEmployeeCode);
+
     setActionLoading(false);
-    if (error) alert('حدث خطأ أثناء إنهاء التعاقد: ' + error.message);
+    if (empError) alert('حدث خطأ أثناء إنهاء التعاقد: ' + empError.message);
     else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); setTerminateSearchTerm(''); fetchData(); }
   };
 
@@ -506,8 +526,10 @@ export default function ContractsPage() {
       return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
     }
 
-    await supabase.from('employees').update({ 
+    // تحديث جدول العقود بالبيانات الجديدة
+    await supabase.from('contracts').update({ 
       contract_type: newContractType, 
+      contract_start_date: newContractStartDate || null,
       contract_end_date: newContractEndDate || null 
     }).eq('employee_code', emp.employee_code);
 
@@ -631,7 +653,6 @@ export default function ContractsPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '10px' }}>
-          {/* ✅ زرار عودة الموظفين غير النشطين الجديد */}
           <button
             onClick={() => {
               setReactivateSearchTerm('');
