@@ -12,13 +12,13 @@ import * as XLSX from 'xlsx';
 
 export default function EmployeesPage() {
   const {
-    employees,
+    employees = [],
     loading,
     refresh: fetchEmployees,
   } = useAppData();
 
   // ============================================================
-  // دالة قراءة الحقول
+  // HELPERS
   // ============================================================
 
   const getField = (
@@ -39,10 +39,8 @@ export default function EmployeesPage() {
     return '';
   };
 
-  const getEmployeeId = (
-    emp: any
-  ) => {
-    return String(
+  const getEmployeeId = (emp: any) =>
+    String(
       getField(
         emp,
         'employee_id',
@@ -50,12 +48,9 @@ export default function EmployeesPage() {
         'employeeId'
       ) || ''
     ).trim();
-  };
 
-  const getEmployeeCode = (
-    emp: any
-  ) => {
-    return String(
+  const getEmployeeCode = (emp: any) =>
+    String(
       getField(
         emp,
         'employee_code',
@@ -65,12 +60,9 @@ export default function EmployeesPage() {
         'Code'
       ) || ''
     ).trim();
-  };
 
-  const getEmployeeName = (
-    emp: any
-  ) => {
-    return getField(
+  const getEmployeeName = (emp: any) =>
+    getField(
       emp,
       'employee_name',
       'EmployeeName',
@@ -79,12 +71,9 @@ export default function EmployeesPage() {
       'name',
       'Name'
     );
-  };
 
-  const getNationalId = (
-    emp: any
-  ) => {
-    return String(
+  const getNationalId = (emp: any) =>
+    String(
       getField(
         emp,
         'national_id',
@@ -93,20 +82,74 @@ export default function EmployeesPage() {
         'NationalId'
       ) || ''
     ).trim();
-  };
 
-  const normalizeSearchValue = (
-    value: any
-  ) => {
-    return String(
-      value ?? ''
-    )
+  const normalizeSearch = (value: any) =>
+    String(value ?? '')
       .trim()
       .toLowerCase();
+
+  const getEmployeeAge = (emp: any) => {
+    const rawAge = getField(
+      emp,
+      'age',
+      'Age'
+    );
+
+    if (
+      rawAge !== '' &&
+      rawAge !== null &&
+      !isNaN(Number(rawAge))
+    ) {
+      return Number(rawAge);
+    }
+
+    const birthDateRaw = getField(
+      emp,
+      'birth_date',
+      'BirthDate'
+    );
+
+    if (!birthDateRaw) {
+      return null;
+    }
+
+    const birthDate = new Date(
+      birthDateRaw
+    );
+
+    if (
+      isNaN(
+        birthDate.getTime()
+      )
+    ) {
+      return null;
+    }
+
+    const today = new Date();
+
+    let age =
+      today.getFullYear() -
+      birthDate.getFullYear();
+
+    const hasBirthdayPassed =
+      today.getMonth() >
+        birthDate.getMonth() ||
+      (
+        today.getMonth() ===
+          birthDate.getMonth() &&
+        today.getDate() >=
+          birthDate.getDate()
+      );
+
+    if (!hasBirthdayPassed) {
+      age--;
+    }
+
+    return age;
   };
 
   // ============================================================
-  // حالات الفلاتر
+  // FILTER STATES
   // ============================================================
 
   const [
@@ -146,7 +189,7 @@ export default function EmployeesPage() {
   ] = useState('');
 
   // ============================================================
-  // الترتيب والتحديد
+  // SORT / SELECTION
   // ============================================================
 
   const [
@@ -169,7 +212,7 @@ export default function EmployeesPage() {
   ] = useState<string[]>([]);
 
   // ============================================================
-  // النوافذ
+  // MODALS
   // ============================================================
 
   const [
@@ -198,7 +241,7 @@ export default function EmployeesPage() {
   ] = useState<any>(null);
 
   // ============================================================
-  // النقل والحذف
+  // BULK
   // ============================================================
 
   const [
@@ -222,7 +265,7 @@ export default function EmployeesPage() {
   ] = useState(false);
 
   // ============================================================
-  // إنهاء الخدمة
+  // TERMINATION
   // ============================================================
 
   const [
@@ -255,7 +298,7 @@ export default function EmployeesPage() {
   ] = useState(false);
 
   // ============================================================
-  // موظف جديد
+  // NEW EMPLOYEE
   // ============================================================
 
   const [newEmp, setNewEmp] =
@@ -277,146 +320,125 @@ export default function EmployeesPage() {
     });
 
   // ============================================================
-  // العمر
-  // ============================================================
-
-  const getEmployeeAge = (
-    emp: any
-  ) => {
-    const rawAge = getField(
-      emp,
-      'age',
-      'Age'
-    );
-
-    if (
-      rawAge !== '' &&
-      rawAge !== null &&
-      !isNaN(Number(rawAge))
-    ) {
-      return Number(rawAge);
-    }
-
-    return null;
-  };
-
-  // ============================================================
-  // الموظفون Active
+  // ACTIVE EMPLOYEES
   // ============================================================
 
   const activeEmployeesOnly =
     useMemo(() => {
       return employees.filter(
-        (e: any) =>
-          String(
-            getField(
-              e,
-              'status',
-              'Status'
-            ) ||
-              'Active'
-          )
-            .trim()
-            .toLowerCase() ===
-          'active'
+        (emp: any) => {
+          const status =
+            String(
+              getField(
+                emp,
+                'status',
+                'Status'
+              ) || 'Active'
+            )
+              .trim()
+              .toLowerCase();
+
+          return (
+            status === 'active'
+          );
+        }
       );
     }, [employees]);
 
   // ============================================================
-  // القوائم
+  // LISTS
   // ============================================================
 
-  const deptsList = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          activeEmployeesOnly
-            .map((e: any) =>
-              getField(
-                e,
-                'department',
-                'Department'
-              )
+  const deptsList = useMemo(() => {
+    return Array.from(
+      new Set(
+        activeEmployeesOnly
+          .map((emp: any) =>
+            getField(
+              emp,
+              'department',
+              'Department'
             )
-            .filter(Boolean)
-        )
-      ),
-    [activeEmployeesOnly]
-  );
+          )
+          .filter(Boolean)
+      )
+    );
+  }, [
+    activeEmployeesOnly,
+  ]);
 
-  const compsList = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          activeEmployeesOnly
-            .map((e: any) =>
-              getField(
-                e,
-                'company',
-                'Company'
-              )
+  const compsList = useMemo(() => {
+    return Array.from(
+      new Set(
+        activeEmployeesOnly
+          .map((emp: any) =>
+            getField(
+              emp,
+              'company',
+              'Company'
             )
-            .filter(Boolean)
-        )
-      ),
-    [activeEmployeesOnly]
-  );
+          )
+          .filter(Boolean)
+      )
+    );
+  }, [
+    activeEmployeesOnly,
+  ]);
 
-  const typesList = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          activeEmployeesOnly
-            .map((e: any) =>
-              getField(
-                e,
-                'contract_type',
-                'ContractType'
-              )
+  const typesList = useMemo(() => {
+    return Array.from(
+      new Set(
+        activeEmployeesOnly
+          .map((emp: any) =>
+            getField(
+              emp,
+              'contract_type',
+              'ContractType'
             )
-            .filter(Boolean)
-        )
-      ),
-    [activeEmployeesOnly]
-  );
+          )
+          .filter(Boolean)
+      )
+    );
+  }, [
+    activeEmployeesOnly,
+  ]);
 
   // ============================================================
-  // البحث والفلاتر
-  // الرقم القومي أصبح ضمن البحث
+  // MAIN FILTER
   // ============================================================
 
   const baseFilteredEmployees =
     useMemo(() => {
+      const search =
+        normalizeSearch(
+          searchTerm
+        );
+
       return activeEmployeesOnly.filter(
         (emp: any) => {
-          const term =
-            normalizeSearchValue(
-              searchTerm
-            );
-
-          const empCode =
-            normalizeSearchValue(
+          const code =
+            normalizeSearch(
               getEmployeeCode(
                 emp
               )
             );
 
-          const empName =
-            normalizeSearchValue(
+          const name =
+            normalizeSearch(
               getEmployeeName(
                 emp
               )
             );
 
           const nationalId =
-            normalizeSearchValue(
+            normalizeSearch(
               getNationalId(
                 emp
               )
             );
 
-          const empDept =
-            normalizeSearchValue(
+          const department =
+            normalizeSearch(
               getField(
                 emp,
                 'department',
@@ -424,8 +446,8 @@ export default function EmployeesPage() {
               )
             );
 
-          const empComp =
-            normalizeSearchValue(
+          const company =
+            normalizeSearch(
               getField(
                 emp,
                 'company',
@@ -433,7 +455,7 @@ export default function EmployeesPage() {
               )
             );
 
-          const cType =
+          const contractType =
             getField(
               emp,
               'contract_type',
@@ -441,48 +463,41 @@ export default function EmployeesPage() {
             );
 
           const age =
-            getEmployeeAge(
-              emp
-            );
+            getEmployeeAge(emp);
 
           const matchesSearch =
-            !term ||
-            empCode.includes(
-              term
-            ) ||
-            empName.includes(
-              term
-            ) ||
+            !search ||
+            code.includes(search) ||
+            name.includes(search) ||
             nationalId.includes(
-              term
+              search
             ) ||
-            empDept.includes(
-              term
+            department.includes(
+              search
             );
 
           const matchesDept =
             !selectedDept ||
-            empDept.includes(
-              normalizeSearchValue(
+            department.includes(
+              normalizeSearch(
                 selectedDept
               )
             );
 
-          const matchesComp =
+          const matchesCompany =
             !selectedCompany ||
-            empComp.includes(
-              normalizeSearchValue(
+            company.includes(
+              normalizeSearch(
                 selectedCompany
               )
             );
 
           const matchesType =
             !selectedType ||
-            cType ===
+            contractType ===
               selectedType;
 
-          let matchesAge =
-            true;
+          let matchesAge = true;
 
           if (
             selectedAgeRange ===
@@ -491,7 +506,9 @@ export default function EmployeesPage() {
             matchesAge =
               age !== null &&
               age >= 60;
-          } else if (
+          }
+
+          if (
             selectedAgeRange ===
             '50_59'
           ) {
@@ -499,7 +516,9 @@ export default function EmployeesPage() {
               age !== null &&
               age >= 50 &&
               age < 60;
-          } else if (
+          }
+
+          if (
             selectedAgeRange ===
             '30_49'
           ) {
@@ -507,7 +526,9 @@ export default function EmployeesPage() {
               age !== null &&
               age >= 30 &&
               age < 50;
-          } else if (
+          }
+
+          if (
             selectedAgeRange ===
             'under_30'
           ) {
@@ -519,7 +540,7 @@ export default function EmployeesPage() {
           return (
             matchesSearch &&
             matchesDept &&
-            matchesComp &&
+            matchesCompany &&
             matchesType &&
             matchesAge
           );
@@ -545,9 +566,9 @@ export default function EmployeesPage() {
 
       const perm =
         baseFilteredEmployees.filter(
-          (e: any) =>
+          (emp: any) =>
             getField(
-              e,
+              emp,
               'contract_type',
               'ContractType'
             ) === 'دائم'
@@ -555,10 +576,10 @@ export default function EmployeesPage() {
 
       const fixed =
         baseFilteredEmployees.filter(
-          (e: any) =>
+          (emp: any) =>
             String(
               getField(
-                e,
+                emp,
                 'contract_type',
                 'ContractType'
               )
@@ -569,23 +590,23 @@ export default function EmployeesPage() {
 
       const aboveAge =
         baseFilteredEmployees.filter(
-          (e: any) => {
-            const cType =
-              getField(
-                e,
-                'contract_type',
-                'ContractType'
+          (emp: any) => {
+            const type =
+              String(
+                getField(
+                  emp,
+                  'contract_type',
+                  'ContractType'
+                )
               );
 
             const age =
               getEmployeeAge(
-                e
+                emp
               );
 
             return (
-              String(
-                cType
-              ).includes(
+              type.includes(
                 'فوق السن'
               ) ||
               (age !== null &&
@@ -594,31 +615,32 @@ export default function EmployeesPage() {
           }
         ).length;
 
-      const calcPct =
-        (value: number) =>
-          total > 0
-            ? (
-                (value / total) *
-                100
-              ).toFixed(1)
-            : '0';
+      const pct = (
+        value: number
+      ) =>
+        total
+          ? (
+              (value / total) *
+              100
+            ).toFixed(1)
+          : '0';
 
       return {
         total,
         perm,
-        permPct:
-          calcPct(perm),
+        permPct: pct(perm),
         fixed,
-        fixedPct:
-          calcPct(fixed),
+        fixedPct: pct(fixed),
         aboveAge,
         aboveAgePct:
-          calcPct(aboveAge),
+          pct(aboveAge),
       };
-    }, [baseFilteredEmployees]);
+    }, [
+      baseFilteredEmployees,
+    ]);
 
   // ============================================================
-  // الجدول النهائي
+  // TABLE EMPLOYEES
   // ============================================================
 
   const finalTableEmployees =
@@ -626,11 +648,13 @@ export default function EmployeesPage() {
       const filtered =
         baseFilteredEmployees.filter(
           (emp: any) => {
-            const cType =
-              getField(
-                emp,
-                'contract_type',
-                'ContractType'
+            const type =
+              String(
+                getField(
+                  emp,
+                  'contract_type',
+                  'ContractType'
+                )
               );
 
             const age =
@@ -643,7 +667,7 @@ export default function EmployeesPage() {
               'PERM'
             ) {
               return (
-                cType === 'دائم'
+                type === 'دائم'
               );
             }
 
@@ -651,9 +675,7 @@ export default function EmployeesPage() {
               activeCardFilter ===
               'FIXED'
             ) {
-              return String(
-                cType
-              ).includes(
+              return type.includes(
                 'محدد'
               );
             }
@@ -663,9 +685,7 @@ export default function EmployeesPage() {
               'ABOVE_AGE'
             ) {
               return (
-                String(
-                  cType
-                ).includes(
+                type.includes(
                   'فوق السن'
                 ) ||
                 (age !== null &&
@@ -686,26 +706,26 @@ export default function EmployeesPage() {
             sortColumn ===
             'age'
           ) {
-            const ageA =
+            const aAge =
               getEmployeeAge(
                 a
               ) ?? 0;
 
-            const ageB =
+            const bAge =
               getEmployeeAge(
                 b
               ) ?? 0;
 
-            const res =
-              ageA - ageB;
+            const result =
+              aAge - bAge;
 
             return sortDirection ===
               'asc'
-              ? res
-              : -res;
+              ? result
+              : -result;
           }
 
-          const valA =
+          const aValue =
             String(
               getField(
                 a,
@@ -713,7 +733,7 @@ export default function EmployeesPage() {
               ) || ''
             );
 
-          const valB =
+          const bValue =
             String(
               getField(
                 b,
@@ -721,9 +741,9 @@ export default function EmployeesPage() {
               ) || ''
             );
 
-          const res =
-            valA.localeCompare(
-              valB,
+          const result =
+            aValue.localeCompare(
+              bValue,
               undefined,
               {
                 numeric:
@@ -735,8 +755,8 @@ export default function EmployeesPage() {
 
           return sortDirection ===
             'asc'
-            ? res
-            : -res;
+            ? result
+            : -result;
         }
       );
     }, [
@@ -747,68 +767,60 @@ export default function EmployeesPage() {
     ]);
 
   // ============================================================
-  // نتائج بحث إنهاء الخدمة
+  // TERMINATION SEARCH
   // ============================================================
 
   const termSearchResults =
     useMemo(() => {
-      if (
-        !termSearch.trim()
-      ) {
-        return [];
-      }
-
-      const term =
-        normalizeSearchValue(
+      const search =
+        normalizeSearch(
           termSearch
         );
 
+      if (!search) {
+        return [];
+      }
+
       return activeEmployeesOnly
         .filter(
-          (e: any) => {
+          (emp: any) => {
             const code =
-              normalizeSearchValue(
+              normalizeSearch(
                 getEmployeeCode(
-                  e
+                  emp
                 )
               );
 
             const name =
-              normalizeSearchValue(
+              normalizeSearch(
                 getEmployeeName(
-                  e
+                  emp
+                )
+              );
+
+            const nationalId =
+              normalizeSearch(
+                getNationalId(
+                  emp
                 )
               );
 
             const dept =
-              normalizeSearchValue(
+              normalizeSearch(
                 getField(
-                  e,
+                  emp,
                   'department',
                   'Department'
                 )
               );
 
-            const nationalId =
-              normalizeSearchValue(
-                getNationalId(
-                  e
-                )
-              );
-
             return (
-              code.includes(
-                term
-              ) ||
-              name.includes(
-                term
-              ) ||
-              dept.includes(
-                term
-              ) ||
+              code.includes(search) ||
+              name.includes(search) ||
               nationalId.includes(
-                term
-              )
+                search
+              ) ||
+              dept.includes(search)
             );
           }
         )
@@ -819,15 +831,14 @@ export default function EmployeesPage() {
     ]);
 
   // ============================================================
-  // ترتيب
+  // SORT
   // ============================================================
 
   const handleSort = (
-    columnKey: string
+    column: string
   ) => {
     if (
-      sortColumn ===
-      columnKey
+      sortColumn === column
     ) {
       setSortDirection(
         (prev) =>
@@ -836,9 +847,7 @@ export default function EmployeesPage() {
             : 'asc'
       );
     } else {
-      setSortColumn(
-        columnKey
-      );
+      setSortColumn(column);
       setSortDirection(
         'asc'
       );
@@ -846,11 +855,10 @@ export default function EmployeesPage() {
   };
 
   const renderSortArrow = (
-    colKey: string
+    column: string
   ) => {
     if (
-      sortColumn !==
-      colKey
+      sortColumn !== column
     ) {
       return (
         <span
@@ -865,62 +873,63 @@ export default function EmployeesPage() {
       );
     }
 
-    return sortDirection ===
-      'asc' ? (
+    return (
       <span
         style={{
-          color:
-            'var(--brass-600, #0d9488)',
           marginRight:
             '4px',
-        }}
-      >
-        ▲
-      </span>
-    ) : (
-      <span
-        style={{
           color:
             'var(--brass-600, #0d9488)',
-          marginRight:
-            '4px',
         }}
       >
-        ▼
+        {sortDirection ===
+        'asc'
+          ? '▲'
+          : '▼'}
       </span>
     );
   };
 
   // ============================================================
-  // فتح التعديل
+  // OPEN EDIT
   // ============================================================
 
-  const handleOpenEdit =
-    async (emp: any) => {
-      setEditData({
-        emp: {
-          ...emp,
-        },
-        loading:
-          false,
-      });
-    };
+  const handleOpenEdit = (
+    emp: any
+  ) => {
+    setEditData({
+      emp: {
+        ...emp,
+      },
+      loading: false,
+      saving: false,
+    });
+  };
 
   // ============================================================
-  // استقبال الموظف من Dashboard
-  // هذا هو الإصلاح الرئيسي
+  // IMPORTANT:
+  // RECEIVE EMPLOYEE FROM DASHBOARD
   // ============================================================
 
-  uuseEffect(() => {
-  const openRequestedEmployee = () => {
-    if (loading || !employees?.length) return;
+  useEffect(() => {
+    if (
+      loading ||
+      !employees ||
+      employees.length === 0
+    ) {
+      return;
+    }
 
-    const savedId =
+    const savedEmployeeId =
       localStorage.getItem(
         'selectedEmployeeId'
-      ) || '';
+      ) ||
+      sessionStorage.getItem(
+        'selectedEmployeeId'
+      ) ||
+      '';
 
-    const savedCode =
+    const savedEmployeeCode =
       localStorage.getItem(
         'selectedEmployeeCode'
       ) ||
@@ -930,58 +939,94 @@ export default function EmployeesPage() {
       localStorage.getItem(
         'jumpSearch'
       ) ||
+      sessionStorage.getItem(
+        'employeeSearch'
+      ) ||
+      sessionStorage.getItem(
+        'jumpSearch'
+      ) ||
       '';
 
     const cleanId =
-      String(savedId).trim();
+      String(
+        savedEmployeeId
+      ).trim();
 
     const cleanCode =
-      String(savedCode).trim();
+      String(
+        savedEmployeeCode
+      ).trim();
 
-    if (!cleanId && !cleanCode) {
+    if (
+      !cleanId &&
+      !cleanCode
+    ) {
       return;
     }
 
     const targetEmployee =
       employees.find(
         (emp: any) => {
-          const empId =
-            getEmployeeId(emp);
+          const employeeId =
+            getEmployeeId(
+              emp
+            );
 
-          const empCode =
-            getEmployeeCode(emp);
+          const employeeCode =
+            getEmployeeCode(
+              emp
+            );
+
+          const matchId =
+            cleanId &&
+            employeeId ===
+              cleanId;
+
+          const matchCode =
+            cleanCode &&
+            employeeCode.toLowerCase() ===
+              cleanCode.toLowerCase();
 
           return (
-            (cleanId &&
-              empId === cleanId) ||
-            (cleanCode &&
-              empCode.toLowerCase() ===
-                cleanCode.toLowerCase())
+            matchId ||
+            matchCode
           );
         }
       );
 
     if (!targetEmployee) {
+      console.warn(
+        'Employee from Dashboard was not found.',
+        {
+          cleanId,
+          cleanCode,
+        }
+      );
+
       return;
     }
 
-    // إلغاء الفلاتر
+    // ========================================================
+    // افتح السجل مباشرة
+    // ========================================================
+
     setSearchTerm('');
     setSelectedDept('');
     setSelectedCompany('');
     setSelectedType('');
     setSelectedAgeRange('');
-    setActiveCardFilter(null);
+    setActiveCardFilter(
+      null
+    );
 
-    // فتح التعديل
-    setEditData({
-      emp: {
-        ...targetEmployee,
-      },
-      loading: false,
-    });
+    handleOpenEdit(
+      targetEmployee
+    );
 
-    // تنظيف المفاتيح
+    // ========================================================
+    // تنظيف مفاتيح الانتقال
+    // ========================================================
+
     localStorage.removeItem(
       'selectedEmployeeId'
     );
@@ -991,32 +1036,35 @@ export default function EmployeesPage() {
     );
 
     localStorage.removeItem(
+      'employeeId'
+    );
+
+    localStorage.removeItem(
       'employeeSearch'
     );
 
     localStorage.removeItem(
       'jumpSearch'
     );
-  };
 
-  openRequestedEmployee();
-
-  window.addEventListener(
-    'storage',
-    openRequestedEmployee
-  );
-
-  return () => {
-    window.removeEventListener(
-      'storage',
-      openRequestedEmployee
+    sessionStorage.removeItem(
+      'selectedEmployeeId'
     );
-  };
-[employees, loading]);
+
+    sessionStorage.removeItem(
+      'employeeSearch'
+    );
+
+    sessionStorage.removeItem(
+      'jumpSearch'
+    );
+  }, [
+    employees,
+    loading,
   ]);
 
   // ============================================================
-  // حفظ التعديل
+  // SAVE EDIT
   // ============================================================
 
   const handleSaveEdit =
@@ -1035,39 +1083,47 @@ export default function EmployeesPage() {
       });
 
       try {
-        const rawHiring =
-          getField(
-            editData.emp,
-            'hiring_date',
-            'HiringDate'
-          );
+        const emp =
+          editData.emp;
 
-        const rawEnd =
-          getField(
-            editData.emp,
-            'contract_end_date',
-            'ContractEndDate'
-          );
+        const employeeCode =
+          getEmployeeCode(emp);
 
-        const empCode =
-          getEmployeeCode(
-            editData.emp
-          );
-
-        if (!empCode) {
+        if (!employeeCode) {
           throw new Error(
             'كود الموظف غير موجود.'
           );
         }
 
-        const employeeUpdateData =
+        const rawHiring =
+          getField(
+            emp,
+            'hiring_date',
+            'HiringDate'
+          );
+
+        const rawBirth =
+          getField(
+            emp,
+            'birth_date',
+            'BirthDate'
+          );
+
+        const rawEnd =
+          getField(
+            emp,
+            'contract_end_date',
+            'ContractEndDate'
+          );
+
+        const employeeUpdate =
           {
             employee_code:
-              empCode,
+              employeeCode,
 
             employee_name:
               getField(
-                editData.emp,
+                emp,
                 'employee_name',
                 'EmployeeName',
                 'ArabicName'
@@ -1075,61 +1131,50 @@ export default function EmployeesPage() {
 
             national_id:
               getField(
-                editData.emp,
+                emp,
                 'national_id',
                 'NationalID'
               ),
 
             birth_date:
-              getField(
-                editData.emp,
-                'birth_date',
-                'BirthDate'
-              ) || null,
+              rawBirth || null,
 
             age:
-              editData.emp
-                .age !==
+              emp.age !==
                 undefined &&
-              editData.emp
-                .age !== ''
+              emp.age !== ''
                 ? Number(
-                    editData.emp.age
+                    emp.age
                   )
                 : null,
 
             department:
               getField(
-                editData.emp,
+                emp,
                 'department',
                 'Department'
               ),
 
             company:
               getField(
-                editData.emp,
+                emp,
                 'company',
                 'Company'
               ),
 
             job_title:
               getField(
-                editData.emp,
+                emp,
                 'job_title',
                 'JobTitle'
               ),
 
             hiring_date:
-              rawHiring &&
-              String(
-                rawHiring
-              ).trim() !== ''
-                ? rawHiring
-                : null,
+              rawHiring || null,
 
             status:
               getField(
-                editData.emp,
+                emp,
                 'status',
                 'Status'
               ) ||
@@ -1137,14 +1182,14 @@ export default function EmployeesPage() {
 
             email:
               getField(
-                editData.emp,
+                emp,
                 'email',
                 'Email'
               ),
 
             mobile:
               getField(
-                editData.emp,
+                emp,
                 'mobile',
                 'Mobile',
                 'MOBILE'
@@ -1152,43 +1197,42 @@ export default function EmployeesPage() {
           };
 
         const {
-          error: empError,
+          error:
+            employeeError,
         } = await supabase
           .from(
             'employees'
           )
           .update(
-            employeeUpdateData
+            employeeUpdate
           )
           .eq(
             'employee_code',
-            empCode
+            employeeCode
           );
 
-        if (empError) {
-          throw empError;
+        if (employeeError) {
+          throw employeeError;
         }
 
-        const contractUpdateData =
+        const contractType =
+          getField(
+            emp,
+            'contract_type',
+            'ContractType'
+          );
+
+        const contractUpdate =
           {
             contract_type:
-              getField(
-                editData.emp,
-                'contract_type',
-                'ContractType'
-              ),
+              contractType,
 
             contract_end_date:
-              rawEnd &&
-              String(
-                rawEnd
-              ).trim() !== ''
-                ? rawEnd
-                : null,
+              rawEnd || null,
 
             status:
               getField(
-                editData.emp,
+                emp,
                 'status',
                 'Status'
               ) ||
@@ -1196,17 +1240,18 @@ export default function EmployeesPage() {
           };
 
         const {
-          error: contractError,
+          error:
+            contractError,
         } = await supabase
           .from(
             'contracts'
           )
           .update(
-            contractUpdateData
+            contractUpdate
           )
           .eq(
             'employee_code',
-            empCode
+            employeeCode
           );
 
         if (contractError) {
@@ -1223,11 +1268,11 @@ export default function EmployeesPage() {
 
         await fetchEmployees();
       } catch (
-        err: any
+        error: any
       ) {
         alert(
           'حدث خطأ أثناء الحفظ: ' +
-            err.message
+            error.message
         );
 
         setEditData(
@@ -1244,7 +1289,7 @@ export default function EmployeesPage() {
     };
 
   // ============================================================
-  // إنهاء الخدمة
+  // TERMINATION
   // ============================================================
 
   const handleConfirmTermination =
@@ -1256,9 +1301,10 @@ export default function EmployeesPage() {
       if (
         !selectedTermEmp
       ) {
-        return alert(
+        alert(
           'يرجى اختيار موظف أولاً.'
         );
+        return;
       }
 
       setTermSaving(
@@ -1272,31 +1318,29 @@ export default function EmployeesPage() {
           );
 
         const {
-          error: empError,
-        } = await supabase
-          .from(
-            'employees'
-          )
-          .update({
-            department:
-              'تحويلات تحت الاعتماد',
+          error,
+        } =
+          await supabase
+            .from(
+              'employees'
+            )
+            .update({
+              department:
+                'تحويلات تحت الاعتماد',
+              status:
+                'Inactive',
+              termination_reason:
+                termReason,
+              termination_date:
+                termDate,
+            })
+            .eq(
+              'employee_code',
+              empCode
+            );
 
-            status:
-              'Inactive',
-
-            termination_reason:
-              termReason,
-
-            termination_date:
-              termDate,
-          })
-          .eq(
-            'employee_code',
-            empCode
-          );
-
-        if (empError) {
-          throw empError;
+        if (error) {
+          throw error;
         }
 
         await supabase
@@ -1315,7 +1359,7 @@ export default function EmployeesPage() {
         alert(
           `✅ تم تحويل الموظف (${getEmployeeName(
             selectedTermEmp
-          )}) إلى قسم (تحويلات تحت الاعتماد) بنجاح.`
+          )}) إلى قسم تحويلات تحت الاعتماد.`
         );
 
         setShowTermModal(
@@ -1332,11 +1376,11 @@ export default function EmployeesPage() {
 
         await fetchEmployees();
       } catch (
-        err: any
+        error: any
       ) {
         alert(
           'خطأ أثناء العملية: ' +
-            err.message
+            error.message
         );
       } finally {
         setTermSaving(
@@ -1346,7 +1390,7 @@ export default function EmployeesPage() {
     };
 
   // ============================================================
-  // النقل المجمع
+  // BULK TRANSFER
   // ============================================================
 
   const handleConfirmBulkTransfer =
@@ -1366,9 +1410,10 @@ export default function EmployeesPage() {
         !bulkDept &&
         !bulkCompany
       ) {
-        return alert(
+        alert(
           'يرجى تحديد إدارة جديدة أو شركة جديدة.'
         );
+        return;
       }
 
       setBulkSaving(
@@ -1376,32 +1421,33 @@ export default function EmployeesPage() {
       );
 
       try {
-        const updatePayload: any =
+        const payload: any =
           {};
 
         if (bulkDept) {
-          updatePayload.department =
+          payload.department =
             bulkDept;
         }
 
         if (bulkCompany) {
-          updatePayload.company =
+          payload.company =
             bulkCompany;
         }
 
         const {
           error,
-        } = await supabase
-          .from(
-            'employees'
-          )
-          .update(
-            updatePayload
-          )
-          .in(
-            'employee_code',
-            selectedEmpIds
-          );
+        } =
+          await supabase
+            .from(
+              'employees'
+            )
+            .update(
+              payload
+            )
+            .in(
+              'employee_code',
+              selectedEmpIds
+            );
 
         if (error) {
           throw error;
@@ -1429,11 +1475,11 @@ export default function EmployeesPage() {
 
         await fetchEmployees();
       } catch (
-        err: any
+        error: any
       ) {
         alert(
           'خطأ أثناء النقل المجمع: ' +
-            err.message
+            error.message
         );
       } finally {
         setBulkSaving(
@@ -1443,16 +1489,24 @@ export default function EmployeesPage() {
     };
 
   // ============================================================
-  // الحذف
+  // DELETE
   // ============================================================
 
   const handleDeleteSelected =
     async () => {
       if (
-        !window.confirm(
-          `هل أنت متأكد من حذف ${selectedEmpIds.length} موظف بشكل نهائي من قاعدة البيانات؟\nهذا الإجراء لا يمكن التراجع عنه.`
-        )
+        selectedEmpIds.length ===
+        0
       ) {
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          `هل أنت متأكد من حذف ${selectedEmpIds.length} موظف نهائيًا؟`
+        );
+
+      if (!confirmed) {
         return;
       }
 
@@ -1472,8 +1526,7 @@ export default function EmployeesPage() {
           );
 
         const {
-          error:
-            empError,
+          error,
         } =
           await supabase
             .from(
@@ -1485,8 +1538,8 @@ export default function EmployeesPage() {
               selectedEmpIds
             );
 
-        if (empError) {
-          throw empError;
+        if (error) {
+          throw error;
         }
 
         alert(
@@ -1499,11 +1552,11 @@ export default function EmployeesPage() {
 
         await fetchEmployees();
       } catch (
-        err: any
+        error: any
       ) {
         alert(
           'حدث خطأ أثناء الحذف: ' +
-            err.message
+            error.message
         );
       } finally {
         setIsDeleting(
@@ -1513,7 +1566,7 @@ export default function EmployeesPage() {
     };
 
   // ============================================================
-  // إضافة موظف
+  // ADD EMPLOYEE
   // ============================================================
 
   const handleAddEmployee =
@@ -1523,7 +1576,7 @@ export default function EmployeesPage() {
       e.preventDefault();
 
       try {
-        let calculatedAge =
+        let age =
           null;
 
         if (
@@ -1537,28 +1590,30 @@ export default function EmployeesPage() {
           const today =
             new Date();
 
-          calculatedAge =
+          age =
             today.getFullYear() -
             birth.getFullYear();
 
-          const beforeBirthday =
+          const notYetBirthday =
             today.getMonth() <
               birth.getMonth() ||
-            (today.getMonth() ===
-              birth.getMonth() &&
+            (
+              today.getMonth() ===
+                birth.getMonth() &&
               today.getDate() <
-                birth.getDate());
+                birth.getDate()
+            );
 
           if (
-            beforeBirthday
+            notYetBirthday
           ) {
-            calculatedAge--;
+            age--;
           }
         }
 
         const {
           error:
-            empError,
+            employeeError,
         } =
           await supabase
             .from(
@@ -1576,12 +1631,10 @@ export default function EmployeesPage() {
                   newEmp.national_id,
 
                 birth_date:
-                  newEmp.birth_date
-                    ? newEmp.birth_date
-                    : null,
+                  newEmp.birth_date ||
+                  null,
 
-                age:
-                  calculatedAge,
+                age,
 
                 department:
                   newEmp.department,
@@ -1593,9 +1646,8 @@ export default function EmployeesPage() {
                   newEmp.job_title,
 
                 hiring_date:
-                  newEmp.hiring_date
-                    ? newEmp.hiring_date
-                    : null,
+                  newEmp.hiring_date ||
+                  null,
 
                 status:
                   newEmp.status,
@@ -1608,8 +1660,8 @@ export default function EmployeesPage() {
               },
             ]);
 
-        if (empError) {
-          throw empError;
+        if (employeeError) {
+          throw employeeError;
         }
 
         const {
@@ -1628,17 +1680,16 @@ export default function EmployeesPage() {
                 contract_type:
                   newEmp.contract_type,
 
+                contract_start_date:
+                  newEmp.hiring_date ||
+                  null,
+
                 contract_end_date:
                   newEmp.contract_type ===
                     'دائم' ||
                   !newEmp.contract_end_date
                     ? null
                     : newEmp.contract_end_date,
-
-                contract_start_date:
-                  newEmp.hiring_date
-                    ? newEmp.hiring_date
-                    : null,
 
                 status:
                   newEmp.status,
@@ -1688,119 +1739,124 @@ export default function EmployeesPage() {
 
         await fetchEmployees();
       } catch (
-        err: any
+        error: any
       ) {
         alert(
           'خطأ أثناء الإضافة: ' +
-            err.message
+            error.message
         );
       }
     };
 
   // ============================================================
-  // تصدير Excel
+  // EXPORT
   // ============================================================
 
   const handleExportToExcel =
     (
       onlySelected = false
     ) => {
-      const listToExport =
+      const rows =
         onlySelected
           ? finalTableEmployees.filter(
-              (e: any) =>
+              (emp: any) =>
                 selectedEmpIds.includes(
                   getEmployeeCode(
-                    e
+                    emp
                   )
                 )
             )
           : finalTableEmployees;
 
-      const exportData =
-        listToExport.map(
-          (e: any) => ({
-            employee_id:
-              getEmployeeId(e),
+      const data =
+        rows.map(
+          (emp: any) => ({
+            EmployeeID:
+              getEmployeeId(
+                emp
+              ),
 
-            employee_code:
+            EmployeeCode:
               getEmployeeCode(
-                e
+                emp
               ),
 
-            employee_name:
+            EmployeeName:
               getEmployeeName(
-                e
+                emp
               ),
 
-            job_title:
-              getField(
-                e,
-                'job_title',
-                'JobTitle'
+            NationalID:
+              getNationalId(
+                emp
               ),
 
-            department:
+            Department:
               getField(
-                e,
+                emp,
                 'department',
                 'Department'
               ),
 
-            age:
+            Company:
+              getField(
+                emp,
+                'company',
+                'Company'
+              ),
+
+            JobTitle:
+              getField(
+                emp,
+                'job_title',
+                'JobTitle'
+              ),
+
+            Age:
               getEmployeeAge(
-                e
-              ) !== null
-                ? `${getEmployeeAge(
-                    e
-                  )} سنة`
-                : '—',
-
-            national_id:
-              getNationalId(
-                e
+                emp
               ),
 
-            mobile:
+            HiringDate:
               getField(
-                e,
-                'mobile',
-                'Mobile'
-              ),
-
-            hiring_date:
-              getField(
-                e,
+                emp,
                 'hiring_date',
                 'HiringDate'
               ),
 
-            contract_end_date:
+            ContractType:
               getField(
-                e,
-                'contract_end_date',
-                'ContractEndDate'
-              ),
-
-            contract_type:
-              getField(
-                e,
+                emp,
                 'contract_type',
                 'ContractType'
               ),
 
-            company:
+            ContractEndDate:
               getField(
-                e,
-                'company',
-                'Company'
+                emp,
+                'contract_end_date',
+                'ContractEndDate'
+              ),
+
+            Mobile:
+              getField(
+                emp,
+                'mobile',
+                'Mobile'
+              ),
+
+            Email:
+              getField(
+                emp,
+                'email',
+                'Email'
               ),
           })
         );
 
       const ws =
         XLSX.utils.json_to_sheet(
-          exportData
+          data
         );
 
       const wb =
@@ -1809,120 +1865,73 @@ export default function EmployeesPage() {
       XLSX.utils.book_append_sheet(
         wb,
         ws,
-        'الموظفين_Active'
+        'Employees'
       );
 
       XLSX.writeFile(
         wb,
-        `بيانات_الموظفين_${new Date()
+        `Employees_${new Date()
           .toISOString()
           .split('T')[0]}.xlsx`
       );
     };
 
   // ============================================================
-  // Badge نهاية العقد
+  // CONTRACT BADGE
   // ============================================================
 
-  const getContractStatusBadge =
-    (
-      contractType: string,
-      endDateStr: string
-    ) => {
+  const getContractStatusBadge = (
+    type: string,
+    endDate: string
+  ) => {
+    if (
+      endDate &&
+      String(
+        endDate
+      ).trim()
+    ) {
+      const end =
+        new Date(
+          endDate
+        );
+
+      const today =
+        new Date();
+
+      end.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      today.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      const days =
+        Math.ceil(
+          (end.getTime() -
+            today.getTime()) /
+            (1000 *
+              60 *
+              60 *
+              24)
+        );
+
       if (
-        endDateStr &&
-        String(
-          endDateStr
-        ).trim() !== ''
+        days < 0
       ) {
-        const end =
-          new Date(
-            endDateStr
-          );
-
-        const today =
-          new Date();
-
-        today.setHours(
-          0,
-          0,
-          0,
-          0
-        );
-
-        end.setHours(
-          0,
-          0,
-          0,
-          0
-        );
-
-        const days =
-          Math.ceil(
-            (end.getTime() -
-              today.getTime()) /
-              (1000 *
-                3600 *
-                24)
-          );
-
-        if (
-          days < 0
-        ) {
-          return (
-            <span
-              style={{
-                background:
-                  'var(--stamp-red-bg)',
-                color:
-                  'var(--stamp-red)',
-                padding:
-                  '3px 8px',
-                borderRadius:
-                  '6px',
-                fontWeight:
-                  'bold',
-                fontSize:
-                  '10px',
-              }}
-            >
-              {endDateStr} 🚨
-            </span>
-          );
-        }
-
-        if (
-          days <= 60
-        ) {
-          return (
-            <span
-              style={{
-                background:
-                  'var(--stamp-amber-bg)',
-                color:
-                  'var(--stamp-amber)',
-                padding:
-                  '3px 8px',
-                borderRadius:
-                  '6px',
-                fontWeight:
-                  'bold',
-                fontSize:
-                  '10px',
-              }}
-            >
-              {endDateStr} ⏳
-            </span>
-          );
-        }
-
         return (
           <span
             style={{
               background:
-                'var(--stamp-blue-bg)',
+                'var(--stamp-red-bg)',
               color:
-                'var(--stamp-blue)',
+                'var(--stamp-red)',
               padding:
                 '3px 8px',
               borderRadius:
@@ -1933,22 +1942,21 @@ export default function EmployeesPage() {
                 '10px',
             }}
           >
-            {endDateStr}
+            {endDate} 🚨
           </span>
         );
       }
 
       if (
-        contractType ===
-        'دائم'
+        days <= 60
       ) {
         return (
           <span
             style={{
               background:
-                'var(--stamp-green-bg)',
+                'var(--stamp-amber-bg)',
               color:
-                'var(--stamp-green)',
+                'var(--stamp-amber)',
               padding:
                 '3px 8px',
               borderRadius:
@@ -1959,7 +1967,7 @@ export default function EmployeesPage() {
                 '10px',
             }}
           >
-            عقد دائم 🛡️
+            {endDate} ⏳
           </span>
         );
       }
@@ -1967,23 +1975,68 @@ export default function EmployeesPage() {
       return (
         <span
           style={{
+            background:
+              'var(--stamp-blue-bg)',
             color:
-              'var(--muted)',
+              'var(--stamp-blue)',
+            padding:
+              '3px 8px',
+            borderRadius:
+              '6px',
+            fontWeight:
+              'bold',
+              fontSize:
+                '10px',
           }}
         >
-          —
+          {endDate}
         </span>
       );
-    };
+    }
+
+    if (
+      type === 'دائم'
+    ) {
+      return (
+        <span
+          style={{
+            background:
+              'var(--stamp-green-bg)',
+            color:
+              'var(--stamp-green)',
+            padding:
+              '3px 8px',
+            borderRadius:
+              '6px',
+            fontWeight:
+              'bold',
+            fontSize:
+              '10px',
+          }}
+        >
+          عقد دائم 🛡️
+        </span>
+      );
+    }
+
+    return (
+      <span
+        style={{
+          color:
+            'var(--muted)',
+        }}
+      >
+        —
+      </span>
+    );
+  };
 
   // ============================================================
-  // Badge العمر
+  // AGE BADGE
   // ============================================================
 
   const renderAgeBadge =
-    (
-      emp: any
-    ) => {
+    (emp: any) => {
       const age =
         getEmployeeAge(
           emp
@@ -2042,8 +2095,8 @@ export default function EmployeesPage() {
               '6px',
             fontWeight:
               'bold',
-            fontSize:
-              '10px',
+              fontSize:
+                '10px',
           }}
         >
           {age} سنة
@@ -2051,16 +2104,22 @@ export default function EmployeesPage() {
       );
     };
 
+  // ============================================================
+  // RENDER
+  // ============================================================
+
   return (
     <div
       style={{
+        direction:
+          'rtl',
         animation:
           'fadeIn 0.4s ease-in-out',
       }}
     >
-      {/* ==================================================
-          الرأس
-      ================================================== */}
+      {/* ========================================================
+          HEADER
+      ======================================================== */}
 
       <div
         style={{
@@ -2105,8 +2164,7 @@ export default function EmployeesPage() {
                 'bold',
             }}
           >
-            إدارة وتتبع السجل الرئيسي
-            المباشر للموظفين وقوة العمل
+            إدارة وتتبع السجل الرئيسي للموظفين
           </p>
         </div>
 
@@ -2118,8 +2176,6 @@ export default function EmployeesPage() {
               '8px',
             flexWrap:
               'wrap',
-            alignItems:
-              'center',
           }}
         >
           <button
@@ -2140,8 +2196,6 @@ export default function EmployeesPage() {
                 '6px',
               fontWeight:
                 'bold',
-              fontSize:
-                '11px',
               cursor:
                 'pointer',
             }}
@@ -2173,8 +2227,6 @@ export default function EmployeesPage() {
                 '6px',
               fontWeight:
                 'bold',
-              fontSize:
-                '11px',
               cursor:
                 'pointer',
             }}
@@ -2200,8 +2252,6 @@ export default function EmployeesPage() {
                 '6px',
               fontWeight:
                 'bold',
-              fontSize:
-                '11px',
               cursor:
                 'pointer',
             }}
@@ -2211,9 +2261,9 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* ==================================================
-          KPI
-      ================================================== */}
+      {/* ========================================================
+          KPI CARDS
+      ======================================================== */}
 
       <div
         style={{
@@ -2246,7 +2296,7 @@ export default function EmployeesPage() {
               activeCardFilter ===
               'ALL_ACTIVE'
                 ? '2px solid #22c55e'
-                : '1px solid var(--line, #e2e8f0)',
+                : '1px solid var(--line)',
             padding:
               '12px 16px',
             borderRadius:
@@ -2259,14 +2309,11 @@ export default function EmployeesPage() {
             style={{
               fontSize:
                 '11px',
-              color:
-                'var(--muted, #64748b)',
               fontWeight:
                 'bold',
             }}
           >
             إجمالي الموظفين
-            (Active)
           </div>
 
           <div
@@ -2277,8 +2324,6 @@ export default function EmployeesPage() {
                 '900',
               color:
                 'var(--stamp-green)',
-              marginTop:
-                '4px',
             }}
           >
             {kpiStats.total.toLocaleString(
@@ -2296,7 +2341,7 @@ export default function EmployeesPage() {
                 'bold',
             }}
           >
-            100% من القوة المفلترة
+            100% من القوة الحالية
           </div>
         </div>
 
@@ -2319,7 +2364,7 @@ export default function EmployeesPage() {
               activeCardFilter ===
               'PERM'
                 ? '2px solid #16a34a'
-                : '1px solid var(--line, #e2e8f0)',
+                : '1px solid var(--line)',
             padding:
               '12px 16px',
             borderRadius:
@@ -2387,7 +2432,7 @@ export default function EmployeesPage() {
               activeCardFilter ===
               'FIXED'
                 ? '2px solid #2563eb'
-                : '1px solid var(--line, #e2e8f0)',
+                : '1px solid var(--line)',
             padding:
               '12px 16px',
             borderRadius:
@@ -2455,7 +2500,7 @@ export default function EmployeesPage() {
               activeCardFilter ===
               'ABOVE_AGE'
                 ? '2px solid #d97706'
-                : '1px solid var(--line, #e2e8f0)',
+                : '1px solid var(--line)',
             padding:
               '12px 16px',
             borderRadius:
@@ -2505,17 +2550,177 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* ==================================================
-          الفلاتر
-      ================================================== */}
+      {/* ========================================================
+          BULK ACTIONS
+      ======================================================== */}
+
+      {selectedEmpIds.length >
+        0 && (
+        <div
+          style={{
+            background:
+              '#0f172a',
+            color:
+              '#fff',
+            padding:
+              '10px 16px',
+            borderRadius:
+              '10px',
+            marginBottom:
+              '16px',
+            display:
+              'flex',
+            justifyContent:
+              'space-between',
+            alignItems:
+              'center',
+          }}
+        >
+          <div
+            style={{
+              fontSize:
+                '11px',
+              fontWeight:
+                'bold',
+            }}
+          >
+            تم تحديد{' '}
+            <span
+              style={{
+                color:
+                  '#38bdf8',
+              }}
+            >
+              {
+                selectedEmpIds.length
+              }
+            </span>{' '}
+            موظف
+          </div>
+
+          <div
+            style={{
+              display:
+                'flex',
+              gap:
+                '8px',
+            }}
+          >
+            <button
+              onClick={() =>
+                setShowBulkTransferModal(
+                  true
+                )
+              }
+              style={{
+                padding:
+                  '6px 12px',
+                background:
+                  '#2563eb',
+                color:
+                  '#fff',
+                border: 0,
+                borderRadius:
+                  '6px',
+                fontWeight:
+                  'bold',
+                cursor:
+                  'pointer',
+              }}
+            >
+              نقل مجمع 🔄
+            </button>
+
+            <button
+              onClick={() =>
+                handleExportToExcel(
+                  true
+                )
+              }
+              style={{
+                padding:
+                  '6px 12px',
+                background:
+                  '#16a34a',
+                color:
+                  '#fff',
+                border: 0,
+                borderRadius:
+                  '6px',
+                fontWeight:
+                  'bold',
+                cursor:
+                  'pointer',
+              }}
+            >
+              تصدير المحدد 📥
+            </button>
+
+            <button
+              onClick={
+                handleDeleteSelected
+              }
+              disabled={
+                isDeleting
+              }
+              style={{
+                padding:
+                  '6px 12px',
+                background:
+                  '#dc2626',
+                color:
+                  '#fff',
+                border: 0,
+                borderRadius:
+                  '6px',
+                fontWeight:
+                  'bold',
+                cursor:
+                  'pointer',
+              }}
+            >
+              {isDeleting
+                ? 'جاري الحذف...'
+                : 'حذف نهائي 🗑️'}
+            </button>
+
+            <button
+              onClick={() =>
+                setSelectedEmpIds(
+                  []
+                )
+              }
+              style={{
+                padding:
+                  '6px 12px',
+                background:
+                  'transparent',
+                color:
+                  '#fff',
+                border:
+                  '1px solid #64748b',
+                borderRadius:
+                  '6px',
+                cursor:
+                  'pointer',
+              }}
+            >
+              إلغاء ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          FILTERS
+      ======================================================== */}
 
       <div
-        className="db-card"
         style={{
           background:
             'var(--paper-card)',
           border:
-            '1px solid var(--line, #e2e8f0)',
+            '1px solid var(--line)',
           padding:
             '12px 16px',
           borderRadius:
@@ -2526,10 +2731,10 @@ export default function EmployeesPage() {
             'flex',
           gap:
             '10px',
-          alignItems:
-            'center',
           flexWrap:
             'wrap',
+          alignItems:
+            'center',
         }}
       >
         <input
@@ -2543,24 +2748,19 @@ export default function EmployeesPage() {
               e.target.value
             )
           }
-          className="db-input"
           style={{
             padding:
               '8px 12px',
             borderRadius:
               '8px',
             border:
-              '1px solid var(--line, #e2e8f0)',
+              '1px solid var(--line)',
             fontSize:
               '11px',
+            minWidth:
+              '260px',
             outline:
               'none',
-            minWidth:
-              '240px',
-            background:
-              'transparent',
-            color:
-              'var(--ink, #0f172a)',
           }}
         />
 
@@ -2584,8 +2784,6 @@ export default function EmployeesPage() {
               '1px solid var(--line)',
             fontSize:
               '11px',
-            outline:
-              'none',
             width:
               '130px',
           }}
@@ -2625,8 +2823,6 @@ export default function EmployeesPage() {
               '1px solid var(--line)',
             fontSize:
               '11px',
-            outline:
-              'none',
             width:
               '130px',
           }}
@@ -2664,8 +2860,6 @@ export default function EmployeesPage() {
               '1px solid var(--line)',
             fontSize:
               '11px',
-            outline:
-              'none',
           }}
         >
           <option value="">
@@ -2674,14 +2868,14 @@ export default function EmployeesPage() {
 
           {typesList.map(
             (
-              t: any,
+              type: any,
               i: number
             ) => (
               <option
                 key={i}
-                value={t}
+                value={type}
               >
-                {t}
+                {type}
               </option>
             )
           )}
@@ -2705,8 +2899,6 @@ export default function EmployeesPage() {
               '1px solid var(--line)',
             fontSize:
               '11px',
-            outline:
-              'none',
           }}
         >
           <option value="">
@@ -2714,19 +2906,19 @@ export default function EmployeesPage() {
           </option>
 
           <option value="60_plus">
-            💼 فوق السن (60 سنة فأكثر)
+            فوق السن (60+)
           </option>
 
           <option value="50_59">
-            🎂 من 50 إلى 59 سنة
+            من 50 إلى 59
           </option>
 
           <option value="30_49">
-            👔 من 30 إلى 49 سنة
+            من 30 إلى 49
           </option>
 
           <option value="under_30">
-            🌱 أقل من 30 سنة
+            أقل من 30
           </option>
         </select>
 
@@ -2760,40 +2952,26 @@ export default function EmployeesPage() {
 
         <div
           style={{
-            flex: 1,
-            textAlign:
-              'left',
+            marginRight:
+              'auto',
             fontSize:
               '11px',
-            color:
-              'var(--muted)',
             fontWeight:
               'bold',
           }}
         >
-          النتائج:
-          <span
-            style={{
-              color:
-                'var(--ink)',
-              marginRight:
-                '4px',
-            }}
-          >
-            {finalTableEmployees.length.toLocaleString(
-              'en-US'
-            )}
-          </span>
-          موظف
+          النتائج:{' '}
+          {finalTableEmployees.length.toLocaleString(
+            'en-US'
+          )}
         </div>
       </div>
 
-      {/* ==================================================
-          الجدول
-      ================================================== */}
+      {/* ========================================================
+          TABLE
+      ======================================================== */}
 
       <div
-        className="db-card"
         style={{
           background:
             'var(--paper-card)',
@@ -2812,15 +2990,13 @@ export default function EmployeesPage() {
                 '60px',
               textAlign:
                 'center',
-              fontSize:
-                '13px',
               fontWeight:
                 'bold',
               color:
                 'var(--muted)',
             }}
           >
-            جاري سحب بيانات الموظفين...
+            جاري تحميل بيانات الموظفين...
             ⏳
           </div>
         ) : (
@@ -2839,12 +3015,10 @@ export default function EmployeesPage() {
                   '100%',
                 borderCollapse:
                   'collapse',
-                textAlign:
-                  'right',
-                fontSize:
-                  '11.5px',
                 whiteSpace:
                   'nowrap',
+                fontSize:
+                  '11.5px',
               }}
             >
               <thead
@@ -2865,7 +3039,31 @@ export default function EmployeesPage() {
                         '12px',
                     }}
                   >
-                    ✓
+                    <input
+                      type="checkbox"
+                      checked={
+                        finalTableEmployees.length >
+                          0 &&
+                        selectedEmpIds.length ===
+                          finalTableEmployees.length
+                      }
+                      onChange={(
+                        e
+                      ) => {
+                        setSelectedEmpIds(
+                          e.target.checked
+                            ? finalTableEmployees.map(
+                                (
+                                  emp: any
+                                ) =>
+                                  getEmployeeCode(
+                                    emp
+                                  )
+                              )
+                            : []
+                        );
+                      }}
+                    />
                   </th>
 
                   <th
@@ -2919,10 +3117,7 @@ export default function EmployeesPage() {
                         'pointer',
                     }}
                   >
-                    الوظيفة{' '}
-                    {renderSortArrow(
-                      'job_title'
-                    )}
+                    الوظيفة
                   </th>
 
                   <th
@@ -2938,10 +3133,7 @@ export default function EmployeesPage() {
                         'pointer',
                     }}
                   >
-                    الإدارة{' '}
-                    {renderSortArrow(
-                      'department'
-                    )}
+                    الإدارة
                   </th>
 
                   <th
@@ -2957,23 +3149,13 @@ export default function EmployeesPage() {
                         'pointer',
                     }}
                   >
-                    السن{' '}
-                    {renderSortArrow(
-                      'age'
-                    )}
+                    السن
                   </th>
 
                   <th
-                    onClick={() =>
-                      handleSort(
-                        'hiring_date'
-                      )
-                    }
                     style={{
                       padding:
                         '12px',
-                      cursor:
-                        'pointer',
                     }}
                   >
                     تاريخ التعيين
@@ -3001,8 +3183,8 @@ export default function EmployeesPage() {
                     style={{
                       padding:
                         '12px',
-                      textAlign:
-                        'center',
+                        textAlign:
+                          'center',
                     }}
                   >
                     إجراءات
@@ -3015,8 +3197,13 @@ export default function EmployeesPage() {
                   (
                     emp: any
                   ) => {
-                    const empCode =
+                    const code =
                       getEmployeeCode(
+                        emp
+                      );
+
+                    const employeeId =
+                      getEmployeeId(
                         emp
                       );
 
@@ -3032,38 +3219,33 @@ export default function EmployeesPage() {
                         'Mobile'
                       );
 
-                    const isMissingData =
-                      !nationalId ||
-                      !mobile;
-
-                    const cType =
+                    const contractType =
                       getField(
                         emp,
                         'contract_type',
                         'ContractType'
                       );
 
-                    const endDate =
+                    const contractEnd =
                       getField(
                         emp,
                         'contract_end_date',
                         'ContractEndDate'
                       );
 
-                    const empId =
-                      getEmployeeId(
-                        emp
-                      );
+                    const missing =
+                      !nationalId ||
+                      !mobile;
 
                     return (
                       <tr
                         key={
-                          empId ||
-                          empCode
+                          employeeId ||
+                          code
                         }
                         style={{
                           borderBottom:
-                            '1px solid var(--line, #f1f5f9)',
+                            '1px solid var(--line)',
                         }}
                       >
                         <td
@@ -3077,7 +3259,7 @@ export default function EmployeesPage() {
                           <input
                             type="checkbox"
                             checked={selectedEmpIds.includes(
-                              empCode
+                              code
                             )}
                             onChange={(
                               e
@@ -3087,14 +3269,14 @@ export default function EmployeesPage() {
                                   .checked
                                   ? [
                                       ...selectedEmpIds,
-                                      empCode,
+                                      code,
                                     ]
                                   : selectedEmpIds.filter(
                                       (
                                         id
                                       ) =>
                                         id !==
-                                        empCode
+                                        code
                                     )
                               )
                             }
@@ -3107,13 +3289,13 @@ export default function EmployeesPage() {
                               '10px',
                             fontWeight:
                               'bold',
-                            fontFamily:
-                              'monospace',
                             color:
                               'var(--brass-600, #0d9488)',
+                            fontFamily:
+                              'monospace',
                           }}
                         >
-                          {empCode}
+                          {code}
                         </td>
 
                         <td
@@ -3128,9 +3310,9 @@ export default function EmployeesPage() {
                             emp
                           )}
 
-                          {isMissingData && (
+                          {missing && (
                             <span
-                              title="بيانات غير مكتملة"
+                              title="ناقص الرقم القومي أو الموبايل"
                               style={{
                                 marginRight:
                                   '6px',
@@ -3153,7 +3335,8 @@ export default function EmployeesPage() {
                             emp,
                             'job_title',
                             'JobTitle'
-                          ) || '—'}
+                          ) ||
+                            '—'}
                         </td>
 
                         <td
@@ -3168,7 +3351,8 @@ export default function EmployeesPage() {
                             emp,
                             'department',
                             'Department'
-                          ) || '—'}
+                          ) ||
+                            '—'}
                         </td>
 
                         <td
@@ -3194,7 +3378,8 @@ export default function EmployeesPage() {
                             emp,
                             'hiring_date',
                             'HiringDate'
-                          ) || '—'}
+                          ) ||
+                            '—'}
                         </td>
 
                         <td
@@ -3205,7 +3390,7 @@ export default function EmployeesPage() {
                               'bold',
                           }}
                         >
-                          {cType ||
+                          {contractType ||
                             '—'}
                         </td>
 
@@ -3216,8 +3401,8 @@ export default function EmployeesPage() {
                           }}
                         >
                           {getContractStatusBadge(
-                            cType,
-                            endDate
+                            contractType,
+                            contractEnd
                           )}
                         </td>
 
@@ -3274,6 +3459,8 @@ export default function EmployeesPage() {
                                   '6px',
                                 border:
                                   '1px solid var(--line)',
+                                background:
+                                  'transparent',
                                 cursor:
                                   'pointer',
                                 fontSize:
@@ -3296,9 +3483,9 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      {/* ==================================================
-          PROFILE
-      ================================================== */}
+      {/* ========================================================
+          PROFILE MODAL
+      ======================================================== */}
 
       {profileEmp && (
         <div
@@ -3323,7 +3510,7 @@ export default function EmployeesPage() {
           <div
             style={{
               width:
-                '600px',
+                '650px',
               maxWidth:
                 '100%',
               background:
@@ -3332,8 +3519,10 @@ export default function EmployeesPage() {
                 '16px',
               padding:
                 '24px',
-              boxShadow:
-                '0 20px 60px rgba(0,0,0,0.5)',
+              maxHeight:
+                '90vh',
+              overflowY:
+                'auto',
             }}
           >
             <div
@@ -3345,19 +3534,19 @@ export default function EmployeesPage() {
                 alignItems:
                   'center',
                 marginBottom:
-                  '16px',
+                  '18px',
               }}
             >
               <h3
                 style={{
                   margin: 0,
                   fontSize:
-                    '16px',
+                    '17px',
                   fontWeight:
                     '800',
                 }}
               >
-                👤 الملف الوظيفي الشامل
+                👤 الملف الوظيفي
               </h3>
 
               <button
@@ -3369,13 +3558,15 @@ export default function EmployeesPage() {
                 style={{
                   background:
                     '#fef2f2',
+                  border: 0,
                   color:
                     '#dc2626',
-                  border: 0,
                   padding:
                     '6px 12px',
                   borderRadius:
                     '6px',
+                  fontWeight:
+                    'bold',
                   cursor:
                     'pointer',
                 }}
@@ -3396,18 +3587,149 @@ export default function EmployeesPage() {
                   '12px',
               }}
             >
-              <div>كود الموظف: <strong>{getEmployeeCode(profileEmp)}</strong></div>
-              <div>EmployeeID: <strong>{getEmployeeId(profileEmp) || '—'}</strong></div>
-              <div>الاسم: <strong>{getEmployeeName(profileEmp)}</strong></div>
-              <div>الرقم القومي: <strong>{getNationalId(profileEmp) || 'غير مسجل'}</strong></div>
-              <div>الإدارة: <strong>{getField(profileEmp, 'department', 'Department')}</strong></div>
-              <div>الشركة: <strong>{getField(profileEmp, 'company', 'Company')}</strong></div>
-              <div>الوظيفة: <strong>{getField(profileEmp, 'job_title', 'JobTitle')}</strong></div>
-              <div>الموبايل: <strong>{getField(profileEmp, 'mobile', 'Mobile') || 'غير مسجل'}</strong></div>
-              <div>تاريخ التعيين: <strong>{getField(profileEmp, 'hiring_date', 'HiringDate') || '—'}</strong></div>
-              <div>نوع العقد: <strong>{getField(profileEmp, 'contract_type', 'ContractType') || '—'}</strong></div>
-              <div>نهاية العقد: <strong>{getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</strong></div>
-              <div>الحالة: <strong>{getField(profileEmp, 'status', 'Status') || '—'}</strong></div>
+              <div>
+                <strong>
+                  EmployeeID:
+                </strong>{' '}
+                {getEmployeeId(
+                  profileEmp
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الكود:
+                </strong>{' '}
+                {getEmployeeCode(
+                  profileEmp
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الاسم:
+                </strong>{' '}
+                {getEmployeeName(
+                  profileEmp
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الرقم القومي:
+                </strong>{' '}
+                {getNationalId(
+                  profileEmp
+                ) || 'غير مسجل'}
+              </div>
+
+              <div>
+                <strong>
+                  تاريخ الميلاد:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'birth_date',
+                  'BirthDate'
+                ) || 'غير مسجل'}
+              </div>
+
+              <div>
+                <strong>
+                  السن:
+                </strong>{' '}
+                {getEmployeeAge(
+                  profileEmp
+                ) ?? '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الإدارة:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'department',
+                  'Department'
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الشركة:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'company',
+                  'Company'
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الوظيفة:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'job_title',
+                  'JobTitle'
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الموبايل:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'mobile',
+                  'Mobile'
+                ) || 'غير مسجل'}
+              </div>
+
+              <div>
+                <strong>
+                  تاريخ التعيين:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'hiring_date',
+                  'HiringDate'
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  نوع العقد:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'contract_type',
+                  'ContractType'
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  نهاية العقد:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'contract_end_date',
+                  'ContractEndDate'
+                ) || '—'}
+              </div>
+
+              <div>
+                <strong>
+                  الحالة:
+                </strong>{' '}
+                {getField(
+                  profileEmp,
+                  'status',
+                  'Status'
+                ) || '—'}
+              </div>
             </div>
 
             <div
@@ -3423,13 +3745,14 @@ export default function EmployeesPage() {
                   handleOpenEdit(
                     profileEmp
                   );
+
                   setProfileEmp(
                     null
                   );
                 }}
                 style={{
                   background:
-                    'var(--brass-500)',
+                    'var(--brass-600, #0d9488)',
                   color:
                     '#fff',
                   border: 0,
@@ -3450,9 +3773,9 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ==================================================
-          إنهاء الخدمة
-      ================================================== */}
+      {/* ========================================================
+          TERMINATION MODAL
+      ======================================================== */}
 
       {showTermModal && (
         <div
@@ -3495,7 +3818,7 @@ export default function EmployeesPage() {
                 justifyContent:
                   'space-between',
                 marginBottom:
-                  '16px',
+                  '18px',
               }}
             >
               <h3
@@ -3505,22 +3828,27 @@ export default function EmployeesPage() {
                     'var(--stamp-red)',
                 }}
               >
-                🚫 إنهاء خدمة /
-                تحويل للانتظار
+                🚫 إنهاء خدمة
               </h3>
 
               <button
-                onClick={() =>
+                onClick={() => {
                   setShowTermModal(
                     false
-                  )
-                }
+                  );
+                  setSelectedTermEmp(
+                    null
+                  );
+                  setTermSearch(
+                    ''
+                  );
+                }}
                 style={{
                   background:
                     '#fef2f2',
-                  border: 0,
                   color:
                     '#dc2626',
+                  border: 0,
                   padding:
                     '6px 12px',
                   borderRadius:
@@ -3547,7 +3875,6 @@ export default function EmployeesPage() {
               }}
             >
               <input
-                type="text"
                 placeholder="كود أو اسم أو رقم قومي..."
                 value={
                   termSearch
@@ -3561,16 +3888,12 @@ export default function EmployeesPage() {
                   );
                 }}
                 style={{
-                  width:
-                    '100%',
                   padding:
                     '10px',
-                  border:
-                    '1px solid var(--line)',
                   borderRadius:
                     '8px',
-                  boxSizing:
-                    'border-box',
+                  border:
+                    '1px solid var(--line)',
                 }}
               />
 
@@ -3583,16 +3906,23 @@ export default function EmployeesPage() {
                         '1px solid var(--line)',
                       borderRadius:
                         '8px',
+                      maxHeight:
+                        '180px',
+                      overflowY:
+                        'auto',
                     }}
                   >
                     {termSearchResults.map(
                       (
                         emp: any,
-                        i: number
+                        index: number
                       ) => (
                         <div
                           key={
-                            i
+                            getEmployeeId(
+                              emp
+                            ) ||
+                            index
                           }
                           onClick={() => {
                             setSelectedTermEmp(
@@ -3673,8 +4003,8 @@ export default function EmployeesPage() {
                     getEmployeeName(
                       selectedTermEmp
                     )
-                  }{' '}
-                  —{' '}
+                  }
+                  {' — '}
                   {
                     getEmployeeCode(
                       selectedTermEmp
@@ -3697,23 +4027,30 @@ export default function EmployeesPage() {
                     '9px',
                   borderRadius:
                     '8px',
+                  border:
+                    '1px solid var(--line)',
                 }}
               >
                 <option value="استقالة">
                   استقالة
                 </option>
+
                 <option value="إنهاء عقد">
                   إنهاء عقد
                 </option>
+
                 <option value="إنهاء خدمات">
                   إنهاء خدمات
                 </option>
+
                 <option value="بلوغ سن">
                   بلوغ سن
                 </option>
+
                 <option value="انقطاع عن العمل">
                   انقطاع عن العمل
                 </option>
+
                 <option value="نقل شركة شقيقة">
                   نقل شركة شقيقة
                 </option>
@@ -3721,7 +4058,6 @@ export default function EmployeesPage() {
 
               <input
                 type="date"
-                required
                 value={
                   termDate
                 }
@@ -3730,13 +4066,14 @@ export default function EmployeesPage() {
                     e.target.value
                   )
                 }
+                required
                 style={{
                   padding:
                     '9px',
-                  border:
-                    '1px solid var(--line)',
                   borderRadius:
                     '8px',
+                  border:
+                    '1px solid var(--line)',
                 }}
               />
 
@@ -3760,12 +4097,10 @@ export default function EmployeesPage() {
                   style={{
                     padding:
                       '8px 16px',
-                    border:
-                      '1px solid var(--line)',
                     borderRadius:
                       '8px',
-                    background:
-                      'transparent',
+                    border:
+                      '1px solid var(--line)',
                   }}
                 >
                   إلغاء
@@ -3801,9 +4136,9 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ==================================================
-          النقل المجمع
-      ================================================== */}
+      {/* ========================================================
+          BULK TRANSFER MODAL
+      ======================================================== */}
 
       {showBulkTransferModal && (
         <div
@@ -3839,13 +4174,34 @@ export default function EmployeesPage() {
                 '24px',
             }}
           >
-            <h3
+            <div
               style={{
-                marginTop: 0,
+                display:
+                  'flex',
+                justifyContent:
+                  'space-between',
+                marginBottom:
+                  '20px',
               }}
             >
-              🔄 النقل المجمع
-            </h3>
+              <h3
+                style={{
+                  margin: 0,
+                }}
+              >
+                🔄 النقل المجمع
+              </h3>
+
+              <button
+                onClick={() =>
+                  setShowBulkTransferModal(
+                    false
+                  )
+                }
+              >
+                إغلاق ✕
+              </button>
+            </div>
 
             <form
               onSubmit={
@@ -3888,9 +4244,7 @@ export default function EmployeesPage() {
                     i: number
                   ) => (
                     <option
-                      key={
-                        i
-                      }
+                      key={i}
                       value={d}
                     />
                   )
@@ -3925,9 +4279,7 @@ export default function EmployeesPage() {
                     i: number
                   ) => (
                     <option
-                      key={
-                        i
-                      }
+                      key={i}
                       value={c}
                     />
                   )
@@ -3960,6 +4312,19 @@ export default function EmployeesPage() {
                   disabled={
                     bulkSaving
                   }
+                  style={{
+                    background:
+                      '#2563eb',
+                    color:
+                      '#fff',
+                    border: 0,
+                    padding:
+                      '9px 16px',
+                    borderRadius:
+                      '8px',
+                    fontWeight:
+                      'bold',
+                  }}
                 >
                   {bulkSaving
                     ? 'جاري التحديث...'
@@ -3971,9 +4336,9 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ==================================================
-          نافذة التعديل
-      ================================================== */}
+      {/* ========================================================
+          EDIT MODAL
+      ======================================================== */}
 
       {editData && (
         <div
@@ -3998,7 +4363,7 @@ export default function EmployeesPage() {
           <div
             style={{
               width:
-                '800px',
+                '850px',
               maxWidth:
                 '100%',
               maxHeight:
@@ -4006,11 +4371,13 @@ export default function EmployeesPage() {
               overflowY:
                 'auto',
               background:
-                'var(--paper-card, #fff)',
+                '#fff',
               borderRadius:
                 '16px',
               padding:
                 '24px',
+              boxShadow:
+                '0 20px 60px rgba(0,0,0,0.5)',
             }}
           >
             <div
@@ -4025,17 +4392,48 @@ export default function EmployeesPage() {
                   '20px',
               }}
             >
-              <h3
-                style={{
-                  margin: 0,
-                  fontSize:
-                    '18px',
-                  fontWeight:
-                    '800',
-                }}
-              >
-                تعديل بيانات الموظف
-              </h3>
+              <div>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize:
+                      '18px',
+                    fontWeight:
+                      '800',
+                  }}
+                >
+                  ✏️ تعديل بيانات الموظف
+                </h3>
+
+                <div
+                  style={{
+                    marginTop:
+                      '4px',
+                    fontSize:
+                      '11px',
+                    color:
+                      '#64748b',
+                  }}
+                >
+                  الكود:{' '}
+                  <strong>
+                    {
+                      getEmployeeCode(
+                        editData.emp
+                      )
+                    }
+                  </strong>
+                  {'  |  '}
+                  EmployeeID:{' '}
+                  <strong>
+                    {
+                      getEmployeeId(
+                        editData.emp
+                      ) || '—'
+                    }
+                  </strong>
+                </div>
+              </div>
 
               <button
                 onClick={() =>
@@ -4046,15 +4444,17 @@ export default function EmployeesPage() {
                 style={{
                   background:
                     '#fef2f2',
+                  border: 0,
                   color:
                     '#dc2626',
-                  border: 0,
                   padding:
                     '6px 12px',
                   borderRadius:
                     '6px',
                   cursor:
                     'pointer',
+                  fontWeight:
+                    'bold',
                 }}
               >
                 إغلاق ✕
@@ -4068,417 +4468,484 @@ export default function EmployeesPage() {
             >
               <div
                 style={{
-                  display:
-                    'grid',
-                  gridTemplateColumns:
-                    'repeat(3, 1fr)',
-                  gap:
+                  background:
+                    '#f8fafc',
+                  border:
+                    '1px solid #e2e8f0',
+                  borderRadius:
                     '12px',
+                  padding:
+                    '16px',
+                  marginBottom:
+                    '16px',
                 }}
               >
-                {[
-                  {
-                    label:
-                      'الكود',
-                    key1:
-                      'employee_code',
-                    key2:
-                      'EmployeeCode',
-                    disabled:
-                      true,
-                  },
-                  {
-                    label:
-                      'الاسم',
-                    key1:
-                      'employee_name',
-                    key2:
-                      'EmployeeName',
-                  },
-                  {
-                    label:
-                      'الرقم القومي',
-                    key1:
-                      'national_id',
-                    key2:
-                      'NationalID',
-                  },
-                  {
-                    label:
-                      'تاريخ الميلاد',
-                    key1:
-                      'birth_date',
-                    key2:
-                      'BirthDate',
-                  },
-                  {
-                    label:
-                      'السن',
-                    key1:
-                      'age',
-                    key2:
-                      'Age',
-                  },
-                  {
-                    label:
-                      'الإدارة',
-                    key1:
-                      'department',
-                    key2:
-                      'Department',
-                  },
-                  {
-                    label:
-                      'الشركة',
-                    key1:
-                      'company',
-                    key2:
-                      'Company',
-                  },
-                  {
-                    label:
-                      'الوظيفة',
-                    key1:
-                      'job_title',
-                    key2:
-                      'JobTitle',
-                  },
-                  {
-                    label:
-                      'الموبايل',
-                    key1:
-                      'mobile',
-                    key2:
-                      'Mobile',
-                  },
-                  {
-                    label:
-                      'البريد الإلكتروني',
-                    key1:
-                      'email',
-                    key2:
-                      'Email',
-                  },
-                ].map(
-                  (
-                    field
-                  ) => (
-                    <div
-                      key={
-                        field.label
-                      }
-                    >
-                      <label
-                        style={{
-                          display:
-                            'block',
-                          fontSize:
-                            '11px',
-                          marginBottom:
-                            '6px',
-                          fontWeight:
-                            'bold',
-                        }}
-                      >
-                        {
+                <h4
+                  style={{
+                    margin:
+                      '0 0 14px',
+                    color:
+                      '#0d9488',
+                    fontSize:
+                      '14px',
+                  }}
+                >
+                  بيانات الموظف
+                </h4>
+
+                <div
+                  style={{
+                    display:
+                      'grid',
+                    gridTemplateColumns:
+                      'repeat(3, 1fr)',
+                    gap:
+                      '12px',
+                  }}
+                >
+                  {[
+                    {
+                      label:
+                        'الكود',
+                      key:
+                        'employee_code',
+                      alt:
+                        'EmployeeCode',
+                      disabled:
+                        true,
+                    },
+                    {
+                      label:
+                        'الاسم',
+                      key:
+                        'employee_name',
+                      alt:
+                        'EmployeeName',
+                    },
+                    {
+                      label:
+                        'الرقم القومي',
+                      key:
+                        'national_id',
+                      alt:
+                        'NationalID',
+                    },
+                    {
+                      label:
+                        'تاريخ الميلاد',
+                      key:
+                        'birth_date',
+                      alt:
+                        'BirthDate',
+                    },
+                    {
+                      label:
+                        'السن',
+                      key:
+                        'age',
+                      alt:
+                        'Age',
+                    },
+                    {
+                      label:
+                        'الإدارة',
+                      key:
+                        'department',
+                      alt:
+                        'Department',
+                    },
+                    {
+                      label:
+                        'الشركة',
+                      key:
+                        'company',
+                      alt:
+                        'Company',
+                    },
+                    {
+                      label:
+                        'الوظيفة',
+                      key:
+                        'job_title',
+                      alt:
+                        'JobTitle',
+                    },
+                    {
+                      label:
+                        'الموبايل',
+                      key:
+                        'mobile',
+                      alt:
+                        'Mobile',
+                    },
+                    {
+                      label:
+                        'البريد الإلكتروني',
+                      key:
+                        'email',
+                      alt:
+                        'Email',
+                    },
+                  ].map(
+                    (
+                      field
+                    ) => (
+                      <div
+                        key={
                           field.label
                         }
-                      </label>
+                      >
+                        <label
+                          style={{
+                            display:
+                              'block',
+                            fontSize:
+                              '11px',
+                            fontWeight:
+                              'bold',
+                            marginBottom:
+                              '6px',
+                          }}
+                        >
+                          {
+                            field.label
+                          }
+                        </label>
 
-                      <input
-                        type="text"
-                        disabled={
-                          field.disabled
-                        }
-                        value={
-                          getField(
-                            editData.emp,
-                            field.key1,
-                            field.key2
-                          ) ?? ''
-                        }
-                        onChange={(
-                          e
-                        ) =>
-                          setEditData(
-                            {
-                              ...editData,
-                              emp: {
-                                ...editData.emp,
-                                [field.key1]:
-                                  e.target
-                                    .value,
-                                [field.key2]:
-                                  e.target
-                                    .value,
-                              },
-                            }
-                          )
-                        }
-                        style={{
-                          width:
-                            '100%',
-                          padding:
-                            '8px 10px',
-                          borderRadius:
-                            '6px',
-                          border:
-                            '1px solid var(--line)',
-                          boxSizing:
-                            'border-box',
-                        }}
-                      />
-                    </div>
-                  )
-                )}
+                        <input
+                          type={
+                            field.key ===
+                            'birth_date'
+                              ? 'date'
+                              : 'text'
+                          }
+                          disabled={
+                            field.disabled
+                          }
+                          value={
+                            getField(
+                              editData.emp,
+                              field.key,
+                              field.alt
+                            ) ?? ''
+                          }
+                          onChange={(
+                            e
+                          ) =>
+                            setEditData(
+                              {
+                                ...editData,
+                                emp: {
+                                  ...editData.emp,
+                                  [field.key]:
+                                    e.target
+                                      .value,
+                                  [field.alt]:
+                                    e.target
+                                      .value,
+                                },
+                              }
+                            )
+                          }
+                          style={{
+                            width:
+                              '100%',
+                            padding:
+                              '8px 10px',
+                            borderRadius:
+                              '6px',
+                            border:
+                              '1px solid #e2e8f0',
+                            boxSizing:
+                              'border-box',
+                            background:
+                              field.disabled
+                                ? '#f1f5f9'
+                                : '#fff',
+                          }}
+                        />
+                      </div>
+                    )
+                  )}
 
-                <div>
-                  <label
-                    style={{
-                      display:
-                        'block',
-                      fontSize:
-                        '11px',
-                      marginBottom:
-                        '6px',
-                      fontWeight:
-                        'bold',
-                    }}
-                  >
-                    تاريخ التعيين
-                  </label>
+                  <div>
+                    <label
+                      style={{
+                        display:
+                          'block',
+                        fontSize:
+                          '11px',
+                        fontWeight:
+                          'bold',
+                        marginBottom:
+                          '6px',
+                      }}
+                    >
+                      تاريخ التعيين
+                    </label>
 
-                  <input
-                    type="date"
-                    value={
-                      getField(
-                        editData.emp,
-                        'hiring_date',
-                        'HiringDate'
-                      ) || ''
-                    }
-                    onChange={(
-                      e
-                    ) =>
-                      setEditData(
-                        {
-                          ...editData,
-                          emp: {
-                            ...editData.emp,
-                            hiring_date:
-                              e.target
-                                .value,
-                            HiringDate:
-                              e.target
-                                .value,
-                          },
-                        }
-                      )
-                    }
-                    style={{
-                      width:
-                        '100%',
-                      padding:
-                        '8px 10px',
-                      borderRadius:
-                        '6px',
-                      border:
-                        '1px solid var(--line)',
-                      boxSizing:
-                        'border-box',
-                    }}
-                  />
+                    <input
+                      type="date"
+                      value={
+                        getField(
+                          editData.emp,
+                          'hiring_date',
+                          'HiringDate'
+                        ) || ''
+                      }
+                      onChange={(e) =>
+                        setEditData(
+                          {
+                            ...editData,
+                            emp: {
+                              ...editData.emp,
+                              hiring_date:
+                                e.target
+                                  .value,
+                              HiringDate:
+                                e.target
+                                  .value,
+                            },
+                          }
+                        )
+                      }
+                      style={{
+                        width:
+                          '100%',
+                        padding:
+                          '8px 10px',
+                        borderRadius:
+                          '6px',
+                        border:
+                          '1px solid #e2e8f0',
+                        boxSizing:
+                          'border-box',
+                      }}
+                    />
+                  </div>
                 </div>
+              </div>
 
-                <div>
-                  <label
-                    style={{
-                      display:
-                        'block',
-                      fontSize:
-                        '11px',
-                      marginBottom:
-                        '6px',
-                      fontWeight:
-                        'bold',
-                    }}
-                  >
-                    نوع العقد
-                  </label>
+              <div
+                style={{
+                  background:
+                    '#f8fafc',
+                  border:
+                    '1px solid #e2e8f0',
+                  borderRadius:
+                    '12px',
+                  padding:
+                    '16px',
+                }}
+              >
+                <h4
+                  style={{
+                    margin:
+                      '0 0 14px',
+                    color:
+                      '#2563eb',
+                    fontSize:
+                      '14px',
+                  }}
+                >
+                  بيانات العقد
+                </h4>
 
-                  <select
-                    value={
-                      getField(
-                        editData.emp,
-                        'contract_type',
-                        'ContractType'
-                      ) ||
-                      'محدد المدة'
-                    }
-                    onChange={(
-                      e
-                    ) =>
-                      setEditData(
-                        {
-                          ...editData,
-                          emp: {
-                            ...editData.emp,
-                            contract_type:
-                              e.target
-                                .value,
-                            ContractType:
-                              e.target
-                                .value,
-                          },
-                        }
-                      )
-                    }
-                    style={{
-                      width:
-                        '100%',
-                      padding:
-                        '8px 10px',
-                      borderRadius:
-                        '6px',
-                      border:
-                        '1px solid var(--line)',
-                    }}
-                  >
-                    <option value="دائم">
-                      دائم
-                    </option>
+                <div
+                  style={{
+                    display:
+                      'grid',
+                    gridTemplateColumns:
+                      'repeat(3, 1fr)',
+                    gap:
+                      '12px',
+                  }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display:
+                          'block',
+                        fontSize:
+                          '11px',
+                        fontWeight:
+                          'bold',
+                        marginBottom:
+                          '6px',
+                      }}
+                    >
+                      نوع العقد
+                    </label>
 
-                    <option value="محدد المدة">
-                      محدد المدة
-                    </option>
+                    <select
+                      value={
+                        getField(
+                          editData.emp,
+                          'contract_type',
+                          'ContractType'
+                        ) ||
+                        'محدد المدة'
+                      }
+                      onChange={(e) =>
+                        setEditData(
+                          {
+                            ...editData,
+                            emp: {
+                              ...editData.emp,
+                              contract_type:
+                                e.target
+                                  .value,
+                              ContractType:
+                                e.target
+                                  .value,
+                            },
+                          }
+                        )
+                      }
+                      style={{
+                        width:
+                          '100%',
+                        padding:
+                          '8px 10px',
+                        borderRadius:
+                          '6px',
+                        border:
+                          '1px solid #e2e8f0',
+                      }}
+                    >
+                      <option value="دائم">
+                        دائم
+                      </option>
 
-                    <option value="محدد المدة - فوق السن">
-                      محدد المدة - فوق السن
-                    </option>
+                      <option value="محدد المدة">
+                        محدد المدة
+                      </option>
 
-                    <option value="محدد المدة - مكافأة شاملة">
-                      محدد المدة - مكافأة شاملة
-                    </option>
-                  </select>
-                </div>
+                      <option value="محدد المدة - فوق السن">
+                        محدد المدة - فوق السن
+                      </option>
 
-                <div>
-                  <label
-                    style={{
-                      display:
-                        'block',
-                      fontSize:
-                        '11px',
-                      marginBottom:
-                        '6px',
-                      fontWeight:
-                        'bold',
-                    }}
-                  >
-                    نهاية العقد
-                  </label>
+                      <option value="محدد المدة - مكافأة شاملة">
+                        محدد المدة - مكافأة شاملة
+                      </option>
+                    </select>
+                  </div>
 
-                  <input
-                    type="date"
-                    value={
-                      getField(
-                        editData.emp,
-                        'contract_end_date',
-                        'ContractEndDate'
-                      ) || ''
-                    }
-                    onChange={(
-                      e
-                    ) =>
-                      setEditData(
-                        {
-                          ...editData,
-                          emp: {
-                            ...editData.emp,
-                            contract_end_date:
-                              e.target
-                                .value,
-                            ContractEndDate:
-                              e.target
-                                .value,
-                          },
-                        }
-                      )
-                    }
-                    style={{
-                      width:
-                        '100%',
-                      padding:
-                        '8px 10px',
-                      borderRadius:
-                        '6px',
-                      border:
-                        '1px solid var(--line)',
-                    }}
-                  />
-                </div>
+                  <div>
+                    <label
+                      style={{
+                        display:
+                          'block',
+                        fontSize:
+                          '11px',
+                        fontWeight:
+                          'bold',
+                        marginBottom:
+                          '6px',
+                      }}
+                    >
+                      نهاية العقد
+                    </label>
 
-                <div>
-                  <label
-                    style={{
-                      display:
-                        'block',
-                      fontSize:
-                        '11px',
-                      marginBottom:
-                        '6px',
-                      fontWeight:
-                        'bold',
-                    }}
-                  >
-                    الحالة
-                  </label>
+                    <input
+                      type="date"
+                      value={
+                        getField(
+                          editData.emp,
+                          'contract_end_date',
+                          'ContractEndDate'
+                        ) || ''
+                      }
+                      onChange={(e) =>
+                        setEditData(
+                          {
+                            ...editData,
+                            emp: {
+                              ...editData.emp,
+                              contract_end_date:
+                                e.target
+                                  .value,
+                              ContractEndDate:
+                                e.target
+                                  .value,
+                            },
+                          }
+                        )
+                      }
+                      style={{
+                        width:
+                          '100%',
+                        padding:
+                          '8px 10px',
+                        borderRadius:
+                          '6px',
+                        border:
+                          '1px solid #e2e8f0',
+                      }}
+                    />
+                  </div>
 
-                  <select
-                    value={
-                      getField(
-                        editData.emp,
-                        'status',
-                        'Status'
-                      ) ||
-                      'Active'
-                    }
-                    onChange={(
-                      e
-                    ) =>
-                      setEditData(
-                        {
-                          ...editData,
-                          emp: {
-                            ...editData.emp,
-                            status:
-                              e.target
-                                .value,
-                            Status:
-                              e.target
-                                .value,
-                          },
-                        }
-                      )
-                    }
-                    style={{
-                      width:
-                        '100%',
-                      padding:
-                        '8px 10px',
-                      borderRadius:
-                        '6px',
-                      border:
-                        '1px solid var(--line)',
-                    }}
-                  >
-                    <option value="Active">
-                      Active
-                    </option>
-                    <option value="Inactive">
-                      Inactive
-                    </option>
-                  </select>
+                  <div>
+                    <label
+                      style={{
+                        display:
+                          'block',
+                        fontSize:
+                          '11px',
+                        fontWeight:
+                          'bold',
+                        marginBottom:
+                          '6px',
+                      }}
+                    >
+                      الحالة
+                    </label>
+
+                    <select
+                      value={
+                        getField(
+                          editData.emp,
+                          'status',
+                          'Status'
+                        ) ||
+                        'Active'
+                      }
+                      onChange={(e) =>
+                        setEditData(
+                          {
+                            ...editData,
+                            emp: {
+                              ...editData.emp,
+                              status:
+                                e.target
+                                  .value,
+                              Status:
+                                e.target
+                                  .value,
+                            },
+                          }
+                        )
+                      }
+                      style={{
+                        width:
+                          '100%',
+                        padding:
+                          '8px 10px',
+                        borderRadius:
+                          '6px',
+                        border:
+                          '1px solid #e2e8f0',
+                      }}
+                    >
+                      <option value="Active">
+                        Active
+                      </option>
+
+                      <option value="Inactive">
+                        Inactive
+                      </option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
@@ -4489,9 +4956,9 @@ export default function EmployeesPage() {
                   justifyContent:
                     'flex-end',
                   gap:
-                    '12px',
+                    '10px',
                   marginTop:
-                    '24px',
+                    '20px',
                 }}
               >
                 <button
@@ -4503,15 +4970,17 @@ export default function EmployeesPage() {
                   }
                   style={{
                     padding:
-                      '10px 20px',
+                      '9px 18px',
                     borderRadius:
                       '8px',
                     border:
-                      '1px solid var(--line)',
+                      '1px solid #e2e8f0',
                     background:
-                      'transparent',
+                      '#fff',
                     cursor:
                       'pointer',
+                    fontWeight:
+                      'bold',
                   }}
                 >
                   إلغاء
@@ -4531,7 +5000,7 @@ export default function EmployeesPage() {
                       '#fff',
                     border: 0,
                     padding:
-                      '10px 20px',
+                      '9px 18px',
                     borderRadius:
                       '8px',
                     fontWeight:
@@ -4552,9 +5021,9 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ==================================================
-          إضافة موظف
-      ================================================== */}
+      {/* ========================================================
+          ADD EMPLOYEE MODAL
+      ======================================================== */}
 
       {showAddModal && (
         <div
@@ -4582,6 +5051,10 @@ export default function EmployeesPage() {
                 '700px',
               maxWidth:
                 '100%',
+              maxHeight:
+                '90vh',
+              overflowY:
+                'auto',
               background:
                 '#fff',
               borderRadius:
@@ -4602,8 +5075,7 @@ export default function EmployeesPage() {
             >
               <h3
                 style={{
-                  margin:
-                    0,
+                  margin: 0,
                 }}
               >
                 إضافة موظف جديد
@@ -4653,7 +5125,7 @@ export default function EmployeesPage() {
 
                 <input
                   required
-                  placeholder="الاسم *"
+                  placeholder="اسم الموظف *"
                   value={
                     newEmp.employee_name
                   }
@@ -4860,7 +5332,24 @@ export default function EmployeesPage() {
                   إلغاء
                 </button>
 
-                <button type="submit">
+                <button
+                  type="submit"
+                  style={{
+                    background:
+                      '#0d9488',
+                    color:
+                      '#fff',
+                    border: 0,
+                    padding:
+                      '9px 18px',
+                    borderRadius:
+                      '8px',
+                    fontWeight:
+                      'bold',
+                    cursor:
+                      'pointer',
+                  }}
+                >
                   إضافة الموظف وعقده
                 </button>
               </div>
