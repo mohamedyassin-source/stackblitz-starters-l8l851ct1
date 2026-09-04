@@ -911,22 +911,14 @@ export default function EmployeesPage() {
   // هذا هو الإصلاح الرئيسي
   // ============================================================
 
-  useEffect(() => {
-    if (
-      loading ||
-      !employees ||
-      employees.length === 0
-    ) {
-      return;
-    }
+  uuseEffect(() => {
+  const openRequestedEmployee = () => {
+    if (loading || !employees?.length) return;
 
     const savedId =
       localStorage.getItem(
         'selectedEmployeeId'
-      ) ||
-      sessionStorage.getItem(
-        'selectedEmployeeId'
-      );
+      ) || '';
 
     const savedCode =
       localStorage.getItem(
@@ -938,27 +930,15 @@ export default function EmployeesPage() {
       localStorage.getItem(
         'jumpSearch'
       ) ||
-      sessionStorage.getItem(
-        'employeeSearch'
-      ) ||
-      sessionStorage.getItem(
-        'jumpSearch'
-      );
+      '';
 
     const cleanId =
-      String(
-        savedId || ''
-      ).trim();
+      String(savedId).trim();
 
     const cleanCode =
-      String(
-        savedCode || ''
-      ).trim();
+      String(savedCode).trim();
 
-    if (
-      !cleanId &&
-      !cleanCode
-    ) {
+    if (!cleanId && !cleanCode) {
       return;
     }
 
@@ -966,66 +946,42 @@ export default function EmployeesPage() {
       employees.find(
         (emp: any) => {
           const empId =
-            getEmployeeId(
-              emp
-            );
+            getEmployeeId(emp);
 
           const empCode =
-            getEmployeeCode(
-              emp
-            );
-
-          const idMatch =
-            cleanId &&
-            empId ===
-              cleanId;
-
-          const codeMatch =
-            cleanCode &&
-            empCode.toLowerCase() ===
-              cleanCode.toLowerCase();
+            getEmployeeCode(emp);
 
           return (
-            idMatch ||
-            codeMatch
+            (cleanId &&
+              empId === cleanId) ||
+            (cleanCode &&
+              empCode.toLowerCase() ===
+                cleanCode.toLowerCase())
           );
         }
       );
 
     if (!targetEmployee) {
-      console.warn(
-        'Dashboard employee not found',
-        {
-          selectedEmployeeId:
-            cleanId,
-          selectedEmployeeCode:
-            cleanCode,
-        }
-      );
-
       return;
     }
 
-    // إزالة أي فلتر يمكن أن يخفي الموظف
+    // إلغاء الفلاتر
     setSearchTerm('');
     setSelectedDept('');
     setSelectedCompany('');
     setSelectedType('');
     setSelectedAgeRange('');
-    setActiveCardFilter(
-      null
-    );
+    setActiveCardFilter(null);
 
-    // فتح نافذة التعديل مباشرة
+    // فتح التعديل
     setEditData({
       emp: {
         ...targetEmployee,
       },
-      loading:
-        false,
+      loading: false,
     });
 
-    // تنظيف المفاتيح بعد الاستخدام
+    // تنظيف المفاتيح
     localStorage.removeItem(
       'selectedEmployeeId'
     );
@@ -1035,31 +991,28 @@ export default function EmployeesPage() {
     );
 
     localStorage.removeItem(
-      'employeeId'
-    );
-
-    localStorage.removeItem(
       'employeeSearch'
     );
 
     localStorage.removeItem(
       'jumpSearch'
     );
+  };
 
-    sessionStorage.removeItem(
-      'selectedEmployeeId'
-    );
+  openRequestedEmployee();
 
-    sessionStorage.removeItem(
-      'employeeSearch'
-    );
+  window.addEventListener(
+    'storage',
+    openRequestedEmployee
+  );
 
-    sessionStorage.removeItem(
-      'jumpSearch'
+  return () => {
+    window.removeEventListener(
+      'storage',
+      openRequestedEmployee
     );
-  }, [
-    employees,
-    loading,
+  };
+}, [employees, loading]);
   ]);
 
   // ============================================================
