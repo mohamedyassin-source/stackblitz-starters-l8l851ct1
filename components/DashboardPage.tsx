@@ -31,6 +31,9 @@ const MONTH_NAMES = [
   'يوليو',
   'أغسطس',
   'سبتمبر',
+  'أكتوبر',
+  'نوفمبر',
+  'ديسمبر'
 ];
 
 const MONTH_MAP: Record<string, number> = {
@@ -1022,7 +1025,7 @@ export default function DashboardPage() {
               startDate.getFullYear() ===
                 currentYear &&
               monthIndex >= 0 &&
-              monthIndex < 9
+              monthIndex < 12 // تم التعديل ليقرأ 12 شهر
             ) {
               contractsByMonth[
                 monthIndex
@@ -1823,7 +1826,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* الرسم الشهري */}
+        {/* الرسم الشهري المطور */}
 
         <div
           className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2"
@@ -1840,100 +1843,88 @@ export default function DashboardPage() {
               color: '#0f172a',
             }}
           >
-            📈 التوزيع الشهري لبدايات
-            العقود النشطة والمجددة —
-            حتى سبتمبر
+            📈 التوزيع الشهري لبدايات العقود النشطة والمجددة لعام {new Date().getFullYear()}
           </h4>
 
           <div
-            className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b"
+            className="flex-1 flex items-end gap-2 sm:gap-4 h-[150px] pb-4 border-b justify-center"
             style={{
               borderColor:
                 '#e2e8f0',
             }}
           >
-            {dashboardData.contractsByMonth.map(
-              (
-                month: any,
-                idx: number
-              ) => {
-                const height =
-                  maxMonthCount >
-                  0
-                    ? (month.count /
-                        maxMonthCount) *
-                      100
-                    : 0;
-
-                return (
-                  <div
-                    key={idx}
-                    onClick={() =>
-                      month.count >
-                        0 &&
-                      setSelectedMonthDetails(
-                        {
-                          name:
-                            month.name,
-                          emps:
-                            month.emps,
-                        }
-                      )
-                    }
-                    className={`flex-1 flex flex-col items-center justify-end h-full ${
-                      month.count >
+            {dashboardData.contractsByMonth.filter((m: any) => m.count > 0).length === 0 ? (
+              <div style={{ width: '100%', textAlign: 'center', color: '#94a3b8', fontSize: '12px', fontWeight: 'bold', alignSelf: 'center' }}>
+                لا توجد عقود مجددة أو نشطة لعرضها في هذه السنة حتى الآن.
+              </div>
+            ) : (
+              dashboardData.contractsByMonth
+                .filter((m: any) => m.count > 0)
+                .map(
+                  (
+                    month: any,
+                    idx: number
+                  ) => {
+                    const height =
+                      maxMonthCount >
                       0
-                        ? 'cursor-pointer group'
-                        : ''
-                    }`}
-                  >
-                    <span
-                      className="text-[10px] font-mono font-bold mb-1"
-                      style={{
-                        color:
-                          month.count >
-                          0
-                            ? '#2563eb'
-                            : 'transparent',
-                      }}
-                    >
-                      {month.count.toLocaleString(
-                        'en-US'
-                      )}
-                    </span>
+                        ? (month.count /
+                            maxMonthCount) *
+                          100
+                        : 0;
 
-                    <div
-                      className="w-full max-w-[32px] rounded-t-md transition-all duration-300 group-hover:opacity-80 group-hover:scale-105"
-                      style={{
-                        height: `${height}%`,
-                        minHeight:
-                          month.count >
-                          0
-                            ? '4px'
-                            : '0',
-                        background:
-                          month.count >
-                          0
-                            ? 'linear-gradient(180deg, #3b82f6, #1d4ed8)'
-                            : '#f1f5f9',
-                      }}
-                    />
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() =>
+                          setSelectedMonthDetails(
+                            {
+                              name:
+                                month.name,
+                              emps:
+                                month.emps,
+                            }
+                          )
+                        }
+                        className="flex-1 flex flex-col items-center justify-end h-full cursor-pointer group"
+                        style={{ maxWidth: '60px' }}
+                      >
+                        <span
+                          className="text-[10px] font-mono font-bold mb-1"
+                          style={{
+                            color:
+                              '#2563eb',
+                          }}
+                        >
+                          {month.count.toLocaleString(
+                            'en-US'
+                          )}
+                        </span>
 
-                    <span
-                      className="text-[10px] font-bold mt-2"
-                      style={{
-                        color:
-                          month.count >
-                          0
-                            ? '#0f172a'
-                            : '#94a3b8',
-                      }}
-                    >
-                      {month.name}
-                    </span>
-                  </div>
-                );
-              }
+                        <div
+                          className="w-full rounded-t-md transition-all duration-300 group-hover:opacity-80 group-hover:scale-105"
+                          style={{
+                            height: `${height}%`,
+                            minHeight:
+                              '4px',
+                            background:
+                              'linear-gradient(180deg, #3b82f6, #1d4ed8)',
+                          }}
+                        />
+
+                        <span
+                          className="text-[10px] font-bold mt-2"
+                          style={{
+                            color:
+                              '#0f172a',
+                          }}
+                        >
+                          {month.name}
+                        </span>
+                      </div>
+                    );
+                  }
+                )
             )}
           </div>
         </div>
@@ -2633,11 +2624,6 @@ export default function DashboardPage() {
                                   'center',
                               }}
                             >
-                              {/* ==================================================
-                                  أهم تعديل:
-                                  نبعت emp نفسه وليس الكود فقط
-                                 ================================================== */}
-
                               <button
                                 onClick={() =>
                                   handleRowClick(
@@ -2926,8 +2912,7 @@ export default function DashboardPage() {
                           >
                             {getJobTitle(
                               emp
-                            ) ||
-                              '—'}
+                            ) || '—'}
                           </td>
 
                           <td
@@ -2940,8 +2925,7 @@ export default function DashboardPage() {
                           >
                             {getContractType(
                               emp
-                            ) ||
-                              '—'}
+                            ) || '—'}
                           </td>
 
                           <td
@@ -2954,8 +2938,7 @@ export default function DashboardPage() {
                           >
                             {getContractEnd(
                               emp
-                            ) ||
-                              '—'}
+                            ) || '—'}
                           </td>
 
                           <td
@@ -3819,121 +3802,200 @@ export default function DashboardPage() {
                   '24px',
               }}
             >
-              <table
-                style={{
-                  width: '100%',
-                  borderCollapse:
-                    'collapse',
-                  fontSize:
-                    '11px',
-                }}
-              >
-                <thead>
-                  <tr
-                    style={{
-                      background:
-                        '#f8fafc',
-                    }}
-                  >
-                    <th style={{ padding: '10px' }}>
-                      الكود
-                    </th>
-                    <th style={{ padding: '10px' }}>
-                      الموظف
-                    </th>
-                    <th style={{ padding: '10px' }}>
-                      الإدارة
-                    </th>
-                    <th style={{ padding: '10px' }}>
-                      الوظيفة
-                    </th>
-                    <th style={{ padding: '10px' }}>
-                      نوع العقد
-                    </th>
-                    <th style={{ padding: '10px' }}>
-                      إجراء
-                    </th>
-                  </tr>
-                </thead>
+              {selectedDonutDetails.emps.length ===
+              0 ? (
+                <div
+                  style={{
+                    padding:
+                      '40px',
+                    textAlign:
+                      'center',
+                    color:
+                      '#64748b',
+                    fontWeight:
+                      'bold',
+                  }}
+                >
+                  لا يوجد موظفون في هذه
+                  الفئة حالياً.
+                </div>
+              ) : (
+                <table
+                  style={{
+                    width: '100%',
+                    borderCollapse:
+                      'collapse',
+                    textAlign:
+                      'right',
+                    fontSize:
+                      '11px',
+                    whiteSpace:
+                      'nowrap',
+                  }}
+                >
+                  <thead>
+                    <tr
+                      style={{
+                        background:
+                          '#f8fafc',
+                        borderBottom:
+                          '1px solid #e2e8f0',
+                      }}
+                    >
+                      <th style={{ padding: '10px' }}>
+                        الكود
+                      </th>
+                      <th style={{ padding: '10px' }}>
+                        الموظف
+                      </th>
+                      <th style={{ padding: '10px' }}>
+                        الإدارة
+                      </th>
+                      <th style={{ padding: '10px' }}>
+                        الوظيفة
+                      </th>
+                      <th style={{ padding: '10px' }}>
+                        نوع العقد
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px',
+                          textAlign:
+                            'center',
+                        }}
+                      >
+                        إجراء
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDonutDetails.emps.map(
+                      (emp: any) => {
+                        const code =
+                          getEmployeeCode(
+                            emp
+                          );
 
-                <tbody>
-                  {selectedDonutDetails.emps.map(
-                    (emp: any) => {
-                      const code =
-                        getEmployeeCode(
-                          emp
-                        );
-
-                      return (
-                        <tr
-                          key={
-                            getEmployeeId(
-                              emp
-                            ) ||
-                            code
-                          }
-                        >
-                          <td style={{ padding: '10px' }}>
-                            {code}
-                          </td>
-
-                          <td style={{ padding: '10px' }}>
-                            {getEmployeeName(
-                              emp
-                            )}
-                          </td>
-
-                          <td style={{ padding: '10px' }}>
-                            {getDepartment(
-                              emp
-                            )}
-                          </td>
-
-                          <td style={{ padding: '10px' }}>
-                            {getJobTitle(
-                              emp
-                            ) || '—'}
-                          </td>
-
-                          <td style={{ padding: '10px' }}>
-                            {getContractType(
-                              emp
-                            ) || '—'}
-                          </td>
-
-                          <td style={{ padding: '10px' }}>
-                            <button
-                              onClick={() =>
-                                handleRowClick(
-                                  code,
-                                  'contracts',
-                                  emp
-                                )
-                              }
+                        return (
+                          <tr
+                            key={
+                              getEmployeeId(
+                                emp
+                              ) ||
+                              code
+                            }
+                            style={{
+                              borderBottom:
+                                '1px solid #f1f5f9',
+                            }}
+                          >
+                            <td
                               style={{
-                                background:
-                                  '#eff6ff',
+                                padding:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                                fontFamily:
+                                  'monospace',
                                 color:
                                   '#2563eb',
-                                border:
-                                  '1px solid #bfdbfe',
-                                padding:
-                                  '5px 10px',
-                                borderRadius:
-                                  '4px',
-                                cursor:
-                                  'pointer',
                               }}
                             >
-                              عرض العقد ↗️
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    }
-                  )}
-                </tbody>
-              </table>
+                              {code}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                              }}
+                            >
+                              {getEmployeeName(
+                                emp
+                              )}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                color:
+                                  '#64748b',
+                              }}
+                            >
+                              {getDepartment(
+                                emp
+                              )}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                color:
+                                  '#64748b',
+                              }}
+                            >
+                              {getJobTitle(
+                                emp
+                              ) || '—'}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                              }}
+                            >
+                              {getContractType(
+                                emp
+                              ) || '—'}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                textAlign:
+                                  'center',
+                              }}
+                            >
+                              <button
+                                onClick={() =>
+                                  handleRowClick(
+                                    code,
+                                    'contracts',
+                                    emp
+                                  )
+                                }
+                                style={{
+                                  background:
+                                    '#eff6ff',
+                                  color:
+                                    '#2563eb',
+                                  border:
+                                    '1px solid #bfdbfe',
+                                  padding:
+                                    '5px 10px',
+                                  borderRadius:
+                                    '4px',
+                                  fontSize:
+                                    '10px',
+                                  fontWeight:
+                                    'bold',
+                                  cursor:
+                                    'pointer',
+                                }}
+                              >
+                                عرض العقد ↗️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
+                    )}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
@@ -3968,15 +4030,17 @@ export default function DashboardPage() {
               height:
                 '80vh',
               background:
-                '#fff',
+                '#ffffff',
               borderRadius:
                 '16px',
-              overflow:
-                'hidden',
               display:
                 'flex',
               flexDirection:
                 'column',
+              boxShadow:
+                '0 20px 60px rgba(0,0,0,0.3)',
+              overflow:
+                'hidden',
             }}
           >
             <div
@@ -3991,6 +4055,8 @@ export default function DashboardPage() {
                   'flex',
                 justifyContent:
                   'space-between',
+                alignItems:
+                  'center',
               }}
             >
               <div>
@@ -3999,6 +4065,8 @@ export default function DashboardPage() {
                     margin: 0,
                     fontSize:
                       '16px',
+                    color:
+                      '#0f172a',
                     fontWeight:
                       '800',
                   }}
@@ -4006,7 +4074,6 @@ export default function DashboardPage() {
                   👥 كشف إجمالي القوة
                   البشرية النشطة
                 </h3>
-
                 <p
                   style={{
                     margin:
@@ -4018,12 +4085,10 @@ export default function DashboardPage() {
                   }}
                 >
                   إجمالي:{' '}
-                  {
-                    dashboardData.totalEmps
-                  }
+                  {dashboardData.totalEmps}{' '}
+                  موظف
                 </p>
               </div>
-
               <button
                 onClick={() =>
                   setShowTotalEmpsModal(
@@ -4033,9 +4098,9 @@ export default function DashboardPage() {
                 style={{
                   background:
                     '#fef2f2',
+                  border: 0,
                   color:
                     '#dc2626',
-                  border: 0,
                   padding:
                     '6px 12px',
                   borderRadius:
@@ -4044,6 +4109,8 @@ export default function DashboardPage() {
                     'pointer',
                   fontWeight:
                     'bold',
+                  fontSize:
+                    '11px',
                 }}
               >
                 إغلاق ✕
@@ -4064,8 +4131,12 @@ export default function DashboardPage() {
                   width: '100%',
                   borderCollapse:
                     'collapse',
+                  textAlign:
+                    'right',
                   fontSize:
                     '11px',
+                  whiteSpace:
+                    'nowrap',
                 }}
               >
                 <thead>
@@ -4073,6 +4144,8 @@ export default function DashboardPage() {
                     style={{
                       background:
                         '#f8fafc',
+                      borderBottom:
+                        '1px solid #e2e8f0',
                     }}
                   >
                     <th style={{ padding: '10px' }}>
@@ -4090,49 +4163,139 @@ export default function DashboardPage() {
                     <th style={{ padding: '10px' }}>
                       نوع العقد
                     </th>
+                    <th
+                      style={{
+                        padding: '10px',
+                        textAlign:
+                          'center',
+                      }}
+                    >
+                      إجراء
+                    </th>
                   </tr>
                 </thead>
-
                 <tbody>
                   {dashboardData.filteredEmps.map(
-                    (emp: any) => (
-                      <tr
-                        key={
-                          getEmployeeId(
-                            emp
-                          ) ||
-                          getEmployeeCode(
-                            emp
-                          )
-                        }
-                      >
-                        <td style={{ padding: '10px' }}>
-                          {getEmployeeCode(
-                            emp
-                          )}
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          {getEmployeeName(
-                            emp
-                          )}
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          {getDepartment(
-                            emp
-                          )}
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          {getJobTitle(
-                            emp
-                          ) || '—'}
-                        </td>
-                        <td style={{ padding: '10px' }}>
-                          {getContractType(
-                            emp
-                          ) || '—'}
-                        </td>
-                      </tr>
-                    )
+                    (emp: any) => {
+                      const empCode =
+                        getEmployeeCode(
+                          emp
+                        );
+                      return (
+                        <tr
+                          key={
+                            empCode
+                          }
+                          style={{
+                            borderBottom:
+                              '1px solid #f1f5f9',
+                          }}
+                        >
+                          <td
+                            style={{
+                              padding:
+                                '10px',
+                              fontWeight:
+                                'bold',
+                              fontFamily:
+                                'monospace',
+                              color:
+                                '#2563eb',
+                            }}
+                          >
+                            {empCode}
+                          </td>
+                          <td
+                            style={{
+                              padding:
+                                '10px',
+                              fontWeight:
+                                'bold',
+                              color:
+                                '#0f172a',
+                            }}
+                          >
+                            {getEmployeeName(
+                              emp
+                            )}
+                          </td>
+                          <td
+                            style={{
+                              padding:
+                                '10px',
+                              color:
+                                '#64748b',
+                            }}
+                          >
+                            {getDepartment(
+                              emp
+                            ) || '—'}
+                          </td>
+                          <td
+                            style={{
+                              padding:
+                                '10px',
+                              color:
+                                '#64748b',
+                            }}
+                          >
+                            {getJobTitle(
+                              emp
+                            ) || '—'}
+                          </td>
+                          <td
+                            style={{
+                              padding:
+                                '10px',
+                              fontWeight:
+                                'bold',
+                            }}
+                          >
+                            {getContractType(
+                              emp
+                            ) || '—'}
+                          </td>
+                          <td
+                            style={{
+                              padding:
+                                '10px',
+                              textAlign:
+                                'center',
+                            }}
+                          >
+                            <button
+                              onClick={() =>
+                                handleRowClick(
+                                  empCode,
+                                  'contracts',
+                                  emp
+                                )
+                              }
+                              style={{
+                                background:
+                                  '#eff6ff',
+                                color:
+                                  '#2563eb',
+                                border:
+                                  '1px solid #bfdbfe',
+                                padding:
+                                  '5px 10px',
+                                borderRadius:
+                                  '4px',
+                                fontSize:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                                cursor:
+                                  'pointer',
+                              }}
+                            >
+                              عرض العقد ↗️
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
                   )}
                 </tbody>
               </table>
@@ -4170,15 +4333,17 @@ export default function DashboardPage() {
               height:
                 '80vh',
               background:
-                '#fff',
+                '#ffffff',
               borderRadius:
                 '16px',
-              overflow:
-                'hidden',
               display:
                 'flex',
               flexDirection:
                 'column',
+              boxShadow:
+                '0 20px 60px rgba(0,0,0,0.3)',
+              overflow:
+                'hidden',
             }}
           >
             <div
@@ -4193,6 +4358,8 @@ export default function DashboardPage() {
                   'flex',
                 justifyContent:
                   'space-between',
+                alignItems:
+                  'center',
               }}
             >
               <div>
@@ -4208,9 +4375,9 @@ export default function DashboardPage() {
                   }}
                 >
                   📆 عقود تنتهي خلال الـ
-                  60 يوم القادمة
+                  60 يوم القادمة (من 0 حتى
+                  60 يوم)
                 </h3>
-
                 <p
                   style={{
                     margin:
@@ -4221,15 +4388,15 @@ export default function DashboardPage() {
                       '#64748b',
                   }}
                 >
-                  إجمالي:{' '}
+                  إجمالي المستحقين:{' '}
                   {
                     dashboardData
                       .expiringSoonList
                       .length
-                  }
+                  }{' '}
+                  موظف
                 </p>
               </div>
-
               <button
                 onClick={() =>
                   setShowExpiringSoonModal(
@@ -4239,9 +4406,9 @@ export default function DashboardPage() {
                 style={{
                   background:
                     '#fef2f2',
+                  border: 0,
                   color:
                     '#dc2626',
-                  border: 0,
                   padding:
                     '6px 12px',
                   borderRadius:
@@ -4250,6 +4417,8 @@ export default function DashboardPage() {
                     'pointer',
                   fontWeight:
                     'bold',
+                  fontSize:
+                    '11px',
                 }}
               >
                 إغلاق ✕
@@ -4266,14 +4435,13 @@ export default function DashboardPage() {
               }}
             >
               {dashboardData.expiringSoonList
-                .length ===
-              0 ? (
+                .length === 0 ? (
                 <div
                   style={{
-                    textAlign:
-                      'center',
                     padding:
                       '40px',
+                    textAlign:
+                      'center',
                     color:
                       '#64748b',
                     fontWeight:
@@ -4281,7 +4449,7 @@ export default function DashboardPage() {
                   }}
                 >
                   لا توجد عقود تنتهي خلال
-                  الـ 60 يوم القادمة.
+                  الـ 60 يوم القادمة. 🎉
                 </div>
               ) : (
                 <table
@@ -4289,8 +4457,12 @@ export default function DashboardPage() {
                     width: '100%',
                     borderCollapse:
                       'collapse',
+                    textAlign:
+                      'right',
                     fontSize:
                       '11px',
+                    whiteSpace:
+                      'nowrap',
                   }}
                 >
                   <thead>
@@ -4298,6 +4470,8 @@ export default function DashboardPage() {
                       style={{
                         background:
                           '#f8fafc',
+                        borderBottom:
+                          '1px solid #e2e8f0',
                       }}
                     >
                       <th style={{ padding: '10px' }}>
@@ -4313,57 +4487,189 @@ export default function DashboardPage() {
                         نوع العقد
                       </th>
                       <th style={{ padding: '10px' }}>
-                        الانتهاء
+                        تاريخ الانتهاء
                       </th>
-                      <th style={{ padding: '10px' }}>
+                      <th
+                        style={{
+                          padding: '10px',
+                          textAlign:
+                            'center',
+                        }}
+                      >
                         المتبقي
+                      </th>
+                      <th
+                        style={{
+                          padding: '10px',
+                          textAlign:
+                            'center',
+                        }}
+                      >
+                        إجراء
                       </th>
                     </tr>
                   </thead>
-
                   <tbody>
                     {dashboardData.expiringSoonList.map(
-                      (emp: any) => (
-                        <tr
-                          key={
-                            getEmployeeId(
-                              emp
-                            ) ||
-                            getEmployeeCode(
-                              emp
-                            )
-                          }
-                        >
-                          <td style={{ padding: '10px' }}>
-                            {getEmployeeCode(
-                              emp
-                            )}
-                          </td>
-                          <td style={{ padding: '10px' }}>
-                            {getEmployeeName(
-                              emp
-                            )}
-                          </td>
-                          <td style={{ padding: '10px' }}>
-                            {getDepartment(
-                              emp
-                            )}
-                          </td>
-                          <td style={{ padding: '10px' }}>
-                            {getContractType(
-                              emp
-                            )}
-                          </td>
-                          <td style={{ padding: '10px' }}>
-                            {getContractEnd(
-                              emp
-                            )}
-                          </td>
-                          <td style={{ padding: '10px' }}>
-                            متبقي {emp.days} يوم
-                          </td>
-                        </tr>
-                      )
+                      (emp: any) => {
+                        const empCode =
+                          getEmployeeCode(
+                            emp
+                          );
+                        return (
+                          <tr
+                            key={
+                              empCode
+                            }
+                            style={{
+                              borderBottom:
+                                '1px solid #f1f5f9',
+                            }}
+                          >
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                                fontFamily:
+                                  'monospace',
+                                color:
+                                  '#2563eb',
+                              }}
+                            >
+                              {empCode}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                                color:
+                                  '#0f172a',
+                              }}
+                            >
+                              {getEmployeeName(
+                                emp
+                              )}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                color:
+                                  '#64748b',
+                              }}
+                            >
+                              {getDepartment(
+                                emp
+                              ) || '—'}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                fontWeight:
+                                  'bold',
+                              }}
+                            >
+                              {getContractType(
+                                emp
+                              )}{' '}
+                              {emp.isPermanentTurning60 && (
+                                <span
+                                  style={{
+                                    fontSize:
+                                      '9px',
+                                    background:
+                                      '#fffbe1',
+                                    color:
+                                      '#b45309',
+                                    padding:
+                                      '2px 6px',
+                                    borderRadius:
+                                      '4px',
+                                  }}
+                                >
+                                  بلوغ 60
+                                </span>
+                              )}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                fontFamily:
+                                  'monospace',
+                                fontWeight:
+                                  'bold',
+                              }}
+                            >
+                              {getContractEnd(
+                                emp
+                              ) || '—'}
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                textAlign:
+                                  'center',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  color:
+                                    '#d97706',
+                                  fontWeight:
+                                    'bold',
+                                }}
+                              >
+                                متبقي {emp.days} يوم
+                              </span>
+                            </td>
+                            <td
+                              style={{
+                                padding:
+                                  '10px',
+                                textAlign:
+                                  'center',
+                              }}
+                            >
+                              <button
+                                onClick={() =>
+                                  handleRowClick(
+                                    empCode,
+                                    'contracts',
+                                    emp
+                                  )
+                                }
+                                style={{
+                                  background:
+                                    '#fffbe1',
+                                  color:
+                                    '#b45309',
+                                  border:
+                                    '1px solid #fde68a',
+                                  padding:
+                                    '5px 10px',
+                                  borderRadius:
+                                    '4px',
+                                  fontSize:
+                                    '10px',
+                                  fontWeight:
+                                    'bold',
+                                  cursor:
+                                    'pointer',
+                                }}
+                              >
+                                تجديد العقد ↗️
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      }
                     )}
                   </tbody>
                 </table>
@@ -4372,8 +4678,6 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
-
-      {/* Short Term */}
 
       {showShortTermModal && (
         <div
@@ -4399,20 +4703,20 @@ export default function DashboardPage() {
             style={{
               width:
                 '700px',
-              maxWidth:
-                '100%',
               height:
                 '80vh',
               background:
-                '#fff',
+                '#ffffff',
               borderRadius:
                 '16px',
-              overflow:
-                'hidden',
               display:
                 'flex',
               flexDirection:
                 'column',
+              boxShadow:
+                '0 20px 60px rgba(0,0,0,0.3)',
+              overflow:
+                'hidden',
             }}
           >
             <div
@@ -4444,9 +4748,8 @@ export default function DashboardPage() {
                   }}
                 >
                   ⏱️ العقود المؤقتة وفترات
-                  الاختبار
+                  الاختبار (بالأشهر)
                 </h3>
-
                 <p
                   style={{
                     margin:
@@ -4459,18 +4762,15 @@ export default function DashboardPage() {
                 >
                   إجمالي:{' '}
                   {
-                    dashboardData
-                      .shortTermTotal
-                  }
+                    dashboardData.shortTermTotal
+                  }{' '}
+                  موظف
                 </p>
               </div>
-
               <div
                 style={{
-                  display:
-                    'flex',
-                  gap:
-                    '8px',
+                  display: 'flex',
+                  gap: '8px',
                 }}
               >
                 {selectedShortTermDept && (
@@ -4494,12 +4794,13 @@ export default function DashboardPage() {
                         'pointer',
                       fontWeight:
                         'bold',
+                      fontSize:
+                        '11px',
                     }}
                   >
-                    🔙 رجوع
+                    🔙 رجوع للإدارات
                   </button>
                 )}
-
                 <button
                   onClick={() => {
                     setShowShortTermModal(
@@ -4523,6 +4824,8 @@ export default function DashboardPage() {
                       'pointer',
                     fontWeight:
                       'bold',
+                    fontSize:
+                      '11px',
                   }}
                 >
                   إغلاق ✕
@@ -4542,217 +4845,356 @@ export default function DashboardPage() {
               {!selectedShortTermDept ? (
                 <div
                   style={{
-                    display:
-                      'flex',
+                    display: 'flex',
                     flexDirection:
                       'column',
-                    gap:
-                      '12px',
+                    gap: '12px',
                   }}
                 >
-                  {dashboardData.shortTermList.map(
-                    (
-                      group: any,
-                      idx: number
-                    ) => (
-                      <div
-                        key={idx}
-                        onClick={() =>
-                          setSelectedShortTermDept(
-                            group.deptName
-                          )
-                        }
-                        style={{
-                          padding:
-                            '16px',
-                          border:
-                            '1px solid #e2e8f0',
-                          borderRadius:
-                            '10px',
-                          cursor:
-                            'pointer',
-                          display:
-                            'flex',
-                          justifyContent:
-                            'space-between',
-                          alignItems:
-                            'center',
-                        }}
-                      >
+                  {dashboardData.shortTermList.length ===
+                  0 ? (
+                    <div
+                      style={{
+                        textAlign:
+                          'center',
+                        color:
+                          '#64748b',
+                        fontWeight:
+                          'bold',
+                        fontSize:
+                          '13px',
+                        marginTop:
+                          '40px',
+                      }}
+                    >
+                      لا توجد عقود مؤقتة
+                      حالياً.
+                    </div>
+                  ) : (
+                    dashboardData.shortTermList.map(
+                      (
+                        group: any,
+                        idx: number
+                      ) => (
                         <div
-                          style={{
-                            fontWeight:
-                              'bold',
-                          }}
-                        >
-                          🏢{' '}
-                          {
-                            group.deptName
+                          key={idx}
+                          onClick={() =>
+                            setSelectedShortTermDept(
+                              group.deptName
+                            )
                           }
-                        </div>
-
-                        <span
                           style={{
-                            background:
-                              '#eff6ff',
-                            color:
-                              '#2563eb',
+                            display:
+                              'flex',
+                            justifyContent:
+                              'space-between',
+                            alignItems:
+                              'center',
                             padding:
-                              '4px 10px',
+                              '16px',
+                            border:
+                              '1px solid #e2e8f0',
                             borderRadius:
-                              '100px',
-                            fontSize:
-                              '11px',
-                            fontWeight:
-                              'bold',
+                              '10px',
+                            cursor:
+                              'pointer',
+                            transition:
+                              'all 0.2s',
+                            background:
+                              '#ffffff',
                           }}
                         >
-                          {
-                            group.emps
-                              .length
-                          }{' '}
-                          موظف
-                        </span>
-                      </div>
+                          <div
+                            style={{
+                              fontWeight:
+                                'bold',
+                              fontSize:
+                                '13px',
+                              color:
+                                '#0f172a',
+                            }}
+                          >
+                            🏢{' '}
+                            {
+                              group.deptName
+                            }
+                          </div>
+                          <div
+                            style={{
+                              display:
+                                'flex',
+                              alignItems:
+                                'center',
+                              gap: '12px',
+                            }}
+                          >
+                            <span
+                              style={{
+                                background:
+                                  '#eff6ff',
+                                color:
+                                  '#2563eb',
+                                padding:
+                                  '4px 10px',
+                                borderRadius:
+                                  '100px',
+                                fontSize:
+                                  '11px',
+                                fontWeight:
+                                  'bold',
+                              }}
+                            >
+                              {
+                                group.emps
+                                  .length
+                              }{' '}
+                              موظف
+                            </span>
+                            <span
+                              style={{
+                                fontSize:
+                                  '11px',
+                                color:
+                                  '#64748b',
+                                fontWeight:
+                                  'bold',
+                              }}
+                            >
+                              عرض 👁️
+                            </span>
+                          </div>
+                        </div>
+                      )
                     )
                   )}
                 </div>
               ) : (
-                <table
-                  style={{
-                    width: '100%',
-                    borderCollapse:
-                      'collapse',
-                    fontSize:
-                      '11px',
-                  }}
-                >
-                  <thead>
-                    <tr
-                      style={{
-                        background:
-                          '#f8fafc',
-                      }}
-                    >
-                      <th style={{ padding: '10px' }}>
-                        الموظف
-                      </th>
-                      <th style={{ padding: '10px' }}>
-                        سجل التعاقد
-                      </th>
-                      <th style={{ padding: '10px' }}>
-                        الانتهاء
-                      </th>
-                      <th style={{ padding: '10px' }}>
-                        إجراء
-                      </th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {dashboardData.shortTermList
-                      .find(
-                        (g: any) =>
-                          g.deptName ===
-                          selectedShortTermDept
-                      )
-                      ?.emps.map(
-                        (emp: any) => {
-                          const code =
-                            getEmployeeCode(
-                              emp
-                            );
-
-                          return (
-                            <tr
-                              key={
-                                getEmployeeId(
+                <div className="table-responsive">
+                  <h4
+                    style={{
+                      margin:
+                        '0 0 16px',
+                      color:
+                        '#0f172a',
+                      fontSize:
+                        '14px',
+                    }}
+                  >
+                    إدارة:{' '}
+                    {
+                      selectedShortTermDept
+                    }
+                  </h4>
+                  <table
+                    style={{
+                      width: '100%',
+                      borderCollapse:
+                        'collapse',
+                      textAlign:
+                        'right',
+                      fontSize:
+                        '11px',
+                      whiteSpace:
+                        'nowrap',
+                    }}
+                  >
+                    <thead>
+                      <tr
+                        style={{
+                          background:
+                            '#f8fafc',
+                          borderBottom:
+                            '1px solid #e2e8f0',
+                        }}
+                      >
+                        <th style={{ padding: '10px', color: '#64748b' }}>
+                          الموظف
+                        </th>
+                        <th style={{ padding: '10px', color: '#64748b' }}>
+                          سجل التعاقد
+                        </th>
+                        <th style={{ padding: '10px', color: '#64748b' }}>
+                          الانتهاء
+                        </th>
+                        <th
+                          style={{
+                            padding: '10px',
+                            color: '#64748b',
+                            textAlign:
+                              'center',
+                          }}
+                        >
+                          إجراء
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardData.shortTermList
+                        .find(
+                          (g: any) =>
+                            g.deptName ===
+                            selectedShortTermDept
+                        )
+                        ?.emps.map(
+                          (emp: any) => {
+                            const empCode =
+                              getEmployeeCode(
+                                emp
+                              );
+                            const daysLeft =
+                              getDaysRemaining(
+                                getContractEnd(
                                   emp
-                                ) ||
-                                code
-                              }
-                            >
-                              <td
-                                style={{
-                                  padding:
-                                    '10px',
-                                }}
-                              >
-                                {getEmployeeName(
-                                  emp
-                                )}
-                                <div
-                                  style={{
-                                    fontSize:
-                                      '10px',
-                                    color:
-                                      '#2563eb',
-                                  }}
-                                >
-                                  {code}
-                                </div>
-                              </td>
-
-                              <td
-                                style={{
-                                  padding:
-                                    '10px',
-                                }}
-                              >
-                                {
-                                  emp.historyDesc
+                                )
+                              );
+                            return (
+                              <tr
+                                key={
+                                  empCode
                                 }
-                              </td>
-
-                              <td
                                 style={{
-                                  padding:
-                                    '10px',
+                                  borderBottom:
+                                    '1px solid #f1f5f9',
                                 }}
                               >
-                                {getContractEnd(
-                                  emp
-                                )}
-                              </td>
-
-                              <td
-                                style={{
-                                  padding:
-                                    '10px',
-                                }}
-                              >
-                                <button
-                                  onClick={() =>
-                                    handleRowClick(
-                                      code,
-                                      'contracts',
+                                <td style={{ padding: '10px' }}>
+                                  <div
+                                    style={{
+                                      fontWeight:
+                                        'bold',
+                                      color:
+                                        '#0f172a',
+                                    }}
+                                  >
+                                    {getEmployeeName(
                                       emp
-                                    )
-                                  }
+                                    )}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize:
+                                        '10px',
+                                      color:
+                                        '#2563eb',
+                                      fontFamily:
+                                        'monospace',
+                                      fontWeight:
+                                        'bold',
+                                    }}
+                                  >
+                                    {
+                                      empCode
+                                    }
+                                  </div>
+                                </td>
+                                <td style={{ padding: '10px' }}>
+                                  <span
+                                    style={{
+                                      background:
+                                        '#f8fafc',
+                                      color:
+                                        '#0f172a',
+                                      padding:
+                                        '4px 8px',
+                                      borderRadius:
+                                        '6px',
+                                      fontWeight:
+                                        'bold',
+                                      fontSize:
+                                        '10px',
+                                      border:
+                                        '1px dashed #cbd5e1',
+                                    }}
+                                  >
+                                    {
+                                      emp.historyDesc
+                                    }
+                                  </span>
+                                </td>
+                                <td style={{ padding: '10px' }}>
+                                  <div
+                                    style={{
+                                      fontFamily:
+                                        'monospace',
+                                      fontWeight:
+                                        'bold',
+                                      color:
+                                        '#0f172a',
+                                    }}
+                                  >
+                                    {
+                                      getContractEnd(
+                                        emp
+                                      )
+                                    }
+                                  </div>
+                                  {daysLeft !==
+                                    null && (
+                                    <div
+                                      style={{
+                                        fontSize:
+                                          '9px',
+                                        color:
+                                          daysLeft <
+                                          0
+                                            ? '#dc2626'
+                                            : '#d97706',
+                                        fontWeight:
+                                          'bold',
+                                      }}
+                                    >
+                                      {daysLeft <
+                                      0
+                                        ? `منتهي`
+                                        : `متبقي ${daysLeft} يوم`}
+                                    </div>
+                                  )}
+                                </td>
+                                <td
                                   style={{
-                                    background:
-                                      '#eff6ff',
-                                    color:
-                                      '#2563eb',
-                                    border:
-                                      '1px solid #bfdbfe',
                                     padding:
-                                      '5px 10px',
-                                    borderRadius:
-                                      '5px',
-                                    cursor:
-                                      'pointer',
+                                      '10px',
+                                    textAlign:
+                                      'center',
                                   }}
                                 >
-                                  العقد ↗️
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        }
-                      )}
-                  </tbody>
-                </table>
+                                  <button
+                                    onClick={() =>
+                                      handleRowClick(
+                                        empCode,
+                                        'contracts',
+                                        emp
+                                      )
+                                    }
+                                    style={{
+                                      background:
+                                        '#eff6ff',
+                                      color:
+                                        '#2563eb',
+                                      border:
+                                        '1px solid #bfdbfe',
+                                      padding:
+                                        '6px 12px',
+                                      borderRadius:
+                                        '6px',
+                                      fontSize:
+                                        '10px',
+                                      fontWeight:
+                                        'bold',
+                                      cursor:
+                                        'pointer',
+                                    }}
+                                  >
+                                    العقد ↗️
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          }
+                        )}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>
