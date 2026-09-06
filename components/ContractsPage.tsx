@@ -277,9 +277,8 @@ export default function ContractsPage() {
   };
 
   const deptsList = Array.from(new Set(employees.map((e) => e.department).filter(Boolean)));
-  const typesList = Array.from(new Set(employees.map((e) => e.contract_type).filter(Boolean)));
 
-  // 🌟 فلترة البيانات (إزالة الرقم القومي نهائياً للبحث حصرياً بكود الموظف أو الاسم أو الإدارة)
+  // 🌟 فلترة البيانات (تم تعديل الفلتر ليعتمد على التصنيفات الرئيسية فقط)
   const filteredContracts = employees.filter((emp) => {
     const term = searchTerm.toLowerCase().trim();
     const days = getDaysRemaining(emp.contract_end_date);
@@ -306,8 +305,8 @@ export default function ContractsPage() {
         matchesType = emp.contract_type?.includes('فوق السن');
       } else if (selectedType === 'filter_reward') {
         matchesType = emp.contract_type?.includes('مكافأة') || emp.contract_type?.includes('مكافأه');
-      } else {
-        matchesType = emp.contract_type === selectedType;
+      } else if (selectedType === 'filter_project') {
+        matchesType = emp.contract_type?.includes('مهمة') || emp.contract_type?.includes('مشروع');
       }
     }
 
@@ -389,11 +388,6 @@ export default function ContractsPage() {
     setRenewalMonths(12);
     setCustomEndDate('');
     setModalState({ isOpen: true, type: 'bulk' });
-  };
-
-  const getEmpId = (emp: any) => {
-    if (!emp) return '0';
-    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
   const handleDeleteEmployee = async (employeeCode: string, employeeName: string) => {
@@ -779,7 +773,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* شريط الفلاتر */}
+      {/* 🌟 شريط الفلاتر (تم تنظيف قائمة أنواع العقود) */}
       <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input 
@@ -793,14 +787,17 @@ export default function ContractsPage() {
             <option value="">الإدارة (الكل)</option>
             {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
           </select>
+          
+          {/* 🌟 فلتر نوع العقود المطور والنظيف */}
           <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
             <option value="">كل أنواع العقود</option>
-            <option value="filter_permanent">العقود الدائمة (تجميع)</option>
-            <option value="filter_fixed">العقود المحددة (تجميع)</option>
-            <option value="filter_overage">عقود فوق السن (تجميع)</option>
-            <option value="filter_reward">المكافأة الشاملة (تجميع)</option>
-            {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
+            <option value="filter_permanent">دائم / غير محدد المدة</option>
+            <option value="filter_fixed">محدد المدة</option>
+            <option value="filter_overage">فوق السن</option>
+            <option value="filter_reward">مكافأة شاملة</option>
+            <option value="filter_project">مهمة / مشروع</option>
           </select>
+
           <select value={expiryStatus} onChange={(e) => setExpiryStatus(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none' }}>
             <option value="">حالة الانتهاء (الكل)</option>
             <option value="expiring_60">ينتهي خلال 60 يوم</option>
