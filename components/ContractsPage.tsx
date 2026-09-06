@@ -279,7 +279,7 @@ export default function ContractsPage() {
   const deptsList = Array.from(new Set(employees.map((e) => e.department).filter(Boolean)));
   const typesList = Array.from(new Set(employees.map((e) => e.contract_type).filter(Boolean)));
 
-  // 🌟 فلترة البيانات المحسنة لمنع تداخل الرقم القومي
+  // 🌟 فلترة البيانات (إزالة الرقم القومي نهائياً للبحث حصرياً بكود الموظف أو الاسم أو الإدارة)
   const filteredContracts = employees.filter((emp) => {
     const term = searchTerm.toLowerCase().trim();
     const days = getDaysRemaining(emp.contract_end_date);
@@ -287,14 +287,12 @@ export default function ContractsPage() {
     const codeStr = String(emp.employee_code ?? '').toLowerCase();
     const nameStr = String(emp.employee_name ?? '').toLowerCase();
     const deptStr = String(emp.department ?? '').toLowerCase();
-    const nidStr = String(emp.national_id ?? '').toLowerCase();
 
-    // يتم البحث في الرقم القومي فقط لو كان النص المدخل 5 أحرف أو أكثر
+    // البحث يشمل الكود، الاسم، والإدارة فقط
     const matchesSearch = !term ||
       codeStr.includes(term) ||
       nameStr.includes(term) ||
-      deptStr.includes(term) ||
-      (term.length >= 5 && nidStr.includes(term)); 
+      deptStr.includes(term);
 
     const matchesDept = !selectedDept || emp.department === selectedDept;
 
