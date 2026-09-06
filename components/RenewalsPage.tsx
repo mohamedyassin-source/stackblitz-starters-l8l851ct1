@@ -4,36 +4,45 @@ import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import { useAppData } from '@/lib/DataContext';
 
+// 🌟 دالة تقطيع وتطهير نصوص التواريخ لمنع أخطاء التوقيع الزمني والـ ISO
+const parseDateParts = (dateStr: string | null | undefined) => {
+  if (!dateStr) return null;
+  const clean = String(dateStr).split('T')[0].split(' ')[0].trim();
+  const parts = clean.split('-');
+  if (parts.length < 3) return null;
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const day = parseInt(parts[2], 10);
+  if (isNaN(year) || isNaN(month) || isNaN(day)) return null;
+  return { year, month, day, clean };
+};
+
+// 🌟 التحقق من صحة السنة (4 أرقام من 2000 إلى 2099)
+const isValidYear = (dateStr: string | null | undefined) => {
+  const parsed = parseDateParts(dateStr);
+  return parsed ? parsed.year >= 2000 && parsed.year <= 2099 : false;
+};
+
+// 🌟 حساب تاريخ بداية العقد الجديد (يوم بعد نهاية العقد القديم)
 const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
-  if (!oldEndDateStr) {
+  const parsed = parseDateParts(oldEndDateStr);
+  if (!parsed) {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
-  
-  const parts = String(oldEndDateStr).split('-');
-  if (parts.length < 3) return oldEndDateStr;
-  
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const day = parseInt(parts[2], 10);
-  
-  const d = new Date(year, month, day, 12, 0, 0);
+
+  const d = new Date(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0);
   d.setDate(d.getDate() + 1);
 
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const calculateNewEndDateFromStart = (startDateStr: string | null, monthsToAdd: number) => {
-  if (!startDateStr) return null;
+// 🌟 حساب تاريخ نهاية العقد الجديد بناءً على تاريخ البداية وعدد الشهور
+const calculateNewEndDateFromStart = (startDateStr: string | null | undefined, monthsToAdd: number) => {
+  const parsed = parseDateParts(startDateStr);
+  if (!parsed) return null;
 
-  const parts = String(startDateStr).split('-');
-  if (parts.length < 3) return null;
-
-  const year = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const day = parseInt(parts[2], 10);
-
-  const d = new Date(year, month, day, 12, 0, 0);
+  const d = new Date(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0);
   d.setMonth(d.getMonth() + monthsToAdd);
   d.setDate(d.getDate() - 1);
 
@@ -55,9 +64,9 @@ export default function RenewalsPage() {
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean, type: 'single' | 'bulk', req?: any }>({ isOpen: false, type: 'single' });
+  const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean; type: 'single' | 'bulk'; req?: any }>({ isOpen: false, type: 'single' });
   const [confirmedMonths, setConfirmedMonths] = useState<number>(12);
-  
+
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
@@ -81,18 +90,18 @@ export default function RenewalsPage() {
   const fetchRequests = async () => {
     setLoading(true);
     const { data, error } = await supabase.from('renewal_requests').select('*');
-    if (error) console.error("Error fetching requests:", error.message);
+    if (error) console.error('Error fetching requests:', error.message);
     if (data) setRequests(data);
     setLoading(false);
   };
 
   const getDaysRemaining = (endDateStr: string) => {
-    if (!endDateStr) return null;
-    const parts = endDateStr.split('-');
-    if (parts.length < 3) return null;
-    const end = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+    const parsed = parseDateParts(endDateStr);
+    if (!parsed) return null;
+    const end = new Date(parsed.year, parsed.month - 1, parsed.day, 12, 0, 0);
     if (isNaN(end.getTime())) return null;
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
@@ -105,7 +114,7 @@ export default function RenewalsPage() {
     const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
     const matchesDept = !selectedDept || req.department === selectedDept;
     const matchesComp = !selectedCompany || req.company === selectedCompany;
-    
+
     let matchesMonth = true;
     if (selectedMonth) {
       const newStart = calculateNewStartDate(req.contract_end_date);
@@ -118,9 +127,9 @@ export default function RenewalsPage() {
   const sortedRequests = [...filteredRequests].sort((a, b) => {
     const daysA = getDaysRemaining(a.contract_end_date);
     const daysB = getDaysRemaining(b.contract_end_date);
-    if (daysA === null) return 1; 
+    if (daysA === null) return 1;
     if (daysB === null) return -1;
-    return daysA - daysB; 
+    return daysA - daysB;
   });
 
   const countPending = requests.filter(r => r.status === 'Pending').length;
@@ -141,6 +150,11 @@ export default function RenewalsPage() {
           return alert('يرجى التأكد من إدخال تواريخ البداية والنهاية بشكل صحيح.');
         }
 
+        if (!isValidYear(newStartDate) || !isValidYear(newEndDate)) {
+          setActionLoading(false);
+          return alert('يرجى التأكد من إدخال سنة صحيحة من 4 أرقام (مثال: 2026).');
+        }
+
         // 1. تحديث جدول طلبات التجديد
         const { error: reqError } = await supabase.from('renewal_requests').update({
           status: 'Approved',
@@ -151,41 +165,50 @@ export default function RenewalsPage() {
 
         if (reqError) throw reqError;
 
-        // 🌟 2. تحديث التواريخ في جدول العقود بدلاً من جدول الموظفين
-        const { error: contractError } = await supabase.from('contracts').update({ 
+        // 2. تحديث جدول العقود
+        await supabase.from('contracts').update({
           contract_start_date: newStartDate,
-          contract_end_date: newEndDate 
-        }).eq('employee_code', req.employee_code).eq('status', 'Active');
-        
-        if (contractError) throw contractError;
+          contract_end_date: newEndDate,
+          status: 'Active'
+        }).eq('employee_code', req.employee_code);
+
+        // 3. تحديث جدول الموظفين لربط البيانات مباشرة
+        await supabase.from('employees').update({
+          contract_start_date: newStartDate,
+          contract_end_date: newEndDate
+        }).eq('employee_code', req.employee_code);
 
         alert(`تم اعتماد الطلب وتحديث العقد بنجاح: \n يبدأ في: ${newStartDate} \n ينتهي في: ${newEndDate} ✅`);
         await refreshGlobalData();
-        
+
       } else if (approvalModal.type === 'bulk') {
         const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
         const updatePromises = reqsToApprove.map(async (req) => {
           const newStartDate = calculateNewStartDate(req.contract_end_date);
           const newEndDate = calculateNewEndDateFromStart(newStartDate, confirmedMonths);
-          
-          // تحديث الطلب
-          const { error: reqError } = await supabase.from('renewal_requests').update({
-            status: 'Approved',
-            signature_status: 'في انتظار توقيع الموظف',
-            renewal_months: confirmedMonths,
-            new_contract_end_date: newEndDate
-          }).eq('request_id', req.request_id);
 
-          if (reqError) throw reqError;
+          if (newStartDate && newEndDate && isValidYear(newStartDate) && isValidYear(newEndDate)) {
+            // تحديث الطلب
+            const { error: reqError } = await supabase.from('renewal_requests').update({
+              status: 'Approved',
+              signature_status: 'في انتظار توقيع الموظف',
+              renewal_months: confirmedMonths,
+              new_contract_end_date: newEndDate
+            }).eq('request_id', req.request_id);
 
-          // 🌟 تحديث العقد النشط الخاص بالموظف
-          if (newEndDate && newStartDate) {
-            const { error: contractError } = await supabase.from('contracts').update({ 
+            if (reqError) throw reqError;
+
+            // تحديث جدول العقود وجدول الموظفين
+            await supabase.from('contracts').update({
               contract_start_date: newStartDate,
-              contract_end_date: newEndDate 
-            }).eq('employee_code', req.employee_code).eq('status', 'Active');
-            
-            if (contractError) throw contractError;
+              contract_end_date: newEndDate,
+              status: 'Active'
+            }).eq('employee_code', req.employee_code);
+
+            await supabase.from('employees').update({
+              contract_start_date: newStartDate,
+              contract_end_date: newEndDate
+            }).eq('employee_code', req.employee_code);
           }
         });
 
@@ -196,7 +219,7 @@ export default function RenewalsPage() {
 
       setSelectedIds([]);
       setApprovalModal({ isOpen: false, type: 'single' });
-      await fetchRequests(); 
+      await fetchRequests();
 
     } catch (err: any) {
       alert('حدث خطأ أثناء الاعتماد أو تحديث بيانات العقد: ' + err.message);
@@ -232,13 +255,13 @@ export default function RenewalsPage() {
   const handleReject = async (requestId: string) => {
     const confirmReject = window.confirm('هل أنت متأكد من رفض هذا الطلب نهائياً؟');
     if (!confirmReject) return;
-    
+
     setActionLoading(true);
     const { error } = await supabase.from('renewal_requests').update({
       status: 'Rejected',
       signature_status: 'مرفوض'
     }).eq('request_id', requestId);
-    
+
     if (error) alert('حدث خطأ أثناء رفض الطلب: ' + error.message);
     else {
       alert('تم رفض الطلب بنجاح ❌');
@@ -254,7 +277,7 @@ export default function RenewalsPage() {
 
     try {
       const selectedReqs = requests.filter(r => selectedIds.includes(r.request_id) && r.status === 'Approved');
-      
+
       if (selectedReqs.length === 0) {
         setActionLoading(false);
         return alert('⚠️ لا يمكن تصدير هذا الكشف. يرجى التأكد من تحديد طلبات معتمدة فقط من الجدول.');
@@ -267,7 +290,7 @@ export default function RenewalsPage() {
       const exportData = selectedReqs.map(req => {
         const empDetails = emps?.find(e => e.employee_code === req.employee_code);
         const newStart = calculateNewStartDate(req.contract_end_date);
-        
+
         return {
           'رقم الطلب': req.request_id,
           'كود الموظف': req.employee_code,
@@ -314,10 +337,6 @@ export default function RenewalsPage() {
             <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>دورة الاعتماد وإدارة العقود قيد المعالجة لتوجيهها للتوقيع</p>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => alert("سيتم توجيهك لصفحة العقود لإنشاء طلب تجديد جديد.")} style={{ background: 'var(--paper-card)', color: 'var(--navy-950)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
-              + إنشاء طلب جديد
-            </button>
-            
             {activeTab === 'Pending' && (
               <button onClick={() => {
                 if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
@@ -356,25 +375,25 @@ export default function RenewalsPage() {
 
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '220px' }} />
-          
+
           <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-          
+
           <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
             <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--muted)', marginLeft: '6px' }}>شهر البداية:</span>
-            <input 
-              type="month" 
-              value={selectedMonth} 
-              onChange={e => setSelectedMonth(e.target.value)} 
-              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} 
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={e => setSelectedMonth(e.target.value)}
+              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }}
             />
           </div>
 
           <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
-          
+
           <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>معروض: <span style={{ color: 'var(--navy-950)' }}>{sortedRequests.length}</span> طلب</div>
         </div>
 
@@ -386,11 +405,11 @@ export default function RenewalsPage() {
               <thead>
                 <tr>
                   <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', textAlign: 'center', width: '30px' }}>
-                    <input 
-                      type="checkbox" 
-                      onChange={handleSelectAll} 
+                    <input
+                      type="checkbox"
+                      onChange={handleSelectAll}
                       checked={selectedIds.length > 0 && selectedIds.length === sortedRequests.filter(r => r.status === activeTab).length}
-                      disabled={activeTab === 'All' || activeTab === 'Rejected'} 
+                      disabled={activeTab === 'All' || activeTab === 'Rejected'}
                     />
                   </th>
                   <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>رقم الطلب</th>
@@ -413,11 +432,11 @@ export default function RenewalsPage() {
                   return (
                     <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? 'var(--paper)' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                        <input 
-                          type="checkbox" 
-                          disabled={req.status === 'Rejected'} 
-                          checked={selectedIds.includes(req.request_id)} 
-                          onChange={e => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter(id => id !== req.request_id))} 
+                        <input
+                          type="checkbox"
+                          disabled={req.status === 'Rejected'}
+                          checked={selectedIds.includes(req.request_id)}
+                          onChange={e => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter(id => id !== req.request_id))}
                         />
                       </td>
                       <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--muted)' }}>{req.request_id}</td>
@@ -471,8 +490,8 @@ export default function RenewalsPage() {
                   {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
                 </h3>
                 {approvalModal.type === 'single' && approvalModal.req && (
-                  <button 
-                    onClick={() => handleDeleteRequest(approvalModal.req.request_id)} 
+                  <button
+                    onClick={() => handleDeleteRequest(approvalModal.req.request_id)}
                     style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
                   >
                     حذف الطلب 🗑️
@@ -483,27 +502,27 @@ export default function RenewalsPage() {
               <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
                 سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. ويمكنك تعديل التواريخ يدوياً قبل الاعتماد.
               </p>
-              
+
               {approvalModal.type === 'single' && approvalModal.req && (
                 <div style={{ background: 'var(--paper)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: 'var(--ink)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ marginBottom: '2px' }}><strong>تاريخ النهاية القديم:</strong> {approvalModal.req.contract_end_date || 'غير مسجل'}</div>
-                  
+
                   <div>
                     <label style={{ display: 'block', marginBottom: '4px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>تاريخ البداية الجديد (قابل للتعديل):</label>
-                    <input 
-                      type="date" 
-                      value={customStartDate} 
-                      onChange={e => setCustomStartDate(e.target.value)} 
+                    <input
+                      type="date"
+                      value={customStartDate}
+                      onChange={e => setCustomStartDate(e.target.value)}
                       style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}
                     />
                   </div>
 
                   <div>
                     <label style={{ display: 'block', marginBottom: '4px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>تاريخ النهاية المتوقع (قابل للتعديل):</label>
-                    <input 
-                      type="date" 
-                      value={customEndDate} 
-                      onChange={e => setCustomEndDate(e.target.value)} 
+                    <input
+                      type="date"
+                      value={customEndDate}
+                      onChange={e => setCustomEndDate(e.target.value)}
                       style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}
                     />
                   </div>
