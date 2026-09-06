@@ -233,6 +233,7 @@ export default function ContractsPage() {
     const end = new Date(endDateStr);
     if (isNaN(end.getTime())) return null;
     const today = new Date();
+    today.setHours(0, 0, 0, 0); // تصفير الوقت ليكون الحساب على مستوى الأيام فقط
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
@@ -278,15 +279,22 @@ export default function ContractsPage() {
   const deptsList = Array.from(new Set(employees.map((e) => e.department).filter(Boolean)));
   const typesList = Array.from(new Set(employees.map((e) => e.contract_type).filter(Boolean)));
 
+  // 🌟 فلترة البيانات المحسنة لمنع تداخل الرقم القومي
   const filteredContracts = employees.filter((emp) => {
     const term = searchTerm.toLowerCase().trim();
     const days = getDaysRemaining(emp.contract_end_date);
 
+    const codeStr = String(emp.employee_code ?? '').toLowerCase();
+    const nameStr = String(emp.employee_name ?? '').toLowerCase();
+    const deptStr = String(emp.department ?? '').toLowerCase();
+    const nidStr = String(emp.national_id ?? '').toLowerCase();
+
+    // يتم البحث في الرقم القومي فقط لو كان النص المدخل 5 أحرف أو أكثر
     const matchesSearch = !term ||
-      String(emp.employee_code ?? '').toLowerCase().includes(term) ||
-      String(emp.employee_name ?? '').toLowerCase().includes(term) ||
-      String(emp.department ?? '').toLowerCase().includes(term) ||
-      String(emp.national_id ?? '').toLowerCase().includes(term);
+      codeStr.includes(term) ||
+      nameStr.includes(term) ||
+      deptStr.includes(term) ||
+      (term.length >= 5 && nidStr.includes(term)); 
 
     const matchesDept = !selectedDept || emp.department === selectedDept;
 
@@ -320,7 +328,18 @@ export default function ContractsPage() {
     setSortConfig({ key, direction });
   };
 
+  // 🌟 الترتيب الذكي (إعطاء الأولوية للتطابق التام للكود)
   const sortedContracts = [...filteredContracts].sort((a, b) => {
+    const term = searchTerm.toLowerCase().trim();
+    
+    // الأولوية القصوى للتطابق التام في البحث بالكود
+    if (term) {
+      const aExact = String(a.employee_code ?? '').toLowerCase() === term;
+      const bExact = String(b.employee_code ?? '').toLowerCase() === term;
+      if (aExact && !bExact) return -1;
+      if (!aExact && bExact) return 1;
+    }
+
     if (sortConfig) {
       const { key, direction } = sortConfig;
       let valA = key === 'days_remaining' ? (getDaysRemaining(a.contract_end_date) ?? 999999) : (a[key] ? String(a[key]).toLowerCase() : '');
@@ -330,6 +349,8 @@ export default function ContractsPage() {
       if (valA > valB) return direction === 'asc' ? 1 : -1;
       return 0;
     }
+    
+    // الترتيب الافتراضي حسب الأيام المتبقية
     const daysA = getDaysRemaining(a.contract_end_date);
     const daysB = getDaysRemaining(b.contract_end_date);
     if (daysA === null) return 1;
@@ -363,6 +384,7 @@ export default function ContractsPage() {
     setCustomEndDate('');
     setModalState({ isOpen: true, type: 'single', emp });
   };
+  
   const openBulkRenewal = () => {
     if (selectedEmpCodes.length === 0) return alert('يرجى تحديد موظفين أولاً');
     setRenewalMode('months');
@@ -376,7 +398,6 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
-  // ✅ دالة الحذف
   const handleDeleteEmployee = async (employeeCode: string, employeeName: string) => {
     const confirmDelete = window.confirm(`هل أنت متأكد من حذف الموظف (${employeeName}) نهائياً؟ \n\n⚠️ تنبيه: لا يمكن التراجع عن هذا الإجراء.`);
     if (!confirmDelete) return;
@@ -393,7 +414,6 @@ export default function ContractsPage() {
     }
   };
 
-  // ✅ فتح نافذة التعديل السريع
   const openEditModal = (emp: any) => {
     setEditEmpData({
       employee_code: emp.employee_code,
@@ -405,7 +425,6 @@ export default function ContractsPage() {
     setIsEditModalOpen(true);
   };
 
-  // ✅ تنفيذ التعديل السريع في جدول العقود
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEmpData) return;
@@ -415,7 +434,6 @@ export default function ContractsPage() {
 
     setActionLoading(true);
     
-    // تحديث جدول العقود (contracts)
     const { error } = await supabase.from('contracts').update({
       contract_type: editEmpData.contract_type,
       contract_start_date: editEmpData.contract_start_date || null,
@@ -433,7 +451,6 @@ export default function ContractsPage() {
     }
   };
 
-  // 🔄 تنفيذ إعادة تفعيل وعودة الموظف غير النشط (تحديث جدول الموظفين والعقود)
   const handleReactivateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmployeeCode) return alert('يرجى اختيار الموظف المراد إعادة تفعيله.');
@@ -441,7 +458,6 @@ export default function ContractsPage() {
 
     setActionLoading(true);
 
-    // 1️⃣ تحديث جدول الموظفين (employees)
     const { error: empError } = await supabase.from('employees').update({
       status: 'Active',
       department: reactivateDept,
@@ -452,7 +468,6 @@ export default function ContractsPage() {
       return alert('حدث خطأ أثناء تحديث الموظف: ' + empError.message);
     }
 
-    // 2️⃣ تحديث جدول العقود (contracts)
     const { error: contractError } = await supabase.from('contracts').update({
       contract_type: 'محدد المدة',
       status: 'Active',
@@ -480,9 +495,7 @@ export default function ContractsPage() {
 
     setActionLoading(true);
     
-    // تحديث الموظف
     const { error: empError } = await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
-    // تحديث العقد
     await supabase.from('contracts').update({ status: 'Terminated', contract_type: 'إنهاء تعاقد' }).eq('employee_code', terminateEmployeeCode);
 
     setActionLoading(false);
@@ -506,7 +519,6 @@ export default function ContractsPage() {
 
     const payload: any = {
       request_id: reqId,
-      employee_id: getEmpId(emp),
       employee_code: emp.employee_code,
       employee_name: emp.employee_name,
       department: emp.department,
@@ -526,7 +538,6 @@ export default function ContractsPage() {
       return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
     }
 
-    // تحديث جدول العقود بالبيانات الجديدة
     await supabase.from('contracts').update({ 
       contract_type: newContractType, 
       contract_start_date: newContractStartDate || null,
@@ -553,7 +564,6 @@ export default function ContractsPage() {
       
       const payload: any = {
         request_id: reqId,
-        employee_id: getEmpId(emp),
         employee_code: emp.employee_code,
         employee_name: emp.employee_name,
         department: emp.department,
@@ -579,7 +589,6 @@ export default function ContractsPage() {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
         return {
           request_id: reqIds[index],
-          employee_id: getEmpId(emp),
           employee_code: emp.employee_code,
           employee_name: emp.employee_name,
           department: emp.department,
