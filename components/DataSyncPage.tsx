@@ -38,6 +38,7 @@ export default function DataSyncPage() {
     return null;
   };
 
+  // 3. تنظيف الأرقام (للعمر)
   const sanitizeNumeric = (val: any): number | null => {
     if (val === undefined || val === null || val === '') return null;
     if (typeof val === 'string' && val.includes('-')) return null;
@@ -58,7 +59,7 @@ export default function DataSyncPage() {
     XLSX.writeFile(wb, 'قالب_بيانات_الموظفين.xlsx');
   };
 
-  // 🌟 استرجاع العقود فقط من الشيت القديم لجدول contracts
+  // 🌟 استرجاع العقود فقط لجدول contracts
   const handleContractRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel القديم أولاً');
@@ -78,7 +79,6 @@ export default function DataSyncPage() {
       }
 
       setLogs(prev => [...prev, `جاري مسح العقود الفارغة القديمة لتهيئة الجدول...`]);
-      // تنظيف جدول العقود قبل الرفع لمنع التكرار
       await supabase.from('contracts').delete().neq('status', 'NONE');
 
       const contractsPayload = rawData.map(row => {
@@ -119,7 +119,7 @@ export default function DataSyncPage() {
     }
   };
 
-  // الدالة الأساسية للمزامنة
+  // الدالة الأساسية للمزامنة وتحديث بيانات الموظفين
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -168,7 +168,7 @@ export default function DataSyncPage() {
         const dbRecord = existingMap.get(empCode);
 
         if (dbRecord) {
-          // ⚠️ الموظف موجود مسبقاً (تحديث جزئي فقط)
+          // ⚠️ الموظف موجود مسبقاً (تحديث جزئي محكوم للإدارة والوظيفة والموبايل فقط)
           const updatedRecord = { ...dbRecord };
           
           if ('department' in excelRow) {
@@ -182,27 +182,27 @@ export default function DataSyncPage() {
              if (newMobile) updatedRecord.mobile = newMobile;
           }
 
+          // لا يتم لمس باقي البيانات للحفاظ على سلامة التواريخ والعقود
           return updatedRecord;
 
         } else {
-          // ⚠️ الموظف جديد (يتم إضافته بدون عمود password)
+          // ⚠️ الموظف جديد كلياً (يتم إضافته بكامل بياناته المطابقة للـ Schema)
           return {
             employee_code: empCode,
-            employee_name: sanitizeString(excelRow.employee_name) || 'موظف جديد',
-            status: sanitizeString(excelRow.status) || 'Active',
-            role: sanitizeString(excelRow.role) || 'Employee',
+            employee_name: sanitizeString(excelRow.employee_name) || 'موظف بدون اسم', // required in schema
             department: sanitizeString(excelRow.department),
             job_title: sanitizeString(excelRow.job_title),
             company: sanitizeString(excelRow.company),
             hiring_date: sanitizeDate(excelRow.hiring_date),
             national_id: sanitizeString(excelRow.national_id),
-            mobile: sanitizeString(excelRow.mobile),
-            email: sanitizeString(excelRow.email),
             birth_date: sanitizeDate(excelRow.birth_date),
-            age: sanitizeNumeric(excelRow.age),
+            email: sanitizeString(excelRow.email),
+            mobile: sanitizeString(excelRow.mobile),
             manager: sanitizeString(excelRow.manager),
+            status: sanitizeString(excelRow.status) || 'Active', // default Active
             termination_date: sanitizeDate(excelRow.termination_date),
             termination_reason: sanitizeString(excelRow.termination_reason),
+            age: sanitizeNumeric(excelRow.age) // سيعمل الـ Trigger في الـ DB على حسابها تلقائياً لاحقاً
           };
         }
       });
