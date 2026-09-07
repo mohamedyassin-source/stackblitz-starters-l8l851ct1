@@ -47,8 +47,9 @@ export default function DataSyncPage() {
   };
 
   const handleDownloadTemplate = () => {
+    // تم إزالة employee_id من القالب
     const headers = [
-      'employee_id', 'employee_code', 'employee_name', 'department', 'job_title', 
+      'employee_code', 'employee_name', 'department', 'job_title', 
       'company', 'hiring_date', 'national_id', 'birth_date', 'status', 
       'email', 'mobile', 'manager', 'termination_date', 'termination_reason'
     ];
@@ -58,7 +59,7 @@ export default function DataSyncPage() {
     XLSX.writeFile(wb, 'قالب_بيانات_الموظفين.xlsx');
   };
 
-  // 🌟 الدالة الجديدة: استرجاع العقود فقط من الشيت القديم لجدول contracts
+  // 🌟 استرجاع العقود فقط من الشيت القديم لجدول contracts
   const handleContractRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel القديم (employees_rows 3) أولاً');
@@ -89,9 +90,9 @@ export default function DataSyncPage() {
         const cStart = sanitizeDate(row.contract_start_date);
         const cEnd = sanitizeDate(row.contract_end_date);
 
+        // تم إزالة employee_id تماماً
         return {
           employee_code: empCode,
-          employee_id: sanitizeString(row.employee_id) || empCode,
           contract_type: cType,
           contract_start_date: cStart,
           contract_end_date: cEnd,
@@ -120,7 +121,7 @@ export default function DataSyncPage() {
     }
   };
 
-  // الدالة الأساسية للمزامنة (تحديث الأساسيات فقط)
+  // الدالة الأساسية للمزامنة (تحديث الأساسيات فقط للموجود، وإضافة كاملة للجديد)
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -169,26 +170,27 @@ export default function DataSyncPage() {
         const dbRecord = existingMap.get(empCode);
 
         if (dbRecord) {
+          // ⚠️ الموظف موجود مسبقاً (تحديث جزئي فقط)
           const updatedRecord = { ...dbRecord };
-          if ('employee_name' in excelRow) updatedRecord.employee_name = sanitizeString(excelRow.employee_name) || updatedRecord.employee_name;
-          if ('department' in excelRow) updatedRecord.department = sanitizeString(excelRow.department);
-          if ('job_title' in excelRow) updatedRecord.job_title = sanitizeString(excelRow.job_title);
-          if ('company' in excelRow) updatedRecord.company = sanitizeString(excelRow.company);
-          if ('status' in excelRow) updatedRecord.status = sanitizeString(excelRow.status) || updatedRecord.status;
-          if ('hiring_date' in excelRow) updatedRecord.hiring_date = sanitizeDate(excelRow.hiring_date);
-          if ('national_id' in excelRow) updatedRecord.national_id = sanitizeString(excelRow.national_id);
-          if ('mobile' in excelRow) updatedRecord.mobile = sanitizeString(excelRow.mobile);
-          if ('email' in excelRow) updatedRecord.email = sanitizeString(excelRow.email);
-          if ('birth_date' in excelRow) updatedRecord.birth_date = sanitizeDate(excelRow.birth_date);
-          if ('age' in excelRow) updatedRecord.age = sanitizeNumeric(excelRow.age);
-          if ('manager' in excelRow) updatedRecord.manager = sanitizeString(excelRow.manager);
-          if ('termination_date' in excelRow) updatedRecord.termination_date = sanitizeDate(excelRow.termination_date);
-          if ('termination_reason' in excelRow) updatedRecord.termination_reason = sanitizeString(excelRow.termination_reason);
+          
+          if ('department' in excelRow) {
+             updatedRecord.department = sanitizeString(excelRow.department) || updatedRecord.department;
+          }
+          if ('job_title' in excelRow) {
+             updatedRecord.job_title = sanitizeString(excelRow.job_title) || updatedRecord.job_title;
+          }
+          if ('mobile' in excelRow) {
+             const newMobile = sanitizeString(excelRow.mobile);
+             if (newMobile) updatedRecord.mobile = newMobile;
+          }
+
+          // لا يتم لمس التواريخ، الشركة، أو الرقم القومي لضمان أمان البيانات
           return updatedRecord;
+
         } else {
+          // ⚠️ الموظف جديد (يتم إضافة كافة البيانات)
           return {
-            employee_code: empCode,
-            employee_id: sanitizeString(excelRow.employee_id) || empCode,
+            employee_code: empCode, // تم إزالة employee_id
             employee_name: sanitizeString(excelRow.employee_name) || 'موظف جديد',
             status: sanitizeString(excelRow.status) || 'Active',
             role: sanitizeString(excelRow.role) || 'Employee',
@@ -221,7 +223,7 @@ export default function DataSyncPage() {
       }
 
       setLogs(prev => [...prev, '✅ تمت المزامنة بنجاح!']);
-      alert('تم التحديث بنجاح! قاعدة البيانات الآن نظيفة ومفصولة بالكامل. ✅');
+      alert('تم التحديث بنجاح! قاعدة البيانات الآن نظيفة ومحدثة بالكامل. ✅');
       await refresh();
       setFile(null);
     } catch (err: any) {
@@ -236,7 +238,7 @@ export default function DataSyncPage() {
     <div className="p-6 executive-card max-w-2xl mx-auto my-8" style={{ direction: 'rtl' }}>
       <h3 className="text-lg font-bold text-primary mb-2">🔄 تحديث بيانات الموظفين الأساسية</h3>
       <p className="text-xs text-muted mb-6">
-        هذه الأداة تقوم بتحديث البيانات الوظيفية الأساسية للموظفين (كالإدارات والوظائف). تم نقل إدارة العقود بالكامل لصفحة التجديدات.
+        هذه الأداة تقوم بتحديث البيانات الوظيفية الأساسية للموظفين (الإدارة، الوظيفة، ورقم التليفون فقط للموظفين الحاليين). الموظف الجديد سيتم إضافته بكامل بياناته.
       </p>
 
       <div className="mb-6">
