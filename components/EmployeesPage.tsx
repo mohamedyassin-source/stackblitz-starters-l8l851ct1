@@ -320,7 +320,7 @@ export default function EmployeesPage() {
     });
 
   // ============================================================
-  // ACTIVE EMPLOYEES (للقوائم والكروت فقط - صافي بدون تحويلات أو مفصولين)
+  // ACTIVE EMPLOYEES
   // ============================================================
 
   const activeEmployeesOnly =
@@ -331,7 +331,6 @@ export default function EmployeesPage() {
           const dept = String(getField(emp, 'department', 'Department')).trim();
           const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
 
-          // 🌟 الاعتماد على كلمة "تحويلات" أو "إنهاء" فقط لضمان اصطياد أي فواصل أو علامات
           const isTransfer = dept.includes('تحويلات');
           const isTerminatedType = type.includes('إنهاء');
 
@@ -380,26 +379,8 @@ export default function EmployeesPage() {
     activeEmployeesOnly,
   ]);
 
-  const typesList = useMemo(() => {
-    return Array.from(
-      new Set(
-        activeEmployeesOnly
-          .map((emp: any) =>
-            getField(
-              emp,
-              'contract_type',
-              'ContractType'
-            )
-          )
-          .filter(Boolean)
-      )
-    );
-  }, [
-    activeEmployeesOnly,
-  ]);
-
   // ============================================================
-  // MAIN FILTER (للجدول والبحث - بيعتمد على كل الموظفين)
+  // MAIN FILTER
   // ============================================================
 
   const baseFilteredEmployees =
@@ -420,7 +401,6 @@ export default function EmployeesPage() {
           const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
           const age = getEmployeeAge(emp);
 
-          // 🌟 تحديد إذا كان الموظف خارج قوة العمل الفعلية
           const isTransfer = department.includes('تحويلات');
           const isTerminatedType = contractType.includes('إنهاء');
 
@@ -429,7 +409,6 @@ export default function EmployeesPage() {
             isTransfer || 
             isTerminatedType;
 
-          // 🌟 السر هنا: إخفاء الموظف المستبعد لو مفيش بحث، وإظهاره فقط عند البحث
           if (isExcludedByDefault && !search) {
             return false;
           }
@@ -461,9 +440,23 @@ export default function EmployeesPage() {
               )
             );
 
-          const matchesType =
-            !selectedType ||
-            contractType === normalizeSearch(selectedType);
+          // 🌟 الفلتر الذكي لأنواع العقود
+          let matchesType = true;
+          if (selectedType) {
+            if (selectedType === 'filter_permanent') {
+              matchesType = contractType.includes('دائم') || contractType.includes('غير محدد');
+            } else if (selectedType === 'filter_fixed') {
+              matchesType = contractType.includes('محدد') && !contractType.includes('فوق السن');
+            } else if (selectedType === 'filter_overage') {
+              matchesType = contractType.includes('فوق السن');
+            } else if (selectedType === 'filter_reward') {
+              matchesType = contractType.includes('مكافأة') || contractType.includes('مكافأه') || contractType.includes('reward');
+            } else if (selectedType === 'filter_project') {
+              matchesType = contractType.includes('مهمة') || contractType.includes('مشروع');
+            } else {
+              matchesType = contractType === selectedType;
+            }
+          }
 
           let matchesAge = true;
 
@@ -524,12 +517,11 @@ export default function EmployeesPage() {
     ]);
 
   // ============================================================
-  // KPI (للكروت - بتعتمد على الأكتيف الفعليين فقط دايماً)
+  // KPI 
   // ============================================================
 
   const kpiStats =
     useMemo(() => {
-      // 🌟 تصفية صارمة للكروت 
       const validForKpi = baseFilteredEmployees.filter((emp: any) => {
         const dept = String(getField(emp, 'department', 'Department')).trim();
         const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
@@ -760,7 +752,6 @@ export default function EmployeesPage() {
         return [];
       }
 
-      // لا يمكن فصل إلا موظف أكتيف فعلياً
       return activeEmployeesOnly
         .filter(
           (emp: any) => {
@@ -870,10 +861,6 @@ export default function EmployeesPage() {
     );
   };
 
-  // ============================================================
-  // OPEN EDIT
-  // ============================================================
-
   const handleOpenEdit = (
     emp: any
   ) => {
@@ -885,11 +872,6 @@ export default function EmployeesPage() {
       saving: false,
     });
   };
-
-  // ============================================================
-  // IMPORTANT:
-  // RECEIVE EMPLOYEE FROM DASHBOARD
-  // ============================================================
 
   useEffect(() => {
     if (
@@ -986,10 +968,6 @@ export default function EmployeesPage() {
       return;
     }
 
-    // ========================================================
-    // افتح السجل مباشرة
-    // ========================================================
-
     setSearchTerm('');
     setSelectedDept('');
     setSelectedCompany('');
@@ -1003,49 +981,18 @@ export default function EmployeesPage() {
       targetEmployee
     );
 
-    // ========================================================
-    // تنظيف مفاتيح الانتقال
-    // ========================================================
-
-    localStorage.removeItem(
-      'selectedEmployeeId'
-    );
-
-    localStorage.removeItem(
-      'selectedEmployeeCode'
-    );
-
-    localStorage.removeItem(
-      'employeeId'
-    );
-
-    localStorage.removeItem(
-      'employeeSearch'
-    );
-
-    localStorage.removeItem(
-      'jumpSearch'
-    );
-
-    sessionStorage.removeItem(
-      'selectedEmployeeId'
-    );
-
-    sessionStorage.removeItem(
-      'employeeSearch'
-    );
-
-    sessionStorage.removeItem(
-      'jumpSearch'
-    );
+    localStorage.removeItem('selectedEmployeeId');
+    localStorage.removeItem('selectedEmployeeCode');
+    localStorage.removeItem('employeeId');
+    localStorage.removeItem('employeeSearch');
+    localStorage.removeItem('jumpSearch');
+    sessionStorage.removeItem('selectedEmployeeId');
+    sessionStorage.removeItem('employeeSearch');
+    sessionStorage.removeItem('jumpSearch');
   }, [
     employees,
     loading,
   ]);
-
-  // ============================================================
-  // SAVE EDIT
-  // ============================================================
 
   const handleSaveEdit =
     async (
@@ -1268,10 +1215,6 @@ export default function EmployeesPage() {
       }
     };
 
-  // ============================================================
-  // TERMINATION
-  // ============================================================
-
   const handleConfirmTermination =
     async (
       e: React.FormEvent
@@ -1306,7 +1249,7 @@ export default function EmployeesPage() {
             )
             .update({
               department:
-                'تحويلات/تحت الاعتماد', // 🌟 تم توحيدها حسب الداتا بيز عندك
+                'تحويلات/تحت الاعتماد', 
               status:
                 'Inactive',
               termination_reason:
@@ -1368,10 +1311,6 @@ export default function EmployeesPage() {
         );
       }
     };
-
-  // ============================================================
-  // BULK TRANSFER
-  // ============================================================
 
   const handleConfirmBulkTransfer =
     async (
@@ -1468,10 +1407,6 @@ export default function EmployeesPage() {
       }
     };
 
-  // ============================================================
-  // DELETE
-  // ============================================================
-
   const handleDeleteSelected =
     async () => {
       if (
@@ -1544,10 +1479,6 @@ export default function EmployeesPage() {
         );
       }
     };
-
-  // ============================================================
-  // ADD EMPLOYEE
-  // ============================================================
 
   const handleAddEmployee =
     async (
@@ -1728,10 +1659,6 @@ export default function EmployeesPage() {
       }
     };
 
-  // ============================================================
-  // EXPORT
-  // ============================================================
-
   const handleExportToExcel =
     (
       onlySelected = false
@@ -1855,10 +1782,6 @@ export default function EmployeesPage() {
           .split('T')[0]}.xlsx`
       );
     };
-
-  // ============================================================
-  // CONTRACT BADGE
-  // ============================================================
 
   const getContractStatusBadge = (
     type: string,
@@ -2011,10 +1934,6 @@ export default function EmployeesPage() {
     );
   };
 
-  // ============================================================
-  // AGE BADGE
-  // ============================================================
-
   const renderAgeBadge =
     (emp: any) => {
       const age =
@@ -2084,10 +2003,6 @@ export default function EmployeesPage() {
       );
     };
 
-  // ============================================================
-  // RENDER
-  // ============================================================
-
   return (
     <div
       style={{
@@ -2097,10 +2012,6 @@ export default function EmployeesPage() {
           'fadeIn 0.4s ease-in-out',
       }}
     >
-      {/* ========================================================
-          HEADER
-      ======================================================== */}
-
       <div
         style={{
           display:
@@ -2240,10 +2151,6 @@ export default function EmployeesPage() {
           </button>
         </div>
       </div>
-
-      {/* ========================================================
-          KPI CARDS
-      ======================================================== */}
 
       <div
         style={{
@@ -2529,10 +2436,6 @@ export default function EmployeesPage() {
           </div>
         </div>
       </div>
-
-      {/* ========================================================
-          BULK ACTIONS
-      ======================================================== */}
 
       {selectedEmpIds.length >
         0 && (
@@ -2822,43 +2725,23 @@ export default function EmployeesPage() {
           )}
         </datalist>
 
+        {/* 🌟 الفلتر الذكي الموحد لأنواع العقود */}
         <select
-          value={
-            selectedType
-          }
-          onChange={(e) =>
-            setSelectedType(
-              e.target.value
-            )
-          }
+          value={selectedType}
+          onChange={(e) => setSelectedType(e.target.value)}
           style={{
-            padding:
-              '8px 12px',
-            borderRadius:
-              '8px',
-            border:
-              '1px solid var(--line)',
-            fontSize:
-              '11px',
+            padding: '8px 12px',
+            borderRadius: '8px',
+            border: '1px solid var(--line)',
+            fontSize: '11px',
           }}
         >
-          <option value="">
-            كل أنواع العقود
-          </option>
-
-          {typesList.map(
-            (
-              type: any,
-              i: number
-            ) => (
-              <option
-                key={i}
-                value={type}
-              >
-                {type}
-              </option>
-            )
-          )}
+          <option value="">كل أنواع العقود</option>
+          <option value="filter_permanent">دائم / غير محدد المدة</option>
+          <option value="filter_fixed">محدد المدة</option>
+          <option value="filter_overage">فوق السن</option>
+          <option value="filter_reward">مكافأة شاملة</option>
+          <option value="filter_project">مهمة / مشروع</option>
         </select>
 
         <select
