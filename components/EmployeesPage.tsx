@@ -331,8 +331,11 @@ export default function EmployeesPage() {
           const dept = String(getField(emp, 'department', 'Department')).trim();
           const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
 
-          // 🌟 استبعاد التحويلات وإنهاء التعاقد وأي موظف غير نشط من القوائم
-          return status === 'active' && dept !== 'تحويلات تحت الاعتماد' && type !== 'إنهاء تعاقد';
+          // 🌟 الاعتماد على كلمة "تحويلات" أو "إنهاء" فقط لضمان اصطياد أي فواصل أو علامات
+          const isTransfer = dept.includes('تحويلات');
+          const isTerminatedType = type.includes('إنهاء');
+
+          return status === 'active' && !isTransfer && !isTerminatedType;
         }
       );
     }, [employees]);
@@ -413,17 +416,20 @@ export default function EmployeesPage() {
           const nationalId = normalizeSearch(getNationalId(emp));
           const department = normalizeSearch(getField(emp, 'department', 'Department'));
           const company = normalizeSearch(getField(emp, 'company', 'Company'));
-          const contractType = String(getField(emp, 'contract_type', 'ContractType')).trim();
+          const contractType = normalizeSearch(getField(emp, 'contract_type', 'ContractType'));
           const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
           const age = getEmployeeAge(emp);
 
-          // 🌟 تحديد إذا كان الموظف خارج قوة العمل الفعلية (تحويلات/مفصول)
+          // 🌟 تحديد إذا كان الموظف خارج قوة العمل الفعلية
+          const isTransfer = department.includes('تحويلات');
+          const isTerminatedType = contractType.includes('إنهاء');
+
           const isExcludedByDefault = 
             status !== 'active' || 
-            department === 'تحويلات تحت الاعتماد' || 
-            contractType === 'إنهاء تعاقد';
+            isTransfer || 
+            isTerminatedType;
 
-          // 🌟 السر هنا: إخفاء الموظف المستبعد لو مفيش بحث، وإظهاره فقط عند البحث عنه بالكود أو الاسم!
+          // 🌟 السر هنا: إخفاء الموظف المستبعد لو مفيش بحث، وإظهاره فقط عند البحث
           if (isExcludedByDefault && !search) {
             return false;
           }
@@ -457,8 +463,7 @@ export default function EmployeesPage() {
 
           const matchesType =
             !selectedType ||
-            contractType ===
-              selectedType;
+            contractType === normalizeSearch(selectedType);
 
           let matchesAge = true;
 
@@ -510,7 +515,7 @@ export default function EmployeesPage() {
         }
       );
     }, [
-      employees, // 🌟 بنلف على الداتا كلها مش الأكتيف بس
+      employees,
       searchTerm,
       selectedDept,
       selectedCompany,
@@ -524,13 +529,16 @@ export default function EmployeesPage() {
 
   const kpiStats =
     useMemo(() => {
-      // 🌟 تصفية صارمة للكروت حتى لو الموظف المعزول ظهر في نتائج البحث
+      // 🌟 تصفية صارمة للكروت 
       const validForKpi = baseFilteredEmployees.filter((emp: any) => {
         const dept = String(getField(emp, 'department', 'Department')).trim();
         const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
         const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
         
-        return status === 'active' && dept !== 'تحويلات تحت الاعتماد' && type !== 'إنهاء تعاقد';
+        const isTransfer = dept.includes('تحويلات');
+        const isTerminatedType = type.includes('إنهاء');
+
+        return status === 'active' && !isTransfer && !isTerminatedType;
       });
 
       const total = validForKpi.length;
@@ -1298,7 +1306,7 @@ export default function EmployeesPage() {
             )
             .update({
               department:
-                'تحويلات تحت الاعتماد',
+                'تحويلات/تحت الاعتماد', // 🌟 تم توحيدها حسب الداتا بيز عندك
               status:
                 'Inactive',
               termination_reason:
@@ -1331,7 +1339,7 @@ export default function EmployeesPage() {
         alert(
           `✅ تم تحويل الموظف (${getEmployeeName(
             selectedTermEmp
-          )}) إلى قسم تحويلات تحت الاعتماد.`
+          )}) إلى قسم تحويلات/تحت الاعتماد.`
         );
 
         setShowTermModal(
