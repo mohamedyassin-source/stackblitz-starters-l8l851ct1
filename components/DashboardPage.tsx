@@ -851,7 +851,7 @@ export default function DashboardPage() {
 
       {/* الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
-        <KpiCard loading={loading} tone="brass" title="إجمالي القوة" value={dashboardData.totalEmps} sub="عرض الكشف 👁️" icon="👥" onClick={() => setShowTotalEmpsModal(true)} />
+        <KpiCard loading={loading} tone="brass" title="إجمالي الموظفين" value={dashboardData.totalEmps} sub="عرض الكشف 👁️" icon="👥" onClick={() => setShowTotalEmpsModal(true)} />
         <KpiCard loading={loading} tone="blue" title="طلبات معلقة" value={dashboardData.pendingCount} sub={`+ ${dashboardData.waitingSignCount} توقيع`} icon="⏳" onClick={() => navigateTo('renewals')} />
         <KpiCard loading={loading} tone="blue" title="عقود مؤقتة" value={dashboardData.shortTermTotal} sub="عرض القائمة ⏱️" icon="⏱️" onClick={() => setShowShortTermModal(true)} />
         <KpiCard loading={loading} tone="amber" title="تنتهي قريباً (0-60)" value={dashboardData.expiringSoonCount} sub="عرض القائمة 👁️" icon="📆" onClick={() => setShowExpiringSoonModal(true)} />
