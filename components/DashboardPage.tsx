@@ -1114,7 +1114,7 @@ export default function DashboardPage() {
           <div style={{ width: '820px', maxWidth: '100%', height: '85vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <div style={{ padding: '18px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '800' }}>🎂 سجل بلوغ سن الـ 60 (لصناع العقود الدائمة)</h3>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '800' }}>🎂 سجل بلوغ سن الـ 60 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي الموظفين: {displayTurning60List.length}</p>
               </div>
               <button onClick={() => setShowAgeModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
