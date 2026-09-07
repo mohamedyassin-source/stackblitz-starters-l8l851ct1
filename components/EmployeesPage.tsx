@@ -320,27 +320,19 @@ export default function EmployeesPage() {
     });
 
   // ============================================================
-  // ACTIVE EMPLOYEES
+  // ACTIVE EMPLOYEES (للقوائم والكروت فقط - صافي بدون تحويلات أو مفصولين)
   // ============================================================
 
   const activeEmployeesOnly =
     useMemo(() => {
       return employees.filter(
         (emp: any) => {
-          const status =
-            String(
-              getField(
-                emp,
-                'status',
-                'Status'
-              ) || 'Active'
-            )
-              .trim()
-              .toLowerCase();
+          const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
+          const dept = String(getField(emp, 'department', 'Department')).trim();
+          const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
 
-          return (
-            status === 'active'
-          );
+          // 🌟 استبعاد التحويلات وإنهاء التعاقد وأي موظف غير نشط من القوائم
+          return status === 'active' && dept !== 'تحويلات تحت الاعتماد' && type !== 'إنهاء تعاقد';
         }
       );
     }, [employees]);
@@ -404,7 +396,7 @@ export default function EmployeesPage() {
   ]);
 
   // ============================================================
-  // MAIN FILTER
+  // MAIN FILTER (للجدول والبحث - بيعتمد على كل الموظفين)
   // ============================================================
 
   const baseFilteredEmployees =
@@ -414,56 +406,27 @@ export default function EmployeesPage() {
           searchTerm
         );
 
-      return activeEmployeesOnly.filter(
+      return employees.filter(
         (emp: any) => {
-          const code =
-            normalizeSearch(
-              getEmployeeCode(
-                emp
-              )
-            );
+          const code = normalizeSearch(getEmployeeCode(emp));
+          const name = normalizeSearch(getEmployeeName(emp));
+          const nationalId = normalizeSearch(getNationalId(emp));
+          const department = normalizeSearch(getField(emp, 'department', 'Department'));
+          const company = normalizeSearch(getField(emp, 'company', 'Company'));
+          const contractType = String(getField(emp, 'contract_type', 'ContractType')).trim();
+          const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
+          const age = getEmployeeAge(emp);
 
-          const name =
-            normalizeSearch(
-              getEmployeeName(
-                emp
-              )
-            );
+          // 🌟 تحديد إذا كان الموظف خارج قوة العمل الفعلية (تحويلات/مفصول)
+          const isExcludedByDefault = 
+            status !== 'active' || 
+            department === 'تحويلات تحت الاعتماد' || 
+            contractType === 'إنهاء تعاقد';
 
-          const nationalId =
-            normalizeSearch(
-              getNationalId(
-                emp
-              )
-            );
-
-          const department =
-            normalizeSearch(
-              getField(
-                emp,
-                'department',
-                'Department'
-              )
-            );
-
-          const company =
-            normalizeSearch(
-              getField(
-                emp,
-                'company',
-                'Company'
-              )
-            );
-
-          const contractType =
-            getField(
-              emp,
-              'contract_type',
-              'ContractType'
-            );
-
-          const age =
-            getEmployeeAge(emp);
+          // 🌟 السر هنا: إخفاء الموظف المستبعد لو مفيش بحث، وإظهاره فقط عند البحث عنه بالكود أو الاسم!
+          if (isExcludedByDefault && !search) {
+            return false;
+          }
 
           const matchesSearch =
             !search ||
@@ -547,7 +510,7 @@ export default function EmployeesPage() {
         }
       );
     }, [
-      activeEmployeesOnly,
+      employees, // 🌟 بنلف على الداتا كلها مش الأكتيف بس
       searchTerm,
       selectedDept,
       selectedCompany,
@@ -556,16 +519,24 @@ export default function EmployeesPage() {
     ]);
 
   // ============================================================
-  // KPI
+  // KPI (للكروت - بتعتمد على الأكتيف الفعليين فقط دايماً)
   // ============================================================
 
   const kpiStats =
     useMemo(() => {
-      const total =
-        baseFilteredEmployees.length;
+      // 🌟 تصفية صارمة للكروت حتى لو الموظف المعزول ظهر في نتائج البحث
+      const validForKpi = baseFilteredEmployees.filter((emp: any) => {
+        const dept = String(getField(emp, 'department', 'Department')).trim();
+        const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
+        const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
+        
+        return status === 'active' && dept !== 'تحويلات تحت الاعتماد' && type !== 'إنهاء تعاقد';
+      });
+
+      const total = validForKpi.length;
 
       const perm =
-        baseFilteredEmployees.filter(
+        validForKpi.filter(
           (emp: any) =>
             getField(
               emp,
@@ -575,7 +546,7 @@ export default function EmployeesPage() {
         ).length;
 
       const fixed =
-        baseFilteredEmployees.filter(
+        validForKpi.filter(
           (emp: any) =>
             String(
               getField(
@@ -589,7 +560,7 @@ export default function EmployeesPage() {
         ).length;
 
       const aboveAge =
-        baseFilteredEmployees.filter(
+        validForKpi.filter(
           (emp: any) => {
             const type =
               String(
@@ -781,6 +752,7 @@ export default function EmployeesPage() {
         return [];
       }
 
+      // لا يمكن فصل إلا موظف أكتيف فعلياً
       return activeEmployeesOnly
         .filter(
           (emp: any) => {
@@ -1985,8 +1957,8 @@ export default function EmployeesPage() {
               '6px',
             fontWeight:
               'bold',
-              fontSize:
-                '10px',
+            fontSize:
+              '10px',
           }}
         >
           {endDate}
@@ -2095,8 +2067,8 @@ export default function EmployeesPage() {
               '6px',
             fontWeight:
               'bold',
-              fontSize:
-                '10px',
+            fontSize:
+              '10px',
           }}
         >
           {age} سنة
@@ -3183,8 +3155,8 @@ export default function EmployeesPage() {
                     style={{
                       padding:
                         '12px',
-                        textAlign:
-                          'center',
+                      textAlign:
+                        'center',
                     }}
                   >
                     إجراءات
