@@ -47,7 +47,6 @@ export default function DataSyncPage() {
   };
 
   const handleDownloadTemplate = () => {
-    // تم إزالة employee_id من القالب
     const headers = [
       'employee_code', 'employee_name', 'department', 'job_title', 
       'company', 'hiring_date', 'national_id', 'birth_date', 'status', 
@@ -62,7 +61,7 @@ export default function DataSyncPage() {
   // 🌟 استرجاع العقود فقط من الشيت القديم لجدول contracts
   const handleContractRecovery = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return alert('يرجى اختيار ملف Excel القديم (employees_rows 3) أولاً');
+    if (!file) return alert('يرجى اختيار ملف Excel القديم أولاً');
 
     setLoading(true);
     setLogs(['جاري قراءة ملف العقود... ⏳']);
@@ -79,7 +78,7 @@ export default function DataSyncPage() {
       }
 
       setLogs(prev => [...prev, `جاري مسح العقود الفارغة القديمة لتهيئة الجدول...`]);
-      // تنظيف جدول العقود قبل الرفع لمنع التكرار (حذف كل العقود)
+      // تنظيف جدول العقود قبل الرفع لمنع التكرار
       await supabase.from('contracts').delete().neq('status', 'NONE');
 
       const contractsPayload = rawData.map(row => {
@@ -90,7 +89,6 @@ export default function DataSyncPage() {
         const cStart = sanitizeDate(row.contract_start_date);
         const cEnd = sanitizeDate(row.contract_end_date);
 
-        // تم إزالة employee_id تماماً
         return {
           employee_code: empCode,
           contract_type: cType,
@@ -121,7 +119,7 @@ export default function DataSyncPage() {
     }
   };
 
-  // الدالة الأساسية للمزامنة (تحديث الأساسيات فقط للموجود، وإضافة كاملة للجديد)
+  // الدالة الأساسية للمزامنة
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -184,17 +182,15 @@ export default function DataSyncPage() {
              if (newMobile) updatedRecord.mobile = newMobile;
           }
 
-          // لا يتم لمس التواريخ، الشركة، أو الرقم القومي لضمان أمان البيانات
           return updatedRecord;
 
         } else {
-          // ⚠️ الموظف جديد (يتم إضافة كافة البيانات)
+          // ⚠️ الموظف جديد (يتم إضافته بدون عمود password)
           return {
-            employee_code: empCode, // تم إزالة employee_id
+            employee_code: empCode,
             employee_name: sanitizeString(excelRow.employee_name) || 'موظف جديد',
             status: sanitizeString(excelRow.status) || 'Active',
             role: sanitizeString(excelRow.role) || 'Employee',
-            password: '123456',
             department: sanitizeString(excelRow.department),
             job_title: sanitizeString(excelRow.job_title),
             company: sanitizeString(excelRow.company),
@@ -267,7 +263,6 @@ export default function DataSyncPage() {
             {loading ? 'جاري المزامنة...' : 'رفع وتحديث النظام 🚀'}
           </button>
 
-          {/* 🌟 زرار الطوارئ الجديد لاسترجاع العقود */}
           <button
             onClick={handleContractRecovery}
             disabled={loading || !file}
