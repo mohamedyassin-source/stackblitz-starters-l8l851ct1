@@ -75,7 +75,6 @@ export default function ContractsPage() {
     let from = 0;
     const step = 1000;
 
-    // 1. جلب الموظفين
     while (true) {
       const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
       if (error || !data || data.length === 0) break;
@@ -84,7 +83,6 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 2. جلب العقود
     from = 0;
     while (true) {
       const { data, error } = await supabase.from('contracts').select('*').eq('status', 'Active').range(from, from + step - 1);
@@ -94,7 +92,6 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 3. جلب طلبات التجديد
     from = 0;
     while (true) {
       const { data, error } = await supabase.from('renewal_requests').select('employee_code, status, signature_status, request_id').range(from, from + step - 1);
@@ -104,7 +101,6 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 4. الدمج الذكي بناءً على كود الموظف
     const mergedEmployees = allEmps.map(emp => {
       const myContract = allContracts.find(c => String(c.employee_code) === String(emp.employee_code));
       return {
@@ -263,8 +259,11 @@ export default function ContractsPage() {
     if (!confirmTerm) return;
     setActionLoading(true);
     
-    await supabase.from('employees').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
-    const { error } = await supabase.from('contracts').update({ status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    // 🌟 تحديث في الموظفين: الحالة فقط (أزلنا contract_type)
+    await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    
+    // 🌟 تحديث في العقود: الحالة ونوع العقد
+    const { error } = await supabase.from('contracts').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
     
     setActionLoading(false);
     if (error) alert('حدث خطأ أثناء إنهاء التعاقد: ' + error.message);
@@ -298,6 +297,7 @@ export default function ContractsPage() {
 
     setActionLoading(true);
     
+    // 🌟 تحديث جدول العقود بالتواريخ والنوع
     await supabase.from('contracts').update({
       contract_type: editEmpData.contract_type,
       contract_start_date: editEmpData.contract_start_date || null,
@@ -305,10 +305,8 @@ export default function ContractsPage() {
       status: 'Active'
     }).eq('employee_code', editEmpData.employee_code);
 
+    // 🌟 تحديث جدول الموظفين للحالة فقط (أزلنا contract_type وتواريخه)
     const { error } = await supabase.from('employees').update({
-      contract_type: editEmpData.contract_type,
-      contract_start_date: editEmpData.contract_start_date || null,
-      contract_end_date: editEmpData.contract_end_date || null,
       status: 'Active'
     }).eq('employee_code', editEmpData.employee_code);
 
@@ -361,7 +359,6 @@ export default function ContractsPage() {
     fetchData();
   };
 
-  // 🌟 تعديل العقد الجديد ليرمي الطلب في صفحة التوقيع مباشرة
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -394,15 +391,12 @@ export default function ContractsPage() {
         await supabase.from('contracts').insert([{ employee_code: emp.employee_code, ...contractData }]);
       }
 
-      // 2. تحديث جدول الموظفين
+      // 2. تحديث جدول الموظفين ليصبح نشطاً (بدون لمس التواريخ اللي مش موجودة فيه)
       await supabase.from('employees').update({ 
-        contract_type: newContractType,
-        contract_start_date: newContractStartDate,
-        contract_end_date: newContractEndDate,
         status: 'Active' 
       }).eq('employee_code', emp.employee_code);
 
-      // 3. 🌟 رمي الطلب في جدول التجديدات ليظهر في صفحة التوقيع (بحالة Approved)
+      // 3. 🌟 رمي الطلب في جدول التجديدات ليظهر في صفحة التوقيع
       const requestPayload = {
         request_id: reqId,
         employee_code: emp.employee_code,
@@ -412,7 +406,7 @@ export default function ContractsPage() {
         company: emp.company,
         contract_start_date: newContractStartDate, 
         new_contract_end_date: newContractEndDate, 
-        status: 'Approved', // 🌟 معتمد مباشرة ليذهب لصفحة التوقيع
+        status: 'Approved',
         signature_status: 'قيد التوقيع', 
         request_date: new Date().toISOString().split('T')[0],
       };
