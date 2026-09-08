@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
+import { db } from '@/lib/firebase';
+import { collection, addDoc } from 'firebase/firestore';
 
 export default function AlertsPage() {
   const { employees: allEmployeesRaw, renewals, loading, refresh: fetchAllData } = useAppData();
@@ -83,6 +84,7 @@ export default function AlertsPage() {
     };
   }, [alertItems]);
 
+  // 🌟 إنشاء طلب سريع على فايربيز
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     const currentYear = new Date().getFullYear();
@@ -104,13 +106,14 @@ export default function AlertsPage() {
     if (emp.id) payload.employee_id = emp.id;
     else if (emp.employee_id) payload.employee_id = emp.employee_id;
 
-    const { error } = await supabase.from('renewal_requests').insert([payload]);
-    setActionLoading(false);
-
-    if (error) alert('خطأ: ' + error.message);
-    else {
+    try {
+      await addDoc(collection(db, 'renewal_requests'), payload);
       alert(`تم إنشاء طلب تجديد عاجل برقم ${reqId} بنجاح ✅`);
       fetchAllData();
+    } catch (error: any) {
+      alert('خطأ أثناء إنشاء الطلب: ' + error.message);
+    } finally {
+      setActionLoading(false);
     }
   };
 
