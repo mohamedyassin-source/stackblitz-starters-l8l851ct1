@@ -1,6 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, setDoc } from 'firebase/firestore';
 
 interface SettingsProps {
   currentUser?: any;
@@ -61,17 +62,15 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   }, [activeTab]);
 
-  // 1. جلب مستخدمي النظام من جدول app_users
+  // 🌟 1. جلب مستخدمي النظام من Firebase
   const fetchAppUsers = async () => {
     setLoadingAppUsers(true);
     try {
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setAppUsers(data || []);
+      const snap = await getDocs(collection(db, 'app_users'));
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
+      // ترتيب زمني من الأحدث للأقدم في الذاكرة
+      data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      setAppUsers(data);
     } catch (err: any) {
       console.error('Error fetching app_users:', err.message);
     } finally {
@@ -79,36 +78,29 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 2. جلب جميع الموظفين من جدول employees
+  // 🌟 2. جلب جميع الموظفين من Firebase
   const fetchAllEmployees = async () => {
     setLoadingRoles(true);
-    let allEmps: any[] = [];
-    let from = 0;
-    const step = 1000;
-
-    while (true) {
-      const { data, error } = await supabase
-        .from('employees')
-        .select('employee_code, employee_name, role')
-        .order('employee_code', { ascending: true })
-        .range(from, from + step - 1);
-
-      if (error) {
-        console.error('Supabase Error:', error);
-        break;
-      }
-
-      if (!data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
+    try {
+      const snap = await getDocs(collection(db, 'employees'));
+      const data = snap.docs.map(d => ({
+        id: d.id,
+        employee_code: d.data().employee_code,
+        employee_name: d.data().employee_name,
+        role: d.data().role
+      })) as any[];
+      
+      // ترتيب تصاعدي بالكود
+      data.sort((a, b) => String(a.employee_code).localeCompare(String(b.employee_code)));
+      setEmployees(data);
+    } catch (error: any) {
+      console.error('Firebase Error:', error.message);
+    } finally {
+      setLoadingRoles(false);
     }
-
-    setEmployees(allEmps);
-    setLoadingRoles(false);
   };
 
-  // 3. إضافة مستخدم جديد في app_users
+  // 🌟 3. إضافة مستخدم جديد في Firebase
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
@@ -123,9 +115,12 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         created_at: new Date().toISOString()
       };
 
-      const { error } = await supabase.from('app_users').insert([insertPayload]);
-
-      if (error) throw error;
+      // لو دخل كود موظف، نحفظه بيه كـ ID عشان التناسق مع صفحة تسجيل الدخول
+      if (insertPayload.employee_code) {
+        await setDoc(doc(db, 'app_users', insertPayload.employee_code), insertPayload);
+      } else {
+        await addDoc(collection(db, 'app_users'), insertPayload);
+      }
 
       alert('تم إضافة المستخدم بكلمة السر الافتراضية (123456) بنجاح ✅');
       setShowAddModal(false);
@@ -138,22 +133,12 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 4. حذف مستخدم بدلالة employee_code أو username لعدم وجود عمود id
+  // 🌟 4. حذف مستخدم بدلالة الـ id السري
   const handleDeleteAppUser = async (user: any) => {
     if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username}) نهائياً من app_users؟`)) return;
 
     try {
-      let query = supabase.from('app_users').delete();
-      
-      if (user.employee_code) {
-        query = query.eq('employee_code', user.employee_code);
-      } else {
-        query = query.eq('username', user.username);
-      }
-
-      const { error } = await query;
-      if (error) throw error;
-
+      await deleteDoc(doc(db, 'app_users', user.id));
       alert('تم حذف المستخدم بنجاح 🗑️');
       fetchAppUsers();
     } catch (err: any) {
@@ -161,20 +146,10 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 5. تعديل صلاحية مستخدم بدلالة employee_code أو username
+  // 🌟 5. تعديل صلاحية مستخدم في app_users
   const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
-      let query = supabase.from('app_users').update({ role: newRole });
-
-      if (user.employee_code) {
-        query = query.eq('employee_code', user.employee_code);
-      } else {
-        query = query.eq('username', user.username);
-      }
-
-      const { error } = await query;
-      if (error) throw error;
-
+      await updateDoc(doc(db, 'app_users', user.id), { role: newRole });
       alert(`✅ تم تحديث الصلاحية إلى ${newRole}`);
       fetchAppUsers();
     } catch (err: any) {
@@ -191,13 +166,18 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  // 🌟 6. تعديل صلاحية موظف في employees
   const handleRoleChange = async (empCode: string, newRole: string) => {
-    const { error } = await supabase.from('employees').update({ role: newRole }).eq('employee_code', empCode);
-    if (error) {
-      alert('حدث خطأ أثناء تعديل الصلاحية');
-    } else {
-      alert(`✅ تم تغيير الصلاحية إلى ${newRole} بنجاح.`);
-      fetchAllEmployees();
+    try {
+      const q = query(collection(db, 'employees'), where('employee_code', '==', empCode));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        await updateDoc(doc(db, 'employees', snap.docs[0].id), { role: newRole });
+        alert(`✅ تم تغيير الصلاحية إلى ${newRole} بنجاح.`);
+        fetchAllEmployees();
+      }
+    } catch (error: any) {
+      alert('حدث خطأ أثناء تعديل الصلاحية: ' + error.message);
     }
   };
 
@@ -316,7 +296,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                     <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>لا توجد حسابات مسجلة 🚫</td></tr>
                   ) : (
                     filteredAppUsers.map((user, idx) => (
-                      <tr key={user.employee_code || user.username || idx} style={{ borderBottom: '1px solid var(--line)' }}>
+                      <tr key={user.id || idx} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--ink)' }}>{user.username}</td>
                         <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--brass-600)' }}>{user.employee_code || '—'}</td>
                         <td style={{ padding: '12px' }}>
