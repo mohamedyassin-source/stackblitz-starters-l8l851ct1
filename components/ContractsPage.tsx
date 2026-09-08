@@ -1,8 +1,10 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useAppData } from '@/lib/DataContext'; 
 
 export default function ContractsPage() {
+  const { refresh: refreshGlobalData } = useAppData();
   const [employees, setEmployees] = useState<any[]>([]);
   const [renewals, setRenewals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,7 +38,7 @@ export default function ContractsPage() {
   const [empSearchTerm, setEmpSearchTerm] = useState('');
   const [newContractStartDate, setNewContractStartDate] = useState('');
   const [newContractEndDate, setNewContractEndDate] = useState('');
-  const [newContractType, setNewContractType] = useState('محدد المدة');
+  const [newContractType, setNewContractType] = useState('مكافأة شاملة');
 
   // حالة نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
@@ -65,13 +67,16 @@ export default function ContractsPage() {
     fetchData();
   }, []);
 
+  // 🌟 الحل الجذري للمشكلة: تم إعادة جلب ودمج جدول العقود Contracts
   const fetchData = async () => {
     setLoading(true);
     let allEmps: any[] = [];
+    let allContracts: any[] = [];
     let allRens: any[] = [];
     let from = 0;
     const step = 1000;
 
+    // 1. جلب الموظفين
     while (true) {
       const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
       if (error || !data || data.length === 0) break;
@@ -80,6 +85,17 @@ export default function ContractsPage() {
       from += step;
     }
 
+    // 2. جلب العقود
+    from = 0;
+    while (true) {
+      const { data, error } = await supabase.from('contracts').select('*').eq('status', 'Active').range(from, from + step - 1);
+      if (error || !data || data.length === 0) break;
+      allContracts = [...allContracts, ...data];
+      if (data.length < step) break;
+      from += step;
+    }
+
+    // 3. جلب طلبات التجديد
     from = 0;
     while (true) {
       const { data, error } = await supabase.from('renewal_requests').select('employee_code, status, signature_status, request_id').range(from, from + step - 1);
@@ -89,7 +105,18 @@ export default function ContractsPage() {
       from += step;
     }
 
-    setEmployees(allEmps);
+    // 4. الدمج الذكي بناءً على كود الموظف
+    const mergedEmployees = allEmps.map(emp => {
+      const myContract = allContracts.find(c => String(c.employee_code) === String(emp.employee_code));
+      return {
+        ...emp,
+        contract_type: myContract?.contract_type || emp.contract_type,
+        contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
+        contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
+      };
+    });
+
+    setEmployees(mergedEmployees);
     setRenewals(allRens);
     setLoading(false);
   };
@@ -230,16 +257,31 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
+  const getEmpId = (emp: any) => {
+    if (!emp) return '0';
+    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
+  };
+
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
     const confirmTerm = window.confirm('هل أنت متأكد من إنهاء تعاقد هذا الموظف نهائياً؟');
     if (!confirmTerm) return;
     setActionLoading(true);
-    const { error } = await supabase.from('employees').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    
+    await supabase.from('employees').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    const { error } = await supabase.from('contracts').update({ status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
+    
     setActionLoading(false);
     if (error) alert('حدث خطأ أثناء إنهاء التعاقد: ' + error.message);
-    else { alert('تم إنهاء التعاقد بنجاح ✅'); setIsTerminateModalOpen(false); setTerminateEmployeeCode(''); setTerminateSearchTerm(''); fetchData(); }
+    else { 
+      alert('تم إنهاء التعاقد بنجاح ✅'); 
+      setIsTerminateModalOpen(false); 
+      setTerminateEmployeeCode(''); 
+      setTerminateSearchTerm(''); 
+      await refreshGlobalData();
+      fetchData(); 
+    }
   };
 
   const openEditModal = (emp: any) => {
@@ -262,10 +304,18 @@ export default function ContractsPage() {
 
     setActionLoading(true);
     
-    const { error } = await supabase.from('contracts').update({
+    await supabase.from('contracts').update({
       contract_type: editEmpData.contract_type,
       contract_start_date: editEmpData.contract_start_date || null,
       contract_end_date: editEmpData.contract_end_date || null,
+      status: 'Active'
+    }).eq('employee_code', editEmpData.employee_code);
+
+    const { error } = await supabase.from('employees').update({
+      contract_type: editEmpData.contract_type,
+      contract_start_date: editEmpData.contract_start_date || null,
+      contract_end_date: editEmpData.contract_end_date || null,
+      status: 'Active'
     }).eq('employee_code', editEmpData.employee_code);
 
     setActionLoading(false);
@@ -275,6 +325,7 @@ export default function ContractsPage() {
     } else {
       alert('تم تعديل بيانات العقد بنجاح ✅');
       setIsEditModalOpen(false);
+      await refreshGlobalData();
       fetchData();
     }
   };
@@ -312,10 +363,10 @@ export default function ContractsPage() {
     setReactivateEmployeeCode('');
     setReactivateSearchTerm('');
     setReactivateDept('');
+    await refreshGlobalData();
     fetchData();
   };
 
-  // 🌟 الحل الجذري والآمن لإنشاء العقد الجديد مباشرة في جدول العقود
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -327,7 +378,6 @@ export default function ContractsPage() {
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
 
     try {
-      // 1. التحديث أو الإضافة في جدول العقود (بدون لمس جدول الطلبات نهائياً)
       const contractData = {
         contract_type: newContractType,
         contract_start_date: newContractStartDate,
@@ -347,13 +397,13 @@ export default function ContractsPage() {
         await supabase.from('contracts').insert([{ employee_code: emp.employee_code, ...contractData }]);
       }
 
-      // 2. تحديث الموظف ليكون نوع عقده مطابق للجديد
       await supabase.from('employees').update({ 
         contract_type: newContractType,
-        status: 'Active'
+        contract_start_date: newContractStartDate,
+        contract_end_date: newContractEndDate,
+        status: 'Active' 
       }).eq('employee_code', emp.employee_code);
 
-      // 3. تجهيز بيانات الطباعة وعرض الـ PDF برقم تسلسلي خاص بالعقود الجديدة
       const printPayload = {
         request_id: `NEW-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
         employee_code: emp.employee_code,
@@ -369,7 +419,8 @@ export default function ContractsPage() {
       setActionLoading(false);
       setIsNewContractModalOpen(false);
       setCreatedRequestData(printPayload);
-      alert(`تم إنشاء وتسجيل العقد الجديد بنجاح في جدول العقود ✅`);
+      alert(`تم إنشاء وتسجيل العقد الجديد وإرجاع الموظف للعمل بنجاح ✅`);
+      await refreshGlobalData();
       fetchData();
     } catch (err: any) {
       setActionLoading(false);
@@ -388,6 +439,7 @@ export default function ContractsPage() {
       const [reqId] = generateSequentialIds(1);
       const payload: any = {
         request_id: reqId,
+        employee_id: getEmpId(emp),
         employee_code: emp.employee_code,
         employee_name: emp.employee_name,
         department: emp.department,
@@ -402,7 +454,7 @@ export default function ContractsPage() {
       };
       const { error } = await supabase.from('renewal_requests').insert([payload]);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { setCreatedRequestData(payload); fetchData(); }
+      if (error) alert('خطأ: ' + error.message); else { setCreatedRequestData(payload); await refreshGlobalData(); fetchData(); }
     } else if (modalState.type === 'bulk') {
       const selectedEmps = employees.filter(e => selectedEmpCodes.includes(e.employee_code));
       const reqIds = generateSequentialIds(selectedEmps.length);
@@ -410,6 +462,7 @@ export default function ContractsPage() {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
         return {
           request_id: reqIds[index],
+          employee_id: getEmpId(emp),
           employee_code: emp.employee_code,
           employee_name: emp.employee_name,
           department: emp.department,
@@ -425,7 +478,7 @@ export default function ContractsPage() {
       });
       const { error } = await supabase.from('renewal_requests').insert(payloads);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); setSelectedEmpCodes([]); fetchData(); }
+      if (error) alert('خطأ: ' + error.message); else { alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); setSelectedEmpCodes([]); await refreshGlobalData(); fetchData(); }
     }
   };
 
@@ -724,7 +777,7 @@ export default function ContractsPage() {
                   <option value="دائم">دائم (غير محدد المدة)</option>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                  <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
+                  <option value="مكافأة شاملة">مكافأة شاملة</option>
                 </select>
               </div>
 
@@ -770,20 +823,20 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد بعد النظافة الكاملة */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد - تدعم المفصولين وتسمع في الداش بورد */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>📝 طلب إنشاء عقد جديد تماماً</h3>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950)', fontWeight: '800' }}>📝 إنشاء عقد عمل جديد</h3>
               <button onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
             <form onSubmit={handleCreateBrandNewContract}>
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '6px', fontWeight: 'bold' }}>ابحث عن الموظف (بالاسم أو الكود) *</label>
-                <input type="text" list="new-contract-employees" required placeholder="🔍 اكتب كود أو اسم الموظف هنا..." value={empSearchTerm} onChange={(e) => { const val = e.target.value; setEmpSearchTerm(val); const code = val.split(' - ')[0]; const isValidEmp = employees.some(emp => emp.employee_code === code && emp.contract_type !== 'إنهاء تعاقد'); if (isValidEmp) setSelectedEmployeeCode(code); else setSelectedEmployeeCode(''); }} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }} />
+                <input type="text" list="new-contract-employees" required placeholder="🔍 اكتب كود أو اسم الموظف هنا..." value={empSearchTerm} onChange={(e) => { const val = e.target.value; setEmpSearchTerm(val); const code = val.split(' - ')[0]; const isValidEmp = employees.some(emp => emp.employee_code === code); if (isValidEmp) setSelectedEmployeeCode(code); else setSelectedEmployeeCode(''); }} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }} />
                 <datalist id="new-contract-employees">
-                  {employees.filter(emp => emp.contract_type !== 'إنهاء تعاقد').map((emp) => (<option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />))}
+                  {employees.map((emp) => (<option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />))}
                 </datalist>
                 {selectedEmployeeCode && (<div style={{ marginTop: '6px', fontSize: '11px', color: '#15803d', fontWeight: 'bold' }}>✅ تم اختيار الموظف كود: {selectedEmployeeCode}</div>)}
               </div>
@@ -793,7 +846,7 @@ export default function ContractsPage() {
                 <select value={newContractType} onChange={(e) => setNewContractType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                  <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
+                  <option value="مكافأة شاملة">مكافأة شاملة</option>
                 </select>
               </div>
 
