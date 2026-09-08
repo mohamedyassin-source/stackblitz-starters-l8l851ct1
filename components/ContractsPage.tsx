@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext'; 
+import { db } from '@/lib/firebase';
+import { collection, getDocs, addDoc, updateDoc, doc, query, where } from 'firebase/firestore';
 
 export default function ContractsPage() {
   const { refresh: refreshGlobalData } = useAppData();
@@ -69,55 +70,41 @@ export default function ContractsPage() {
 
   const fetchData = async () => {
     setLoading(true);
-    let allEmps: any[] = [];
-    let allContracts: any[] = [];
-    let allRens: any[] = [];
-    let from = 0;
-    const step = 1000;
+    try {
+      // 1. سحب بيانات الموظفين
+      const empSnap = await getDocs(collection(db, 'employees'));
+      const allEmps = empSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    while (true) {
-      const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
+      // 2. سحب العقود النشطة فقط
+      const contQ = query(collection(db, 'contracts'), where('status', '==', 'Active'));
+      const contSnap = await getDocs(contQ);
+      const allContracts = contSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // 3. سحب طلبات التجديد
+      const renSnap = await getDocs(collection(db, 'renewal_requests'));
+      const allRens = renSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      const mergedEmployees = allEmps.map(emp => {
+        const empContracts = allContracts.filter(c => String(c.employee_code) === String(emp.employee_code));
+        empContracts.sort((a, b) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
+        const myContract = empContracts[0];
+
+        return {
+          ...emp,
+          contract_id: myContract?.id || null, 
+          contract_type: myContract?.contract_type || emp.contract_type,
+          contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
+          contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
+        };
+      });
+
+      setEmployees(mergedEmployees);
+      setRenewals(allRens);
+    } catch (error) {
+      console.error('Error fetching data from Firebase: ', error);
+    } finally {
+      setLoading(false);
     }
-
-    from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('contracts').select('*').eq('status', 'Active').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allContracts = [...allContracts, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('renewal_requests').select('employee_code, status, signature_status, request_id').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allRens = [...allRens, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    const mergedEmployees = allEmps.map(emp => {
-      const empContracts = allContracts.filter(c => String(c.employee_code) === String(emp.employee_code));
-      empContracts.sort((a, b) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
-      const myContract = empContracts[0];
-
-      return {
-        ...emp,
-        contract_id: myContract?.id || null, 
-        contract_type: myContract?.contract_type || emp.contract_type,
-        contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
-        contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
-      };
-    });
-
-    setEmployees(mergedEmployees);
-    setRenewals(allRens);
-    setLoading(false);
   };
 
   const isValidYear = (dateStr: string) => {
@@ -261,7 +248,7 @@ export default function ContractsPage() {
     return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
-  // 🌟 تعديل صارم: بنطلب من السيستم يرجعلنا بيانات التعديل عشان نتأكد إنها ماكنتش 0 صفوف
+  // 🌟 إنهاء العقد بالفايربيز
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -269,17 +256,26 @@ export default function ContractsPage() {
     if (!confirmTerm) return;
     
     setActionLoading(true);
-    const exactCode = terminateEmployeeCode; // بدون trim عشان لو الداتا بيز فيها مسافات تتجاب بالظبط
+    const exactCode = terminateEmployeeCode; 
     
     try {
-      const { data: empData, error: empErr } = await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', exactCode).select();
-      if (empErr) throw empErr;
-      if (!empData || empData.length === 0) {
+      // 1. تحديث الموظف
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', exactCode));
+      const empSnap = await getDocs(empQ);
+      if (empSnap.empty) {
         alert(`⚠️ لم يتم العثور على الموظف (${exactCode}) في جدول الموظفين لتحديثه.`);
+      } else {
+        await updateDoc(doc(db, 'employees', empSnap.docs[0].id), { status: 'Terminated' });
       }
 
-      const { data: updData, error: updErr } = await supabase.from('contracts').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', exactCode).eq('status', 'Active').select();
-      if (updErr) throw updErr;
+      // 2. تحديث العقود النشطة
+      const contQ = query(collection(db, 'contracts'), where('employee_code', '==', exactCode), where('status', '==', 'Active'));
+      const contSnap = await getDocs(contQ);
+      if (!contSnap.empty) {
+        for (const d of contSnap.docs) {
+          await updateDoc(doc(db, 'contracts', d.id), { contract_type: 'إنهاء تعاقد', status: 'Terminated' });
+        }
+      }
 
       alert('تم إنهاء التعاقد بنجاح ✅'); 
       setIsTerminateModalOpen(false); 
@@ -306,7 +302,7 @@ export default function ContractsPage() {
     setIsEditModalOpen(true);
   };
 
-  // 🌟 تعديل العقد: محمي ضد الأشباح
+  // 🌟 التعديل بفايربيز
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEmpData) return;
@@ -325,21 +321,25 @@ export default function ContractsPage() {
         status: 'Active'
       };
 
+      // 1. تحديث أو إدراج العقد
       if (editEmpData.contract_id) {
-        const { data, error: updErr } = await supabase.from('contracts').update(contractData).eq('id', editEmpData.contract_id).select();
-        if (updErr) throw updErr;
+        await updateDoc(doc(db, 'contracts', editEmpData.contract_id), contractData);
       } else {
-        const { data: updated, error: updErr2 } = await supabase.from('contracts').update(contractData).eq('employee_code', exactCode).select();
-        if (updErr2) throw updErr2;
-        if (!updated || updated.length === 0) {
-          const { error: insErr } = await supabase.from('contracts').insert([{ employee_code: exactCode, ...contractData }]);
-          if (insErr) throw insErr;
+        const contQ = query(collection(db, 'contracts'), where('employee_code', '==', exactCode));
+        const contSnap = await getDocs(contQ);
+        if (!contSnap.empty) {
+          await updateDoc(doc(db, 'contracts', contSnap.docs[0].id), contractData);
+        } else {
+          await addDoc(collection(db, 'contracts'), { employee_code: exactCode, ...contractData });
         }
       }
 
-      const { data: empData, error: empErr } = await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', exactCode).select();
-      if (empErr) throw empErr;
-      if (!empData || empData.length === 0) {
+      // 2. تحديث حالة الموظف
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', exactCode));
+      const empSnap = await getDocs(empQ);
+      if (!empSnap.empty) {
+        await updateDoc(doc(db, 'employees', empSnap.docs[0].id), { status: 'Active' });
+      } else {
         alert(`⚠️ تم تحديث العقد لكن لم يتم العثور على الموظف في جدول الموظفين لتنشيطه!`);
       }
 
@@ -354,7 +354,7 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 إعادة التفعيل: محمي ومراقب
+  // 🌟 إعادة التفعيل بفايربيز
   const handleReactivateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmployeeCode) return alert('يرجى اختيار الموظف المراد إعادة تفعيله.');
@@ -364,17 +364,22 @@ export default function ContractsPage() {
     const exactCode = reactivateEmployeeCode;
 
     try {
-      const { data: empData, error: empErr } = await supabase.from('employees').update({
-        status: 'Active',
-        department: reactivateDept,
-      }).eq('employee_code', exactCode).select();
+      // 1. تحديث الموظف
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', exactCode));
+      const empSnap = await getDocs(empQ);
+      if (empSnap.empty) {
+        alert(`⚠️ الموظف كود ${exactCode} غير موجود بجدول employees`);
+        throw new Error('الموظف غير موجود');
+      } else {
+        await updateDoc(doc(db, 'employees', empSnap.docs[0].id), {
+          status: 'Active',
+          department: reactivateDept,
+        });
+      }
 
-      if (empErr) throw empErr;
-      if (!empData || empData.length === 0) alert(`⚠️ الموظف كود ${exactCode} غير موجود بجدول employees`);
-
+      // 2. إدراج العقد
       const contractData = { employee_code: exactCode, contract_type: 'محدد المدة', status: 'Active' };
-      const { error: insErr } = await supabase.from('contracts').insert([contractData]);
-      if (insErr) throw insErr;
+      await addDoc(collection(db, 'contracts'), contractData);
 
       alert('تم إعادة تفعيل الموظف وتحديث إدارته وإنشاء عقد جديد له بنجاح ✅');
       setIsReactivateModalOpen(false);
@@ -390,7 +395,7 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 إنشاء العقد الجديد تماماً: فحص دقيق ورد فعل واضح لو الجدول ملمسش صفوف
+  // 🌟 إنشاء العقد الجديد تماماً بفايربيز
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -400,10 +405,11 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
-    const exactCode = emp.employee_code; // أخذنا الكود الحقيقي بالضبط
+    const exactCode = emp.employee_code; 
     const [reqId] = generateSequentialIds(1);
 
     try {
+      // 1. إنشاء العقد
       const contractData = {
         employee_code: exactCode,
         contract_type: newContractType,
@@ -411,18 +417,18 @@ export default function ContractsPage() {
         contract_end_date: newContractEndDate,
         status: 'Active'
       };
+      await addDoc(collection(db, 'contracts'), contractData);
 
-      // 1. Insert New Contract Always
-      const { data: insData, error: insErr } = await supabase.from('contracts').insert([contractData]).select();
-      if (insErr) throw insErr;
-      if (!insData || insData.length === 0) alert('⚠️ لم يتم إدراج العقد في جدول contracts لأسباب غير معروفة!');
+      // 2. تحديث حالة الموظف
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', exactCode));
+      const empSnap = await getDocs(empQ);
+      if (empSnap.empty) {
+        alert(`⚠️ تم إنشاء العقد لكن الكود (${exactCode}) لم يتم العثور عليه في جدول employees لتفعيله!`);
+      } else {
+        await updateDoc(doc(db, 'employees', empSnap.docs[0].id), { status: 'Active' });
+      }
 
-      // 2. Update Employee Status
-      const { data: empData, error: empErr } = await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', exactCode).select();
-      if (empErr) throw empErr;
-      if (!empData || empData.length === 0) alert(`⚠️ تم إنشاء العقد لكن الكود (${exactCode}) لم يتم العثور عليه في جدول employees لتفعيله!`);
-
-      // 3. Insert to Renewal Requests for Signature Tracking
+      // 3. إدراج طلب التجديد
       const requestPayload = {
         request_id: reqId,
         employee_code: exactCode,
@@ -436,9 +442,7 @@ export default function ContractsPage() {
         signature_status: 'قيد التوقيع', 
         request_date: new Date().toISOString().split('T')[0],
       };
-
-      const { data: reqData, error: reqErr } = await supabase.from('renewal_requests').insert([requestPayload]).select();
-      if (reqErr) throw reqErr;
+      await addDoc(collection(db, 'renewal_requests'), requestPayload);
 
       setActionLoading(false);
       setIsNewContractModalOpen(false);
@@ -452,44 +456,20 @@ export default function ContractsPage() {
     }
   };
 
+  // 🌟 إجراء طلبات التجديد بفايربيز
   const confirmRenewalAction = async () => {
     if (renewalMode === 'custom' && !customEndDate) return alert('يرجى إدخال تاريخ الانتهاء المخصص.');
     if (renewalMode === 'custom' && !isValidYear(customEndDate)) return alert('يرجى إدخال تاريخ انتهاء صحيح.');
     setActionLoading(true);
 
-    if (modalState.type === 'single' && modalState.emp) {
-      const emp = modalState.emp;
-      const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
-      const [reqId] = generateSequentialIds(1);
-      
-      const payload: any = {
-        request_id: reqId,
-        employee_code: emp.employee_code,
-        employee_name: emp.employee_name,
-        department: emp.department,
-        job_title: emp.job_title,
-        company: emp.company,
-        contract_end_date: emp.contract_end_date || null, 
-        new_contract_end_date: targetEndDate || null, 
-        renewal_months: renewalMode === 'months' ? renewalMonths : null,
-        status: 'Pending',
-        signature_status: 'قيد التوقيع',
-        request_date: new Date().toISOString().split('T')[0],
-      };
-      
-      const { error } = await supabase.from('renewal_requests').insert([payload]);
-      setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { setCreatedRequestData({...payload, contract_type: emp.contract_type}); await refreshGlobalData(); fetchData(); }
-    
-    } else if (modalState.type === 'bulk') {
-      const selectedEmps = employees.filter(e => selectedEmpCodes.includes(e.employee_code));
-      const reqIds = generateSequentialIds(selectedEmps.length);
-      
-      const payloads = selectedEmps.map((emp, index) => {
+    try {
+      if (modalState.type === 'single' && modalState.emp) {
+        const emp = modalState.emp;
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
+        const [reqId] = generateSequentialIds(1);
         
-        return {
-          request_id: reqIds[index],
+        const payload: any = {
+          request_id: reqId,
           employee_code: emp.employee_code,
           employee_name: emp.employee_name,
           department: emp.department,
@@ -502,11 +482,51 @@ export default function ContractsPage() {
           signature_status: 'قيد التوقيع',
           request_date: new Date().toISOString().split('T')[0],
         };
-      });
+        
+        await addDoc(collection(db, 'renewal_requests'), payload);
+        
+        setActionLoading(false); 
+        setModalState({ isOpen: false, type: 'single' });
+        setCreatedRequestData({...payload, contract_type: emp.contract_type}); 
+        await refreshGlobalData(); 
+        fetchData();
       
-      const { error } = await supabase.from('renewal_requests').insert(payloads);
-      setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); setSelectedEmpCodes([]); await refreshGlobalData(); fetchData(); }
+      } else if (modalState.type === 'bulk') {
+        const selectedEmps = employees.filter(e => selectedEmpCodes.includes(e.employee_code));
+        const reqIds = generateSequentialIds(selectedEmps.length);
+        
+        const payloads = selectedEmps.map((emp, index) => {
+          const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
+          return {
+            request_id: reqIds[index],
+            employee_code: emp.employee_code,
+            employee_name: emp.employee_name,
+            department: emp.department,
+            job_title: emp.job_title,
+            company: emp.company,
+            contract_end_date: emp.contract_end_date || null, 
+            new_contract_end_date: targetEndDate || null, 
+            renewal_months: renewalMode === 'months' ? renewalMonths : null,
+            status: 'Pending',
+            signature_status: 'قيد التوقيع',
+            request_date: new Date().toISOString().split('T')[0],
+          };
+        });
+        
+        for (const p of payloads) {
+          await addDoc(collection(db, 'renewal_requests'), p);
+        }
+
+        setActionLoading(false); 
+        setModalState({ isOpen: false, type: 'single' });
+        alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); 
+        setSelectedEmpCodes([]); 
+        await refreshGlobalData(); 
+        fetchData(); 
+      }
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
+      setActionLoading(false);
     }
   };
 
