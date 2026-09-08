@@ -93,7 +93,7 @@ export default function RenewalsPage() {
     setLoading(true);
     try {
       const snap = await getDocs(collection(db, 'renewal_requests'));
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snap.docs.map((docSnap: any) => ({ id: docSnap.id, ...docSnap.data() }));
       setRequests(data);
     } catch (error: any) {
       console.error('Error fetching requests:', error.message);
@@ -112,10 +112,10 @@ export default function RenewalsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
-  const compsList = Array.from(new Set(requests.map(r => r.company).filter(Boolean)));
+  const deptsList = Array.from(new Set(requests.map((r: any) => r.department).filter(Boolean)));
+  const compsList = Array.from(new Set(requests.map((r: any) => r.company).filter(Boolean)));
 
-  const filteredRequests = requests.filter(req => {
+  const filteredRequests = requests.filter((req: any) => {
     if (activeTab !== 'All' && req.status !== activeTab) return false;
     const term = searchTerm.toLowerCase();
     const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
@@ -131,7 +131,7 @@ export default function RenewalsPage() {
     return matchesSearch && matchesDept && matchesComp && matchesMonth;
   });
 
-  const sortedRequests = [...filteredRequests].sort((a, b) => {
+  const sortedRequests = [...filteredRequests].sort((a: any, b: any) => {
     const daysA = getDaysRemaining(a.contract_end_date);
     const daysB = getDaysRemaining(b.contract_end_date);
     if (daysA === null) return 1;
@@ -139,19 +139,19 @@ export default function RenewalsPage() {
     return daysA - daysB;
   });
 
-  const countPending = requests.filter(r => r.status === 'Pending').length;
-  const countApproved = requests.filter(r => r.status === 'Approved').length;
-  const countRejected = requests.filter(r => r.status === 'Rejected').length;
+  const countPending = requests.filter((r: any) => r.status === 'Pending').length;
+  const countApproved = requests.filter((r: any) => r.status === 'Approved').length;
+  const countRejected = requests.filter((r: any) => r.status === 'Rejected').length;
   const countAll = requests.length;
 
   // 🌟 اعتماد مجمع أو فردي (مدمج باستخدام Firebase Batch)
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
-      const batch = writeBatch(db); // لضمان تنفيذ كل العمليات بنجاح أو التراجع عنها
+      const batch = writeBatch(db);
       const reqsToApprove = approvalModal.type === 'single' && approvalModal.req 
         ? [approvalModal.req] 
-        : requests.filter(r => selectedIds.includes(r.request_id));
+        : requests.filter((r: any) => selectedIds.includes(r.request_id));
 
       for (const req of reqsToApprove) {
         const newStartDate = approvalModal.type === 'single' && customStartDate ? customStartDate : calculateNewStartDate(req.contract_end_date);
@@ -176,7 +176,7 @@ export default function RenewalsPage() {
         // 2. تحديث جدول العقود
         const contQ = query(collection(db, 'contracts'), where('employee_code', '==', req.employee_code), where('status', '==', 'Active'));
         const contSnap = await getDocs(contQ);
-        contSnap.forEach(d => {
+        contSnap.forEach((d: any) => {
           batch.update(doc(db, 'contracts', d.id), {
             contract_start_date: newStartDate,
             contract_end_date: newEndDate,
@@ -187,7 +187,7 @@ export default function RenewalsPage() {
         // 3. تحديث جدول الموظفين
         const empQ = query(collection(db, 'employees'), where('employee_code', '==', req.employee_code));
         const empSnap = await getDocs(empQ);
-        empSnap.forEach(d => {
+        empSnap.forEach((d: any) => {
           batch.update(doc(db, 'employees', d.id), {
             contract_start_date: newStartDate,
             contract_end_date: newEndDate
@@ -195,7 +195,7 @@ export default function RenewalsPage() {
         });
       }
 
-      await batch.commit(); // تنفيذ كل التحديثات دفعة واحدة!
+      await batch.commit();
 
       alert(`تم اعتماد ${reqsToApprove.length} طلب وتحديث العقود بنجاح ✅`);
       setSelectedIds([]);
@@ -259,21 +259,20 @@ export default function RenewalsPage() {
     }
   };
 
-  // 🌟 تصدير للإكسيل (تم الاستغناء عن جلب البيانات لأنها جاهزة في globalEmployees)
+  // 🌟 تصدير للإكسيل
   const handleExportApprovedToExcel = async () => {
     if (selectedIds.length === 0) return alert('يرجى تحديد طلبات أولاً.');
     setActionLoading(true);
 
     try {
-      const selectedReqs = requests.filter(r => selectedIds.includes(r.request_id) && r.status === 'Approved');
+      const selectedReqs = requests.filter((r: any) => selectedIds.includes(r.request_id) && r.status === 'Approved');
 
       if (selectedReqs.length === 0) {
         setActionLoading(false);
         return alert('⚠️ لا يمكن تصدير هذا الكشف. يرجى التأكد من تحديد طلبات معتمدة فقط من الجدول.');
       }
 
-      const exportData = selectedReqs.map(req => {
-        // سحب البيانات من الداتا الجاهزة في الداش بورد بدون استدعاء من السيرفر! 🚀
+      const exportData = selectedReqs.map((req: any) => {
         const empDetails = globalEmployees?.find((e: any) => e.employee_code === req.employee_code);
         const newStart = calculateNewStartDate(req.contract_end_date);
 
@@ -306,7 +305,7 @@ export default function RenewalsPage() {
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      const selectableIds = sortedRequests.filter(r => r.status === activeTab).map(r => r.request_id);
+      const selectableIds = sortedRequests.filter((r: any) => r.status === activeTab).map((r: any) => r.request_id);
       setSelectedIds(selectableIds);
     } else {
       setSelectedIds([]);
@@ -393,7 +392,7 @@ export default function RenewalsPage() {
                     <input
                       type="checkbox"
                       onChange={handleSelectAll}
-                      checked={selectedIds.length > 0 && selectedIds.length === sortedRequests.filter(r => r.status === activeTab).length}
+                      checked={selectedIds.length > 0 && selectedIds.length === sortedRequests.filter((r: any) => r.status === activeTab).length}
                       disabled={activeTab === 'All' || activeTab === 'Rejected'}
                     />
                   </th>
@@ -412,7 +411,7 @@ export default function RenewalsPage() {
               <tbody>
                 {sortedRequests.length === 0 ? (
                   <tr><td colSpan={11} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد طلبات مطابقة.</td></tr>
-                ) : sortedRequests.map((req) => {
+                ) : sortedRequests.map((req: any) => {
                   const days = getDaysRemaining(req.contract_end_date);
                   return (
                     <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? 'var(--paper)' : 'transparent' }}>
