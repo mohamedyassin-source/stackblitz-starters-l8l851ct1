@@ -94,7 +94,6 @@ export default function ContractsPage() {
     setLoading(false);
   };
 
-  // ✅ الدالة اللي كانت ناقصة وعملت الإيرور في الرفع
   const isValidYear = (dateStr: string) => {
     if (!dateStr) return false;
     const year = parseInt(dateStr.split('-')[0], 10);
@@ -231,11 +230,6 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  const getEmpId = (emp: any) => {
-    if (!emp) return '0';
-    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
-  };
-
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -321,6 +315,7 @@ export default function ContractsPage() {
     fetchData();
   };
 
+  // 🌟 الحل الجذري والآمن لإنشاء العقد الجديد مباشرة في جدول العقود
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -330,40 +325,56 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
-    const [reqId] = generateSequentialIds(1);
 
-    const payload: any = {
-      request_id: reqId,
-      employee_id: getEmpId(emp),
-      employee_code: emp.employee_code,
-      employee_name: emp.employee_name,
-      department: emp.department,
-      job_title: emp.job_title,
-      company: emp.company,
-      contract_start_date: newContractStartDate || null, 
-      contract_end_date: newContractStartDate || null, 
-      new_contract_end_date: newContractEndDate || null, 
-      status: 'Pending',
-      signature_status: 'قيد التوقيع',
-      request_date: new Date().toISOString().split('T')[0],
-    };
+    try {
+      // 1. التحديث أو الإضافة في جدول العقود (بدون لمس جدول الطلبات نهائياً)
+      const contractData = {
+        contract_type: newContractType,
+        contract_start_date: newContractStartDate,
+        contract_end_date: newContractEndDate,
+        status: 'Active'
+      };
 
-    const { error: reqError } = await supabase.from('renewal_requests').insert([payload]);
-    if (reqError) { 
-      setActionLoading(false); 
-      return alert('خطأ أثناء إنشاء الطلب: ' + reqError.message); 
+      const { data: existingContract } = await supabase
+        .from('contracts')
+        .select('employee_code')
+        .eq('employee_code', emp.employee_code)
+        .maybeSingle();
+
+      if (existingContract) {
+        await supabase.from('contracts').update(contractData).eq('employee_code', emp.employee_code);
+      } else {
+        await supabase.from('contracts').insert([{ employee_code: emp.employee_code, ...contractData }]);
+      }
+
+      // 2. تحديث الموظف ليكون نوع عقده مطابق للجديد
+      await supabase.from('employees').update({ 
+        contract_type: newContractType,
+        status: 'Active'
+      }).eq('employee_code', emp.employee_code);
+
+      // 3. تجهيز بيانات الطباعة وعرض الـ PDF برقم تسلسلي خاص بالعقود الجديدة
+      const printPayload = {
+        request_id: `NEW-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        employee_code: emp.employee_code,
+        employee_name: emp.employee_name,
+        department: emp.department,
+        job_title: emp.job_title,
+        company: emp.company,
+        contract_start_date: newContractStartDate, 
+        new_contract_end_date: newContractEndDate, 
+        request_date: new Date().toISOString().split('T')[0],
+      };
+
+      setActionLoading(false);
+      setIsNewContractModalOpen(false);
+      setCreatedRequestData(printPayload);
+      alert(`تم إنشاء وتسجيل العقد الجديد بنجاح في جدول العقود ✅`);
+      fetchData();
+    } catch (err: any) {
+      setActionLoading(false);
+      alert('خطأ أثناء إنشاء العقد: ' + err.message);
     }
-
-    await supabase.from('employees').update({ 
-      contract_type: newContractType, 
-      contract_end_date: newContractEndDate || null
-    }).eq('employee_code', emp.employee_code);
-
-    setActionLoading(false);
-    setIsNewContractModalOpen(false);
-    setCreatedRequestData(payload);
-    alert(`تم إنشاء العقد الجديد بنجاح وتحويل نوع العقد إلى (${newContractType}) ✅`);
-    fetchData();
   };
 
   const confirmRenewalAction = async () => {
@@ -377,7 +388,6 @@ export default function ContractsPage() {
       const [reqId] = generateSequentialIds(1);
       const payload: any = {
         request_id: reqId,
-        employee_id: getEmpId(emp),
         employee_code: emp.employee_code,
         employee_name: emp.employee_name,
         department: emp.department,
@@ -400,7 +410,6 @@ export default function ContractsPage() {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
         return {
           request_id: reqIds[index],
-          employee_id: getEmpId(emp),
           employee_code: emp.employee_code,
           employee_name: emp.employee_name,
           department: emp.department,
@@ -761,7 +770,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد بعد النظافة */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد بعد النظافة الكاملة */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -794,7 +803,7 @@ export default function ContractsPage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
                 <button type="button" onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading || !selectedEmployeeCode} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (actionLoading || !selectedEmployeeCode) ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء وتحديث العقد 📄'}</button>
+                <button type="submit" disabled={actionLoading || !selectedEmployeeCode} style={{ background: 'var(--navy-950)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (actionLoading || !selectedEmployeeCode) ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء العقد 📄'}</button>
               </div>
             </form>
           </div>
@@ -862,7 +871,7 @@ export default function ContractsPage() {
             <div id="pdf-print-area" style={{ border: '2px solid #0f172a', padding: '30px', borderRadius: '8px', background: '#fff', direction: 'rtl', fontFamily: 'serif' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #b8934a', paddingBottom: '16px', marginBottom: '20px' }}>
                 <div><h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2><p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b' }}>قطاع الموارد البشرية والشؤون الإدارية</p></div>
-                <div style={{ textAlign: 'left', fontSize: '11px', fontFamily: 'monospace' }}><div>رقم العقد/الطلب: <strong>{createdRequestData.request_id}</strong></div><div>التاريخ: <strong>{createdRequestData.request_date}</strong></div></div>
+                <div style={{ textAlign: 'left', fontSize: '11px', fontFamily: 'monospace' }}><div>رقم العقد: <strong>{createdRequestData.request_id}</strong></div><div>التاريخ: <strong>{createdRequestData.request_date}</strong></div></div>
               </div>
               <div style={{ textAlign: 'center', margin: '20px 0' }}><h3 style={{ margin: 0, fontSize: '18px', textDecoration: 'underline', color: '#0f172a' }}>نموذج عقد عمل محدد المدة</h3></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', fontSize: '13px', lineHeight: '2.2', marginBottom: '24px' }}>
