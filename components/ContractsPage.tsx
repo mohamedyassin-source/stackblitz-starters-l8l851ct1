@@ -101,8 +101,12 @@ export default function ContractsPage() {
       from += step;
     }
 
+    // 🌟 دمج ذكي يجلب "أحدث" عقد للموظف لو عنده كذا عقد
     const mergedEmployees = allEmps.map(emp => {
-      const myContract = allContracts.find(c => String(c.employee_code) === String(emp.employee_code));
+      const empContracts = allContracts.filter(c => String(c.employee_code) === String(emp.employee_code));
+      empContracts.sort((a, b) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
+      const myContract = empContracts[0];
+
       return {
         ...emp,
         contract_type: myContract?.contract_type || emp.contract_type,
@@ -259,10 +263,7 @@ export default function ContractsPage() {
     if (!confirmTerm) return;
     setActionLoading(true);
     
-    // 🌟 تحديث في الموظفين: الحالة فقط (أزلنا contract_type)
     await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
-    
-    // 🌟 تحديث في العقود: الحالة ونوع العقد
     const { error } = await supabase.from('contracts').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', terminateEmployeeCode);
     
     setActionLoading(false);
@@ -288,6 +289,7 @@ export default function ContractsPage() {
     setIsEditModalOpen(true);
   };
 
+  // 🌟 تعديل العقد: حلينا مشكلة الأشباح بإضافة Upsert Logic
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEmpData) return;
@@ -296,32 +298,41 @@ export default function ContractsPage() {
     if (editEmpData.contract_end_date && !isValidYear(editEmpData.contract_end_date)) return alert('يرجى إدخال سنة نهاية صحيحة.');
 
     setActionLoading(true);
-    
-    // 🌟 تحديث جدول العقود بالتواريخ والنوع
-    await supabase.from('contracts').update({
-      contract_type: editEmpData.contract_type,
-      contract_start_date: editEmpData.contract_start_date || null,
-      contract_end_date: editEmpData.contract_end_date || null,
-      status: 'Active'
-    }).eq('employee_code', editEmpData.employee_code);
 
-    // 🌟 تحديث جدول الموظفين للحالة فقط (أزلنا contract_type وتواريخه)
-    const { error } = await supabase.from('employees').update({
-      status: 'Active'
-    }).eq('employee_code', editEmpData.employee_code);
+    try {
+      const contractData = {
+        contract_type: editEmpData.contract_type,
+        contract_start_date: editEmpData.contract_start_date || null,
+        contract_end_date: editEmpData.contract_end_date || null,
+        status: 'Active'
+      };
 
-    setActionLoading(false);
+      const { data: existingContract } = await supabase
+        .from('contracts')
+        .select('employee_code')
+        .eq('employee_code', editEmpData.employee_code)
+        .maybeSingle();
 
-    if (error) {
-      alert('حدث خطأ أثناء التعديل: ' + error.message);
-    } else {
+      if (existingContract) {
+        await supabase.from('contracts').update(contractData).eq('employee_code', editEmpData.employee_code);
+      } else {
+        await supabase.from('contracts').insert([{ employee_code: editEmpData.employee_code, ...contractData }]);
+      }
+
+      await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', editEmpData.employee_code);
+
       alert('تم تعديل بيانات العقد بنجاح ✅');
       setIsEditModalOpen(false);
       await refreshGlobalData();
       fetchData();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء التعديل: ' + err.message);
+    } finally {
+      setActionLoading(false);
     }
   };
 
+  // 🌟 إعادة تفعيل الموظف: حلينا مشكلة الأشباح بإضافة Upsert Logic
   const handleReactivateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmployeeCode) return alert('يرجى اختيار الموظف المراد إعادة تفعيله.');
@@ -329,34 +340,38 @@ export default function ContractsPage() {
 
     setActionLoading(true);
 
-    const { error: empError } = await supabase.from('employees').update({
-      status: 'Active',
-      department: reactivateDept,
-    }).eq('employee_code', reactivateEmployeeCode);
+    try {
+      await supabase.from('employees').update({
+        status: 'Active',
+        department: reactivateDept,
+      }).eq('employee_code', reactivateEmployeeCode);
 
-    if (empError) {
+      const contractData = { contract_type: 'محدد المدة', status: 'Active' };
+
+      const { data: existingContract } = await supabase
+        .from('contracts')
+        .select('employee_code')
+        .eq('employee_code', reactivateEmployeeCode)
+        .maybeSingle();
+
+      if (existingContract) {
+        await supabase.from('contracts').update(contractData).eq('employee_code', reactivateEmployeeCode);
+      } else {
+        await supabase.from('contracts').insert([{ employee_code: reactivateEmployeeCode, ...contractData }]);
+      }
+
+      alert('تم إعادة تفعيل الموظف وتحديث إدارته وعقده بنجاح ✅');
+      setIsReactivateModalOpen(false);
+      setReactivateEmployeeCode('');
+      setReactivateSearchTerm('');
+      setReactivateDept('');
+      await refreshGlobalData();
+      fetchData();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء إعادة التفعيل: ' + err.message);
+    } finally {
       setActionLoading(false);
-      return alert('حدث خطأ أثناء تحديث الموظف: ' + empError.message);
     }
-
-    const { error: contractError } = await supabase.from('contracts').update({
-      contract_type: 'محدد المدة',
-      status: 'Active',
-    }).eq('employee_code', reactivateEmployeeCode);
-
-    setActionLoading(false);
-
-    if (contractError) {
-      console.warn('تنبيه في جدول العقود:', contractError.message);
-    }
-
-    alert('تم إعادة تفعيل الموظف وتحديث إدارته وعقده بنجاح ✅');
-    setIsReactivateModalOpen(false);
-    setReactivateEmployeeCode('');
-    setReactivateSearchTerm('');
-    setReactivateDept('');
-    await refreshGlobalData();
-    fetchData();
   };
 
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
@@ -371,7 +386,6 @@ export default function ContractsPage() {
     const [reqId] = generateSequentialIds(1);
 
     try {
-      // 1. التحديث أو الإضافة في جدول العقود
       const contractData = {
         contract_type: newContractType,
         contract_start_date: newContractStartDate,
@@ -391,12 +405,10 @@ export default function ContractsPage() {
         await supabase.from('contracts').insert([{ employee_code: emp.employee_code, ...contractData }]);
       }
 
-      // 2. تحديث جدول الموظفين ليصبح نشطاً (بدون لمس التواريخ اللي مش موجودة فيه)
       await supabase.from('employees').update({ 
         status: 'Active' 
       }).eq('employee_code', emp.employee_code);
 
-      // 3. 🌟 رمي الطلب في جدول التجديدات ليظهر في صفحة التوقيع
       const requestPayload = {
         request_id: reqId,
         employee_code: emp.employee_code,
@@ -825,7 +837,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد - تدعم المفصولين وتسمع في الداش بورد */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -937,7 +949,12 @@ export default function ContractsPage() {
                 <div>تاريخ بداية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.contract_start_date}</strong></div>
                 <div>تاريخ نهاية العقد: <strong style={{ fontFamily: 'monospace' }}>{createdRequestData.new_contract_end_date}</strong></div>
               </div>
-              <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}><strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.</div>
+              <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}>
+                <strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.
+                {createdRequestData.contract_type?.includes('مكافأة') && (
+                  <div style={{ marginTop: '10px', color: '#b8934a', fontWeight: 'bold' }}>* يُتفق بين الطرفين على أن يكون هذا العقد بنظام المكافأة الشاملة، على أن تمثل هذه المكافأة نسبة 50% من إجمالي الأجر المتفق عليه.</div>
+                )}
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '50px', textAlign: 'center', fontSize: '12px' }}>
                 <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>توقيع الموظف</div><div>التوقيع: .....................</div></div>
                 <div><div style={{ fontWeight: 'bold', marginBottom: '40px' }}>مراجعة الموارد البشرية</div><div>التوقيع: .....................</div></div>
