@@ -1,8 +1,9 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
 
 export default function DataSyncPage() {
   const { refresh } = useAppData();
@@ -59,67 +60,7 @@ export default function DataSyncPage() {
     XLSX.writeFile(wb, 'قالب_بيانات_الموظفين.xlsx');
   };
 
-  // 🌟 استرجاع العقود فقط لجدول contracts
-  const handleContractRecovery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file) return alert('يرجى اختيار ملف Excel القديم أولاً');
-
-    setLoading(true);
-    setLogs(['جاري قراءة ملف العقود... ⏳']);
-    
-    try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
-
-      if (rawData.length === 0) {
-        setLoading(false);
-        return alert('الملف فارغ!');
-      }
-
-      setLogs(prev => [...prev, `جاري مسح العقود الفارغة القديمة لتهيئة الجدول...`]);
-      await supabase.from('contracts').delete().neq('status', 'NONE');
-
-      const contractsPayload = rawData.map(row => {
-        const empCode = sanitizeString(row.employee_code);
-        if (!empCode) return null;
-
-        const cType = sanitizeString(row.contract_type) || 'محدد المدة';
-        const cStart = sanitizeDate(row.contract_start_date);
-        const cEnd = sanitizeDate(row.contract_end_date);
-
-        return {
-          employee_code: empCode,
-          contract_type: cType,
-          contract_start_date: cStart,
-          contract_end_date: cEnd,
-          status: 'Active'
-        };
-      }).filter((item): item is NonNullable<typeof item> => item !== null);
-
-      setLogs(prev => [...prev, `تم تجهيز ${contractsPayload.length} عقد للرفع، جاري الحفظ...`]);
-
-      const BATCH_SIZE = 300;
-      for (let i = 0; i < contractsPayload.length; i += BATCH_SIZE) {
-        const batch = contractsPayload.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase.from('contracts').insert(batch);
-        if (error) throw error;
-      }
-
-      setLogs(prev => [...prev, '✅ تم استرجاع العقود بنجاح!']);
-      alert('تم استرجاع جميع العقود بنجاح! اذهب لصفحة العقود الآن لتراها. ✅');
-      await refresh();
-      setFile(null);
-    } catch (err: any) {
-      setLogs(prev => [...prev, `❌ خطأ: ${err.message}`]);
-      alert('حدث خطأ أثناء استرجاع العقود: ' + err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // الدالة الأساسية للمزامنة وتحديث بيانات الموظفين
+  // الدالة الأساسية للمزامنة وتحديث بيانات الموظفين باستخدام Firebase
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!file) return alert('يرجى اختيار ملف Excel أولاً');
@@ -146,50 +87,59 @@ export default function DataSyncPage() {
 
       const excelCodes = Array.from(excelUpdatesMap.keys());
       setLogs(prev => [...prev, `تم العثور على ${excelCodes.length} سجل في الشيت.`]);
-
       setLogs(prev => [...prev, `جاري جلب البيانات الحالية للمطابقة...`]);
-      let existingEmps: any[] = [];
-      const FETCH_BATCH = 200;
+
+      const existingMap = new Map();
+      
+      // 🌟 جلب الموظفين من فايربيز على دفعات (حجم الدفعة 30 لتناسب قيود استعلام IN)
+      const FETCH_BATCH = 30;
       for (let i = 0; i < excelCodes.length; i += FETCH_BATCH) {
         const batchCodes = excelCodes.slice(i, i + FETCH_BATCH);
-        const { data, error } = await supabase
-          .from('employees')
-          .select('*')
-          .in('employee_code', batchCodes);
-          
-        if (error) throw error;
-        if (data) existingEmps.push(...data);
+        const q = query(collection(db, 'employees'), where('employee_code', 'in', batchCodes));
+        const snap = await getDocs(q);
+        
+        snap.forEach(docSnap => {
+          const data = docSnap.data();
+          existingMap.set(data.employee_code, { id: docSnap.id, ...data });
+        });
       }
 
-      const existingMap = new Map(existingEmps.map(emp => [emp.employee_code, emp]));
+      setLogs(prev => [...prev, `تم الانتهاء من المطابقة. جاري التحديث والرفع للبيانات...`]);
 
-      const finalPayload = excelCodes.map(empCode => {
+      let batch = writeBatch(db);
+      let operationCount = 0;
+      let totalProcessed = 0;
+
+      for (const empCode of excelCodes) {
         const excelRow = excelUpdatesMap.get(empCode);
         const dbRecord = existingMap.get(empCode);
 
         if (dbRecord) {
           // ⚠️ الموظف موجود مسبقاً (تحديث جزئي محكوم للإدارة والوظيفة والموبايل فقط)
-          const updatedRecord = { ...dbRecord };
+          const updatePayload: any = {};
           
           if ('department' in excelRow) {
-             updatedRecord.department = sanitizeString(excelRow.department) || updatedRecord.department;
+             updatePayload.department = sanitizeString(excelRow.department) || dbRecord.department;
           }
           if ('job_title' in excelRow) {
-             updatedRecord.job_title = sanitizeString(excelRow.job_title) || updatedRecord.job_title;
+             updatePayload.job_title = sanitizeString(excelRow.job_title) || dbRecord.job_title;
           }
           if ('mobile' in excelRow) {
              const newMobile = sanitizeString(excelRow.mobile);
-             if (newMobile) updatedRecord.mobile = newMobile;
+             if (newMobile) updatePayload.mobile = newMobile;
           }
 
-          // لا يتم لمس باقي البيانات للحفاظ على سلامة التواريخ والعقود
-          return updatedRecord;
+          if (Object.keys(updatePayload).length > 0) {
+            const docRef = doc(db, 'employees', dbRecord.id);
+            batch.update(docRef, updatePayload);
+            operationCount++;
+          }
 
         } else {
           // ⚠️ الموظف جديد كلياً (يتم إضافته بكامل بياناته المطابقة للـ Schema)
-          return {
+          const newRecord = {
             employee_code: empCode,
-            employee_name: sanitizeString(excelRow.employee_name) || 'موظف بدون اسم', // required in schema
+            employee_name: sanitizeString(excelRow.employee_name) || 'موظف بدون اسم',
             department: sanitizeString(excelRow.department),
             job_title: sanitizeString(excelRow.job_title),
             company: sanitizeString(excelRow.company),
@@ -199,26 +149,33 @@ export default function DataSyncPage() {
             email: sanitizeString(excelRow.email),
             mobile: sanitizeString(excelRow.mobile),
             manager: sanitizeString(excelRow.manager),
-            status: sanitizeString(excelRow.status) || 'Active', // default Active
+            status: sanitizeString(excelRow.status) || 'Active',
             termination_date: sanitizeDate(excelRow.termination_date),
             termination_reason: sanitizeString(excelRow.termination_reason),
-            age: sanitizeNumeric(excelRow.age) // سيعمل الـ Trigger في الـ DB على حسابها تلقائياً لاحقاً
+            age: sanitizeNumeric(excelRow.age)
           };
+          
+          const docRef = doc(collection(db, 'employees')); // إنشاء ID تلقائي
+          batch.set(docRef, newRecord);
+          operationCount++;
         }
-      });
 
-      setLogs(prev => [...prev, `جاري رفع وتحديث ${finalPayload.length} سجل...`]);
-
-      const BATCH_SIZE = 300;
-      for (let i = 0; i < finalPayload.length; i += BATCH_SIZE) {
-        const batch = finalPayload.slice(i, i + BATCH_SIZE);
-        const { error } = await supabase
-          .from('employees')
-          .upsert(batch, { onConflict: 'employee_code' });
-        if (error) throw error;
+        // 🌟 تنفيذ الحزمة (Batch) لما توصل لـ 450 عملية (الحد الأقصى لفايربيز 500)
+        if (operationCount >= 450) {
+          await batch.commit();
+          totalProcessed += operationCount;
+          batch = writeBatch(db); // فتح حزمة جديدة
+          operationCount = 0;
+        }
       }
 
-      setLogs(prev => [...prev, '✅ تمت المزامنة بنجاح!']);
+      // 🌟 تنفيذ أي عمليات متبقية
+      if (operationCount > 0) {
+        await batch.commit();
+        totalProcessed += operationCount;
+      }
+
+      setLogs(prev => [...prev, `✅ تمت المزامنة بنجاح! تم معالجة ${totalProcessed} حركة.`]);
       alert('تم التحديث بنجاح! قاعدة البيانات الآن نظيفة ومحدثة بالكامل. ✅');
       await refresh();
       setFile(null);
@@ -261,15 +218,6 @@ export default function DataSyncPage() {
             className="bg-gold text-white font-bold text-xs px-6 py-3 rounded-lg disabled:opacity-50 hover:bg-gold-hover transition-colors"
           >
             {loading ? 'جاري المزامنة...' : 'رفع وتحديث النظام 🚀'}
-          </button>
-
-          <button
-            onClick={handleContractRecovery}
-            disabled={loading || !file}
-            style={{ background: 'var(--stamp-amber)', color: '#fff' }}
-            className="font-bold text-xs px-6 py-3 rounded-lg disabled:opacity-50 transition-colors"
-          >
-            {loading ? 'جاري الاسترجاع...' : 'استرجاع العقود المفقودة 🚑'}
           </button>
         </div>
         
