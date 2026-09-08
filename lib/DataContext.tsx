@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, writeBatch, doc } from 'firebase/firestore';
-import { createClient } from '@supabase/supabase-supabase-js'; // أو الاستدعاء المباشر عبر API
 
 export default function DataSyncPage() {
   const [syncing, setSyncing] = useState(false);
@@ -21,10 +20,10 @@ export default function DataSyncPage() {
       const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
       if (!supabaseUrl || !supabaseKey) {
-        throw new Error('بيانات الاتصال بـ Supabase غير موجودة في ملف .env.local');
+        throw new Error('بيانات الاتصال بـ Supabase غير موجودة في Vercel Environment Variables');
       }
 
-      // 1. جلب الموظفين من Supabase عبر REST API المباشر
+      // 1. جلب الموظفين من Supabase
       const empRes = await fetch(`${supabaseUrl}/rest/v1/employees?select=*`, {
         headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
       });
@@ -37,15 +36,14 @@ export default function DataSyncPage() {
       const contractsData = await contRes.json();
 
       if (!Array.isArray(employeesData)) {
-        throw new Error('فشل في جلب جدول الموظفين من Supabase.');
+        throw new Error('فشل في جلب البيانات. تأكد من إعداد المفاتيح بشكل صحيح.');
       }
 
-      setStatusMsg(`تم سحب ${employeesData.length} موظف و ${contractsData.length || 0} عقد. جاري رفع البيانات إلى Firebase... 📤`);
+      setStatusMsg(`تم سحب ${employeesData.length} موظف. جاري كتابة البيانات في Firebase... 📤`);
 
-      // 3. كتابة الموظفين والعقود في Firebase باستخدام Batch
+      // 3. كتابة البيانات في Firebase Batch
       const batch = writeBatch(db);
 
-      // نقل الموظفين
       employeesData.forEach((emp: any) => {
         const empCode = String(emp.employee_code || emp.code || '').trim();
         if (empCode) {
@@ -65,7 +63,6 @@ export default function DataSyncPage() {
         }
       });
 
-      // نقل العقود
       if (Array.isArray(contractsData)) {
         contractsData.forEach((c: any) => {
           const empCode = String(c.employee_code || '').trim();
@@ -82,7 +79,7 @@ export default function DataSyncPage() {
         });
       }
 
-      // إنشاء حساب الأدمن الافتراضي بجدول app_users
+      // إضافة حساب الأدمن الرئيسي
       const adminRef = doc(db, 'app_users', '1001');
       batch.set(adminRef, {
         username: 'Admin',
@@ -94,11 +91,11 @@ export default function DataSyncPage() {
       await batch.commit();
 
       setStatusMsg('🎉 تم نقل البيانات بنجاح من Supabase إلى Firebase Firestore!');
-      alert('تمت مزامنة ونقل كافة البيانات بنجاح! يمكنك الآن مراجعة Firebase Console ✅');
+      alert('تمت المزامنة بنجاح! يمكنك مراجعة Firebase الآن ✅');
     } catch (err: any) {
       console.error(err);
-      setStatusMsg('❌ حدث خطأ أثناء المزامنة: ' + err.message);
-      alert('خطأ أثناء المزامنة: ' + err.message);
+      setStatusMsg('❌ حدث خطأ: ' + err.message);
+      alert('خطأ: ' + err.message);
     } finally {
       setSyncing(false);
     }
