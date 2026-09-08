@@ -6,7 +6,7 @@ import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
 // ============================================================
-// HELPERS (تم نقلها خارج المكون لمنع تحذيرات Vercel)
+// HELPERS
 // ============================================================
 
 const getField = (obj: any, ...keys: string[]) => {
@@ -71,12 +71,12 @@ const getEmployeeAge = (emp: any) => {
 // ============================================================
 
 export default function EmployeesPage() {
-  const { refresh: refreshGlobalData } = useAppData(); // 🌟 أداة التحديث العمومي
+  const { refresh: refreshGlobalData } = useAppData(); 
   const [employees, setEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // ============================================================
-  // FETCH & MERGE DATA (نفس منطق صفحة العقود لضمان التحديث اللحظي)
+  // FETCH & MERGE DATA 
   // ============================================================
   const fetchData = async () => {
     setLoading(true);
@@ -122,7 +122,7 @@ export default function EmployeesPage() {
 
       return {
         ...emp,
-        contract_id: myContract?.id || null,
+        contract_id: myContract?.id || null, // حفظ الـ ID لتعديل العقد بدقة
         contract_type: myContract?.contract_type || emp.contract_type,
         contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
         contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
@@ -300,7 +300,7 @@ export default function EmployeesPage() {
     });
 
     const total = validForKpi.length;
-    const perm = validForKpi.filter((emp: any) => getField(emp, 'contract_type', 'ContractType') === 'دائم').length;
+    const perm = validForKpi.filter((emp: any) => String(getField(emp, 'contract_type', 'ContractType')).includes('دائم')).length;
     const fixed = validForKpi.filter((emp: any) => String(getField(emp, 'contract_type', 'ContractType')).includes('محدد')).length;
     const aboveAge = validForKpi.filter((emp: any) => {
       const type = String(getField(emp, 'contract_type', 'ContractType'));
@@ -322,7 +322,7 @@ export default function EmployeesPage() {
       const type = String(getField(emp, 'contract_type', 'ContractType'));
       const age = getEmployeeAge(emp);
 
-      if (activeCardFilter === 'PERM') return type === 'دائم';
+      if (activeCardFilter === 'PERM') return type.includes('دائم');
       if (activeCardFilter === 'FIXED') return type.includes('محدد');
       if (activeCardFilter === 'ABOVE_AGE') return type.includes('فوق السن') || (age !== null && age >= 60);
       return true;
@@ -341,10 +341,6 @@ export default function EmployeesPage() {
       return sortDirection === 'asc' ? result : -result;
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
-
-  // ============================================================
-  // TERMINATION SEARCH
-  // ============================================================
 
   const termSearchResults = useMemo(() => {
     const search = normalizeSearch(termSearch);
@@ -422,8 +418,10 @@ export default function EmployeesPage() {
       const rawHiring = getField(emp, 'hiring_date', 'HiringDate');
       const rawBirth = getField(emp, 'birth_date', 'BirthDate');
       const rawEnd = getField(emp, 'contract_end_date', 'ContractEndDate');
-      const contractType = getField(emp, 'contract_type', 'ContractType');
+      const empStatus = getField(emp, 'status', 'Status') || 'Active';
+      const contractType = getField(emp, 'contract_type', 'ContractType'); // جلب النوع المختار
 
+      // 🌟 تحديث جدول employees (شامل نوع العقد لضمان سرعة العرض)
       const employeeUpdate = {
         employee_code: employeeCode,
         employee_name: getField(emp, 'employee_name', 'EmployeeName', 'ArabicName'),
@@ -434,38 +432,50 @@ export default function EmployeesPage() {
         company: getField(emp, 'company', 'Company'),
         job_title: getField(emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring || null,
-        status: getField(emp, 'status', 'Status') || 'Active',
+        contract_type: contractType, // 🌟 ضروري للتسميع المباشر
+        status: empStatus,
         email: getField(emp, 'email', 'Email'),
         mobile: getField(emp, 'mobile', 'Mobile', 'MOBILE'),
       };
 
-      // 1. تحديث جدول الموظفين والتأكد إنه سمع
-      const { data: empRes, error: employeeError } = await supabase.from('employees').update(employeeUpdate).eq('employee_code', employeeCode).select();
+      const { data: empDataResult, error: employeeError } = await supabase
+        .from('employees')
+        .update(employeeUpdate)
+        .eq('employee_code', employeeCode)
+        .select();
+
       if (employeeError) throw employeeError;
-      if (!empRes || empRes.length === 0) {
-        alert(`⚠️ لم يتم العثور على الموظف كود (${employeeCode}) في الداتا بيز لتحديثه.`);
+      if (!empDataResult || empDataResult.length === 0) {
+        alert(`⚠️ لم يتم العثور على الموظف (${employeeCode}) لتحديثه.`);
         setEditData({ ...editData, saving: false });
         return;
       }
 
-      // 2. تحديث العقود بنظام (Upsert) عشان نتجنب الخطأ الصامت
+      // 🌟 تحديث العقود بنظام Upsert واستهداف الـ ID الدقيق للعقد إن وجد
       const contractUpdate = {
         contract_type: contractType,
+        contract_start_date: rawHiring || null,
         contract_end_date: rawEnd || null,
-        status: getField(emp, 'status', 'Status') || 'Active',
+        status: empStatus,
       };
 
-      const { data: existingContracts } = await supabase.from('contracts').select('id').eq('employee_code', employeeCode).limit(1);
-      
-      if (existingContracts && existingContracts.length > 0) {
-        const { error: contractError } = await supabase.from('contracts').update(contractUpdate).eq('employee_code', employeeCode);
-        if (contractError) throw contractError;
+      if (emp.contract_id) {
+        // تحديث دقيق للعقد المرتبط
+        const { error: updErr } = await supabase.from('contracts').update(contractUpdate).eq('id', emp.contract_id);
+        if (updErr) throw updErr;
       } else {
-        const { error: contractError } = await supabase.from('contracts').insert([{ employee_code: employeeCode, ...contractUpdate }]);
-        if (contractError) throw contractError;
+        // لو مفيش contract_id في الذاكرة، ندور على الكود الأول، لو ملقيناش ننشئ
+        const { data: existingContracts } = await supabase.from('contracts').select('id').eq('employee_code', employeeCode).limit(1);
+        if (existingContracts && existingContracts.length > 0) {
+          const { error: updErr } = await supabase.from('contracts').update(contractUpdate).eq('id', existingContracts[0].id);
+          if (updErr) throw updErr;
+        } else {
+          const { error: insErr } = await supabase.from('contracts').insert([{ employee_code: employeeCode, ...contractUpdate }]);
+          if (insErr) throw insErr;
+        }
       }
 
-      alert('تم حفظ التعديلات بنجاح ✅');
+      alert('تم حفظ التعديلات وتحديث العقد بنجاح ✅');
       setEditData(null);
       await refreshGlobalData(); // تحديث الداش بورد
       await fetchData();         // تحديث الجدول المحلي
@@ -556,6 +566,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 إضافة موظف جديد
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -578,6 +589,7 @@ export default function EmployeesPage() {
         company: newEmp.company,
         job_title: newEmp.job_title,
         hiring_date: newEmp.hiring_date || null,
+        contract_type: newEmp.contract_type, // 🌟 حفظ النوع الجديد هنا
         status: newEmp.status,
         email: newEmp.email,
         mobile: newEmp.mobile,
@@ -589,7 +601,7 @@ export default function EmployeesPage() {
         employee_code: newEmp.employee_code,
         contract_type: newEmp.contract_type,
         contract_start_date: newEmp.hiring_date || null,
-        contract_end_date: newEmp.contract_type === 'دائم' || !newEmp.contract_end_date ? null : newEmp.contract_end_date,
+        contract_end_date: newEmp.contract_type.includes('دائم') || !newEmp.contract_end_date ? null : newEmp.contract_end_date,
         status: newEmp.status,
       }]);
 
@@ -640,7 +652,7 @@ export default function EmployeesPage() {
       if (days <= 60) return <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDate} ⏳</span>;
       return <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDate}</span>;
     }
-    if (type === 'دائم') return <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
+    if (type?.includes('دائم')) return <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
     return <span style={{ color: 'var(--muted)' }}>—</span>;
   };
 
@@ -879,7 +891,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Edit Employee Modal */}
+      {/* Edit Employee Modal (🌟 تم توحيد قوائم العقود هنا) */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -924,10 +936,10 @@ export default function EmployeesPage() {
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>نوع العقد</label>
                     <select value={getField(editData.emp, 'contract_type', 'ContractType') || 'محدد المدة'} onChange={(e) => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <option value="دائم">دائم</option>
+                      <option value="دائم">دائم (غير محدد المدة)</option>
                       <option value="محدد المدة">محدد المدة</option>
                       <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                      <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
+                      <option value="مكافأة شاملة">مكافأة شاملة</option>
                     </select>
                   </div>
                   <div>
@@ -971,13 +983,15 @@ export default function EmployeesPage() {
                 <input placeholder="الشركة" value={newEmp.company} onChange={(e) => setNewEmp({ ...newEmp, company: e.target.value })} />
                 <input placeholder="الوظيفة" value={newEmp.job_title} onChange={(e) => setNewEmp({ ...newEmp, job_title: e.target.value })} />
                 <input type="date" value={newEmp.hiring_date} onChange={(e) => setNewEmp({ ...newEmp, hiring_date: e.target.value })} />
+                
                 <select value={newEmp.contract_type} onChange={(e) => setNewEmp({ ...newEmp, contract_type: e.target.value })}>
-                  <option value="دائم">دائم</option>
+                  <option value="دائم">دائم (غير محدد المدة)</option>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                  <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
+                  <option value="مكافأة شاملة">مكافأة شاملة</option>
                 </select>
-                <input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={(e) => setNewEmp({ ...newEmp, contract_end_date: e.target.value })} />
+                
+                <input type="date" disabled={newEmp.contract_type.includes('دائم')} value={newEmp.contract_end_date} onChange={(e) => setNewEmp({ ...newEmp, contract_end_date: e.target.value })} />
                 <input placeholder="الموبايل" value={newEmp.mobile} onChange={(e) => setNewEmp({ ...newEmp, mobile: e.target.value })} />
                 <input placeholder="البريد الإلكتروني" value={newEmp.email} onChange={(e) => setNewEmp({ ...newEmp, email: e.target.value })} />
               </div>
