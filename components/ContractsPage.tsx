@@ -361,6 +361,7 @@ export default function ContractsPage() {
     fetchData();
   };
 
+  // 🌟 تعديل العقد الجديد ليرمي الطلب في صفحة التوقيع مباشرة
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -370,8 +371,10 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
+    const [reqId] = generateSequentialIds(1);
 
     try {
+      // 1. التحديث أو الإضافة في جدول العقود
       const contractData = {
         contract_type: newContractType,
         contract_start_date: newContractStartDate,
@@ -391,6 +394,7 @@ export default function ContractsPage() {
         await supabase.from('contracts').insert([{ employee_code: emp.employee_code, ...contractData }]);
       }
 
+      // 2. تحديث جدول الموظفين
       await supabase.from('employees').update({ 
         contract_type: newContractType,
         contract_start_date: newContractStartDate,
@@ -398,8 +402,9 @@ export default function ContractsPage() {
         status: 'Active' 
       }).eq('employee_code', emp.employee_code);
 
-      const printPayload = {
-        request_id: `NEW-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+      // 3. 🌟 رمي الطلب في جدول التجديدات ليظهر في صفحة التوقيع (بحالة Approved)
+      const requestPayload = {
+        request_id: reqId,
         employee_code: emp.employee_code,
         employee_name: emp.employee_name,
         department: emp.department,
@@ -407,13 +412,18 @@ export default function ContractsPage() {
         company: emp.company,
         contract_start_date: newContractStartDate, 
         new_contract_end_date: newContractEndDate, 
+        status: 'Approved', // 🌟 معتمد مباشرة ليذهب لصفحة التوقيع
+        signature_status: 'قيد التوقيع', 
         request_date: new Date().toISOString().split('T')[0],
       };
 
+      const { error: reqError } = await supabase.from('renewal_requests').insert([requestPayload]);
+      if (reqError) throw reqError;
+
       setActionLoading(false);
       setIsNewContractModalOpen(false);
-      setCreatedRequestData(printPayload);
-      alert(`تم إنشاء وتسجيل العقد الجديد وإرجاع الموظف للعمل بنجاح ✅`);
+      setCreatedRequestData(requestPayload);
+      alert(`تم إنشاء العقد وتحويله لصفحة التوقيع بنجاح ✅`);
       await refreshGlobalData();
       fetchData();
     } catch (err: any) {
@@ -432,7 +442,6 @@ export default function ContractsPage() {
       const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
       const [reqId] = generateSequentialIds(1);
       
-      // 🌟 تم مسح employee_id من هنا نهائياً
       const payload: any = {
         request_id: reqId,
         employee_code: emp.employee_code,
@@ -459,7 +468,6 @@ export default function ContractsPage() {
       const payloads = selectedEmps.map((emp, index) => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
         
-        // 🌟 تم مسح employee_id من هنا نهائياً
         return {
           request_id: reqIds[index],
           employee_code: emp.employee_code,
@@ -823,7 +831,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد - تدعم المفصولين وتسمع في الداش بورد */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -863,7 +871,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة طلب التجديد (تم إزالة employee_id تماماً) */}
+      {/* نافذة طلب التجديد */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
