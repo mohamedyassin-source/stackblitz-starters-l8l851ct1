@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 
 interface LoginPageProps {
   onLoginSuccess: (user: any) => void;
@@ -30,50 +31,46 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
     setErrorMsg('');
 
-    // 1. جلب بيانات الحساب من جدول المستخدمين (app_users)
-    const { data: userData, error: userError } = await supabase
-      .from('app_users')
-      .select('*')
-      .ilike('employee_code', cleanCode)
-      .maybeSingle();
+    try {
+      // 1. جلب بيانات الحساب من جدول المستخدمين (app_users)
+      const userQ = query(collection(db, 'app_users'), where('employee_code', '==', cleanCode));
+      const userSnap = await getDocs(userQ);
+      const userData = !userSnap.empty ? userSnap.docs[0].data() : null;
 
-    // 2. جلب بيانات الموظف الأساسية من جدول الموظفين (employees)
-    const { data: empData, error: empError } = await supabase
-      .from('employees')
-      .select('*')
-      .ilike('employee_code', cleanCode)
-      .maybeSingle();
+      // 2. جلب بيانات الموظف الأساسية من جدول الموظفين (employees)
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', cleanCode));
+      const empSnap = await getDocs(empQ);
+      const empData = !empSnap.empty ? empSnap.docs[0].data() : null;
 
-    setLoading(false);
+      setLoading(false);
 
-    if (userError) {
-      setErrorMsg(`خطأ في الاتصال بقاعدة البيانات: ${userError.message}`);
-      return;
+      if (!userData && !empData) {
+        setErrorMsg(`كود الموظف (${cleanCode}) غير موجود بالنظام.`);
+        return;
+      }
+
+      const mergedData = { ...empData, ...userData };
+      const storedPassword = userData?.password;
+
+      const isDefaultPassword = password === '123456' || password === String(cleanCode);
+      const hasCustomPassword = storedPassword && storedPassword !== '';
+
+      if (hasCustomPassword && storedPassword !== password && !isDefaultPassword) {
+        setErrorMsg('كلمة السر غير صحيحة.');
+        return;
+      }
+
+      if (!hasCustomPassword || isDefaultPassword) {
+        setTempUserData(mergedData);
+        setRequirePasswordChange(true);
+        return;
+      }
+
+      proceedToLogin(mergedData);
+    } catch (err: any) {
+      setLoading(false);
+      setErrorMsg(`خطأ في الاتصال بقاعدة البيانات: ${err.message}`);
     }
-
-    if (!userData && !empData) {
-      setErrorMsg(`كود الموظف (${cleanCode}) غير موجود بالنظام.`);
-      return;
-    }
-
-    const mergedData = { ...empData, ...userData };
-    const storedPassword = userData?.password;
-
-    const isDefaultPassword = password === '123456' || password === String(cleanCode);
-    const hasCustomPassword = storedPassword && storedPassword !== '';
-
-    if (hasCustomPassword && storedPassword !== password && !isDefaultPassword) {
-      setErrorMsg('كلمة السر غير صحيحة.');
-      return;
-    }
-
-    if (!hasCustomPassword || isDefaultPassword) {
-      setTempUserData(mergedData);
-      setRequirePasswordChange(true);
-      return;
-    }
-
-    proceedToLogin(mergedData);
   };
 
   const handleOpenPasswordChange = async () => {
@@ -86,27 +83,28 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
     setErrorMsg('');
 
-    const { data: userData } = await supabase
-      .from('app_users')
-      .select('*')
-      .ilike('employee_code', cleanCode)
-      .maybeSingle();
+    try {
+      const userQ = query(collection(db, 'app_users'), where('employee_code', '==', cleanCode));
+      const userSnap = await getDocs(userQ);
+      const userData = !userSnap.empty ? userSnap.docs[0].data() : null;
 
-    const { data: empData } = await supabase
-      .from('employees')
-      .select('*')
-      .ilike('employee_code', cleanCode)
-      .maybeSingle();
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', cleanCode));
+      const empSnap = await getDocs(empQ);
+      const empData = !empSnap.empty ? empSnap.docs[0].data() : null;
 
-    setLoading(false);
+      setLoading(false);
 
-    if (!userData && !empData) {
-      setErrorMsg(`كود الموظف (${cleanCode}) غير موجود بالنظام.`);
-      return;
+      if (!userData && !empData) {
+        setErrorMsg(`كود الموظف (${cleanCode}) غير موجود بالنظام.`);
+        return;
+      }
+
+      setTempUserData({ ...empData, ...userData });
+      setRequirePasswordChange(true);
+    } catch (err: any) {
+      setLoading(false);
+      setErrorMsg(`خطأ: ${err.message}`);
     }
-
-    setTempUserData({ ...empData, ...userData });
-    setRequirePasswordChange(true);
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -127,27 +125,22 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const cleanCode = String(tempUserData.employee_code).trim();
     const userNameVal = tempUserData.employee_name || tempUserData.username || cleanCode;
 
-    // استخدام upsert مع تحديد onConflict للتعامل السليم مع وجود الصف المسبق
-    const { error: saveError } = await supabase
-      .from('app_users')
-      .upsert(
-        {
-          employee_code: cleanCode,
-          username: userNameVal,
-          password: newPassword,
-        },
-        { onConflict: 'employee_code' }
-      );
+    try {
+      // 🌟 استخدام setDoc مع merge: true كبديل مثالي لـ upsert
+      // بنستخدم كود الموظف كـ Document ID لسهولة الوصول ليه وتجنب التكرار
+      await setDoc(doc(db, 'app_users', cleanCode), {
+        employee_code: cleanCode,
+        username: userNameVal,
+        password: newPassword,
+      }, { merge: true });
 
-    setLoading(false);
-
-    if (saveError) {
-      setErrorMsg('حدث خطأ أثناء تحديث كلمة المرور: ' + saveError.message);
-      return;
+      setLoading(false);
+      alert('✅ تم حفظ كلمة السر بنجاح!');
+      proceedToLogin({ ...tempUserData, password: newPassword });
+    } catch (err: any) {
+      setLoading(false);
+      setErrorMsg('حدث خطأ أثناء تحديث كلمة المرور: ' + err.message);
     }
-
-    alert('✅ تم حفظ كلمة السر بنجاح!');
-    proceedToLogin({ ...tempUserData, password: newPassword });
   };
 
   const handleSkipPasswordChange = () => {
