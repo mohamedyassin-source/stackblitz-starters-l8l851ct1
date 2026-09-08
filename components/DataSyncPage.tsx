@@ -1,236 +1,137 @@
 'use client';
+
 import { useState } from 'react';
-import { useAppData } from '@/lib/DataContext';
-import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, writeBatch, doc } from 'firebase/firestore';
 
 export default function DataSyncPage() {
-  const { refresh } = useAppData();
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
 
-  // 1. تنظيف النصوص
-  const sanitizeString = (val: any): string | null => {
-    if (val === undefined || val === null) return null;
-    const str = String(val).trim();
-    if (str === '' || str === '—' || str === 'undefined' || str === 'null') return null;
-    return str;
-  };
+  const handleSyncFromSupabase = async () => {
+    const confirmSync = window.confirm('هل أنت متأكد من سحب كافة البيانات من Supabase ونقلها إلى Firebase Firestore؟');
+    if (!confirmSync) return;
 
-  // 2. تنظيف التواريخ
-  const sanitizeDate = (val: any): string | null => {
-    if (!val) return null;
-    if (typeof val === 'number') {
-      const date = XLSX.SSF.parse_date_code(val);
-      if (date && date.y > 1900 && date.y < 2100) {
-        const m = String(date.m).padStart(2, '0');
-        const d = String(date.d).padStart(2, '0');
-        return `${date.y}-${m}-${d}`;
-      }
-      return null;
-    }
-    const str = String(val).trim();
-    if (!str || str === '—') return null;
-    if (/^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(str)) {
-      return str.replace(/\//g, '-');
-    }
-    return null;
-  };
+    setSyncing(true);
+    setStatusMsg('جاري الاتصال بـ Supabase وسحب البيانات... ⏳');
 
-  // 3. تنظيف الأرقام (للعمر)
-  const sanitizeNumeric = (val: any): number | null => {
-    if (val === undefined || val === null || val === '') return null;
-    if (typeof val === 'string' && val.includes('-')) return null;
-    const num = Number(val);
-    if (isNaN(num)) return null;
-    return num;
-  };
-
-  const handleDownloadTemplate = () => {
-    const headers = [
-      'employee_code', 'employee_name', 'department', 'job_title', 
-      'company', 'hiring_date', 'national_id', 'birth_date', 'status', 
-      'email', 'mobile', 'manager', 'termination_date', 'termination_reason'
-    ];
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    XLSX.writeFile(wb, 'قالب_بيانات_الموظفين.xlsx');
-  };
-
-  // الدالة الأساسية للمزامنة وتحديث بيانات الموظفين باستخدام Firebase
-  const handleFileUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file) return alert('يرجى اختيار ملف Excel أولاً');
-
-    setLoading(true);
-    setLogs(['جاري قراءة الملف... ⏳']);
-    
     try {
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: false });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rawData: any[] = XLSX.utils.sheet_to_json(sheet);
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-      if (rawData.length === 0) {
-        setLoading(false);
-        return alert('الملف فارغ!');
+      if (!supabaseUrl || !supabaseKey) {
+        throw new Error('بيانات الاتصال بـ Supabase غير موجودة في Vercel Environment Variables');
       }
 
-      const excelUpdatesMap = new Map();
-      rawData.forEach(row => {
-        const code = sanitizeString(row.employee_code);
-        if (code) excelUpdatesMap.set(code, row);
+      // 1. جلب الموظفين من Supabase
+      const empRes = await fetch(`${supabaseUrl}/rest/v1/employees?select=*`, {
+        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+      });
+      const employeesData = await empRes.json();
+
+      // 2. جلب العقود من Supabase
+      const contRes = await fetch(`${supabaseUrl}/rest/v1/contracts?select=*`, {
+        headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` }
+      });
+      const contractsData = await contRes.json();
+
+      if (!Array.isArray(employeesData)) {
+        throw new Error('فشل في جلب البيانات. تأكد من إعداد المفاتيح بشكل صحيح.');
+      }
+
+      setStatusMsg(`تم سحب ${employeesData.length} موظف. جاري كتابة البيانات في Firebase... 📤`);
+
+      // 3. كتابة البيانات في Firebase Batch
+      const batch = writeBatch(db);
+
+      employeesData.forEach((emp: any) => {
+        const empCode = String(emp.employee_code || emp.code || '').trim();
+        if (empCode) {
+          const empRef = doc(collection(db, 'employees'), empCode);
+          batch.set(empRef, {
+            employee_code: empCode,
+            employee_name: emp.employee_name || emp.name || '',
+            department: emp.department || '',
+            job_title: emp.job_title || '',
+            company: emp.company || '',
+            national_id: emp.national_id || '',
+            hiring_date: emp.hiring_date || null,
+            contract_type: emp.contract_type || 'محدد المدة',
+            status: emp.status || 'Active',
+            role: emp.role || 'Employee'
+          }, { merge: true });
+        }
       });
 
-      const excelCodes = Array.from(excelUpdatesMap.keys());
-      setLogs(prev => [...prev, `تم العثور على ${excelCodes.length} سجل في الشيت.`]);
-      setLogs(prev => [...prev, `جاري جلب البيانات الحالية للمطابقة...`]);
-
-      const existingMap = new Map();
-      
-      // 🌟 جلب الموظفين من فايربيز على دفعات (حجم الدفعة 30 لتناسب قيود استعلام IN)
-      const FETCH_BATCH = 30;
-      for (let i = 0; i < excelCodes.length; i += FETCH_BATCH) {
-        const batchCodes = excelCodes.slice(i, i + FETCH_BATCH);
-        const q = query(collection(db, 'employees'), where('employee_code', 'in', batchCodes));
-        const snap = await getDocs(q);
-        
-        snap.forEach(docSnap => {
-          const data = docSnap.data();
-          existingMap.set(data.employee_code, { id: docSnap.id, ...data });
+      if (Array.isArray(contractsData)) {
+        contractsData.forEach((c: any) => {
+          const empCode = String(c.employee_code || '').trim();
+          if (empCode) {
+            const contRef = doc(collection(db, 'contracts'));
+            batch.set(contRef, {
+              employee_code: empCode,
+              contract_type: c.contract_type || 'محدد المدة',
+              contract_start_date: c.contract_start_date || null,
+              contract_end_date: c.contract_end_date || null,
+              status: c.status || 'Active'
+            }, { merge: true });
+          }
         });
       }
 
-      setLogs(prev => [...prev, `تم الانتهاء من المطابقة. جاري التحديث والرفع للبيانات...`]);
+      // إضافة حساب الأدمن الرئيسي
+      const adminRef = doc(db, 'app_users', '3577');
+      batch.set(adminRef, {
+        username: 'Admin',
+        password: '123',
+        employee_code: '3577',
+        role: 'Admin'
+      }, { merge: true });
 
-      let batch = writeBatch(db);
-      let operationCount = 0;
-      let totalProcessed = 0;
+      await batch.commit();
 
-      for (const empCode of excelCodes) {
-        const excelRow = excelUpdatesMap.get(empCode);
-        const dbRecord = existingMap.get(empCode);
-
-        if (dbRecord) {
-          // ⚠️ الموظف موجود مسبقاً (تحديث جزئي محكوم للإدارة والوظيفة والموبايل فقط)
-          const updatePayload: any = {};
-          
-          if ('department' in excelRow) {
-             updatePayload.department = sanitizeString(excelRow.department) || dbRecord.department;
-          }
-          if ('job_title' in excelRow) {
-             updatePayload.job_title = sanitizeString(excelRow.job_title) || dbRecord.job_title;
-          }
-          if ('mobile' in excelRow) {
-             const newMobile = sanitizeString(excelRow.mobile);
-             if (newMobile) updatePayload.mobile = newMobile;
-          }
-
-          if (Object.keys(updatePayload).length > 0) {
-            const docRef = doc(db, 'employees', dbRecord.id);
-            batch.update(docRef, updatePayload);
-            operationCount++;
-          }
-
-        } else {
-          // ⚠️ الموظف جديد كلياً (يتم إضافته بكامل بياناته المطابقة للـ Schema)
-          const newRecord = {
-            employee_code: empCode,
-            employee_name: sanitizeString(excelRow.employee_name) || 'موظف بدون اسم',
-            department: sanitizeString(excelRow.department),
-            job_title: sanitizeString(excelRow.job_title),
-            company: sanitizeString(excelRow.company),
-            hiring_date: sanitizeDate(excelRow.hiring_date),
-            national_id: sanitizeString(excelRow.national_id),
-            birth_date: sanitizeDate(excelRow.birth_date),
-            email: sanitizeString(excelRow.email),
-            mobile: sanitizeString(excelRow.mobile),
-            manager: sanitizeString(excelRow.manager),
-            status: sanitizeString(excelRow.status) || 'Active',
-            termination_date: sanitizeDate(excelRow.termination_date),
-            termination_reason: sanitizeString(excelRow.termination_reason),
-            age: sanitizeNumeric(excelRow.age)
-          };
-          
-          const docRef = doc(collection(db, 'employees')); // إنشاء ID تلقائي
-          batch.set(docRef, newRecord);
-          operationCount++;
-        }
-
-        // 🌟 تنفيذ الحزمة (Batch) لما توصل لـ 450 عملية (الحد الأقصى لفايربيز 500)
-        if (operationCount >= 450) {
-          await batch.commit();
-          totalProcessed += operationCount;
-          batch = writeBatch(db); // فتح حزمة جديدة
-          operationCount = 0;
-        }
-      }
-
-      // 🌟 تنفيذ أي عمليات متبقية
-      if (operationCount > 0) {
-        await batch.commit();
-        totalProcessed += operationCount;
-      }
-
-      setLogs(prev => [...prev, `✅ تمت المزامنة بنجاح! تم معالجة ${totalProcessed} حركة.`]);
-      alert('تم التحديث بنجاح! قاعدة البيانات الآن نظيفة ومحدثة بالكامل. ✅');
-      await refresh();
-      setFile(null);
+      setStatusMsg('🎉 تم نقل البيانات بنجاح من Supabase إلى Firebase Firestore!');
+      alert('تمت المزامنة بنجاح! يمكنك مراجعة Firebase الآن ✅');
     } catch (err: any) {
-      setLogs(prev => [...prev, `❌ خطأ: ${err.message}`]);
-      alert('حدث خطأ أثناء الرفع: ' + err.message);
+      console.error(err);
+      setStatusMsg('❌ حدث خطأ: ' + err.message);
+      alert('خطأ: ' + err.message);
     } finally {
-      setLoading(false);
+      setSyncing(false);
     }
   };
 
   return (
-    <div className="p-6 executive-card max-w-2xl mx-auto my-8" style={{ direction: 'rtl' }}>
-      <h3 className="text-lg font-bold text-primary mb-2">🔄 تحديث بيانات الموظفين الأساسية</h3>
-      <p className="text-xs text-muted mb-6">
-        هذه الأداة تقوم بتحديث البيانات الوظيفية الأساسية للموظفين (الإدارة، الوظيفة، ورقم التليفون فقط للموظفين الحاليين). الموظف الجديد سيتم إضافته بكامل بياناته.
-      </p>
+    <div style={{ padding: '24px', direction: 'rtl' }}>
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '24px', borderRadius: '12px' }}>
+        <h3 style={{ margin: '0 0 8px', fontSize: '18px', color: '#0f172a' }}>🔄 مزامنة واستيراد البيانات من Supabase</h3>
+        <p style={{ margin: '0 0 20px', fontSize: '12px', color: '#64748b' }}>
+          اضغط على الزر أدناه لسحب جميع بيانات الموظفين والعقود الموجودة في Supabase وتحويلها تلقائياً إلى Firebase Firestore.
+        </p>
 
-      <div className="mb-6">
         <button
-          onClick={handleDownloadTemplate}
-          className="bg-[var(--success-text)] text-white px-4 py-2 rounded-lg text-xs font-bold shadow-sm"
+          onClick={handleSyncFromSupabase}
+          disabled={syncing}
+          style={{
+            background: syncing ? '#64748b' : '#2563eb',
+            color: '#fff',
+            border: 0,
+            padding: '12px 24px',
+            borderRadius: '8px',
+            fontWeight: 'bold',
+            fontSize: '13px',
+            cursor: syncing ? 'not-allowed' : 'pointer'
+          }}
         >
-          📥 تحميل القالب المعتمد (بدون بيانات العقود)
+          {syncing ? 'جاري السحب والمزامنة...' : '⚡ سحب ونقل البيانات من Supabase إلى Firebase'}
         </button>
-      </div>
 
-      <div className="border-2 border-dashed border-border p-8 text-center rounded-xl bg-background">
-        <input
-          type="file"
-          accept=".xlsx, .xls"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          className="mb-6 text-xs text-primary w-full"
-        />
-        
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          <button
-            onClick={handleFileUpload}
-            disabled={loading || !file}
-            className="bg-gold text-white font-bold text-xs px-6 py-3 rounded-lg disabled:opacity-50 hover:bg-gold-hover transition-colors"
-          >
-            {loading ? 'جاري المزامنة...' : 'رفع وتحديث النظام 🚀'}
-          </button>
-        </div>
-        
+        {statusMsg && (
+          <div style={{ marginTop: '20px', padding: '12px', borderRadius: '8px', background: '#f8fafc', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold' }}>
+            {statusMsg}
+          </div>
+        )}
       </div>
-      
-      {logs.length > 0 && (
-        <div className="mt-6 bg-[#0f172a] text-[#38bdf8] p-4 rounded-xl font-mono text-xs max-h-52 overflow-y-auto border border-border text-right">
-          <div className="font-bold mb-2 text-white">سجل العمليات (System Logs):</div>
-          {logs.map((log, idx) => (
-            <div key={idx} className="mb-1">{log}</div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
