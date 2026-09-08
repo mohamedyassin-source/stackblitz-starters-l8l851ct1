@@ -75,6 +75,10 @@ export default function ContractsPage() {
       const empSnap = await getDocs(collection(db, 'employees'));
       const allEmps = empSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+      // 1. سحب بيانات الموظفين
+      const empSnap = await getDocs(collection(db, 'employees'));
+      const allEmps = empSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
       // 2. سحب العقود النشطة فقط
       const contQ = query(collection(db, 'contracts'), where('status', '==', 'Active'));
       const contSnap = await getDocs(contQ);
@@ -84,10 +88,8 @@ export default function ContractsPage() {
       const renSnap = await getDocs(collection(db, 'renewal_requests'));
       const allRens = renSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      const mergedEmployees = allEmps.map(emp => {
-        const empContracts = allContracts.filter(c => String(c.employee_code) === String(emp.employee_code));
-        empContracts.sort((a, b) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
-        const myContract = empContracts[0];
+      const mergedEmployees = allEmps.map((emp: any) => {
+        const empContracts = allContracts.filter((c: any) => String(c.employee_code) === String(emp.employee_code));
 
         return {
           ...emp,
