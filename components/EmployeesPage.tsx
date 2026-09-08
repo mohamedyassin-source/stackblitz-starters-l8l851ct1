@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 
 // ============================================================
 // HELPERS
@@ -71,71 +72,7 @@ const getEmployeeAge = (emp: any) => {
 // ============================================================
 
 export default function EmployeesPage() {
-  const { refresh: refreshGlobalData } = useAppData(); 
-  const [employees, setEmployees] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // ============================================================
-  // FETCH & MERGE DATA 
-  // ============================================================
-  const fetchData = async () => {
-    setLoading(true);
-    let allEmps: any[] = [];
-    let allContracts: any[] = [];
-    let from = 0;
-    const step = 1000;
-
-    // 1. جلب بيانات الموظفين
-    while (true) {
-      const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allEmps = [...allEmps, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    // 2. جلب العقود
-    from = 0;
-    while (true) {
-      const { data, error } = await supabase.from('contracts').select('*').range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allContracts = [...allContracts, ...data];
-      if (data.length < step) break;
-      from += step;
-    }
-
-    // 3. الدمج الذكي لأحدث عقد
-    const mergedEmployees = allEmps.map((emp) => {
-      const cleanCode = String(emp.employee_code).trim();
-      const empContracts = allContracts.filter(c => String(c.employee_code).trim() === cleanCode);
-      
-      empContracts.sort((a, b) => {
-        const startA = a.contract_start_date ? new Date(a.contract_start_date).getTime() : 0;
-        const startB = b.contract_start_date ? new Date(b.contract_start_date).getTime() : 0;
-        if (startB !== startA) return startB - startA;
-        const endA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 9999999999999;
-        const endB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 9999999999999;
-        return endB - endA;
-      });
-
-      const myContract = empContracts[0];
-
-      return {
-        ...emp,
-        contract_id: myContract?.id || null, // حفظ الـ ID لتعديل العقد بدقة
-        contract_type: myContract?.contract_type || emp.contract_type,
-        contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
-        contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
-      };
-    });
-
-    setEmployees(mergedEmployees);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const { employees, loading, refresh: fetchEmployees } = useAppData(); 
 
   // ============================================================
   // FILTER STATES
@@ -404,7 +341,7 @@ export default function EmployeesPage() {
     sessionStorage.removeItem('selectedEmployeeId'); sessionStorage.removeItem('employeeSearch'); sessionStorage.removeItem('jumpSearch');
   }, [employees, loading]);
 
-  // 🌟 تعديل بيانات الموظف (محصن بـ Upsert و Select)
+  // 🌟 تعديل بيانات الموظف في Firebase
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -419,9 +356,8 @@ export default function EmployeesPage() {
       const rawBirth = getField(emp, 'birth_date', 'BirthDate');
       const rawEnd = getField(emp, 'contract_end_date', 'ContractEndDate');
       const empStatus = getField(emp, 'status', 'Status') || 'Active';
-      const contractType = getField(emp, 'contract_type', 'ContractType'); // جلب النوع المختار
+      const contractType = getField(emp, 'contract_type', 'ContractType');
 
-      // 🌟 تحديث جدول employees (شامل نوع العقد لضمان سرعة العرض)
       const employeeUpdate = {
         employee_code: employeeCode,
         employee_name: getField(emp, 'employee_name', 'EmployeeName', 'ArabicName'),
@@ -432,26 +368,23 @@ export default function EmployeesPage() {
         company: getField(emp, 'company', 'Company'),
         job_title: getField(emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring || null,
-        contract_type: contractType, // 🌟 ضروري للتسميع المباشر
+        contract_type: contractType, 
         status: empStatus,
         email: getField(emp, 'email', 'Email'),
         mobile: getField(emp, 'mobile', 'Mobile', 'MOBILE'),
       };
 
-      const { data: empDataResult, error: employeeError } = await supabase
-        .from('employees')
-        .update(employeeUpdate)
-        .eq('employee_code', employeeCode)
-        .select();
-
-      if (employeeError) throw employeeError;
-      if (!empDataResult || empDataResult.length === 0) {
+      // 1. تحديث جدول employees
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', employeeCode));
+      const empSnap = await getDocs(empQ);
+      if (empSnap.empty) {
         alert(`⚠️ لم يتم العثور على الموظف (${employeeCode}) لتحديثه.`);
         setEditData({ ...editData, saving: false });
         return;
       }
+      await updateDoc(doc(db, 'employees', empSnap.docs[0].id), employeeUpdate);
 
-      // 🌟 تحديث العقود بنظام Upsert واستهداف الـ ID الدقيق للعقد إن وجد
+      // 2. تحديث جدول contracts
       const contractUpdate = {
         contract_type: contractType,
         contract_start_date: rawHiring || null,
@@ -460,31 +393,27 @@ export default function EmployeesPage() {
       };
 
       if (emp.contract_id) {
-        // تحديث دقيق للعقد المرتبط
-        const { error: updErr } = await supabase.from('contracts').update(contractUpdate).eq('id', emp.contract_id);
-        if (updErr) throw updErr;
+        await updateDoc(doc(db, 'contracts', emp.contract_id), contractUpdate);
       } else {
-        // لو مفيش contract_id في الذاكرة، ندور على الكود الأول، لو ملقيناش ننشئ
-        const { data: existingContracts } = await supabase.from('contracts').select('id').eq('employee_code', employeeCode).limit(1);
-        if (existingContracts && existingContracts.length > 0) {
-          const { error: updErr } = await supabase.from('contracts').update(contractUpdate).eq('id', existingContracts[0].id);
-          if (updErr) throw updErr;
+        const contQ = query(collection(db, 'contracts'), where('employee_code', '==', employeeCode));
+        const contSnap = await getDocs(contQ);
+        if (!contSnap.empty) {
+          await updateDoc(doc(db, 'contracts', contSnap.docs[0].id), contractUpdate);
         } else {
-          const { error: insErr } = await supabase.from('contracts').insert([{ employee_code: employeeCode, ...contractUpdate }]);
-          if (insErr) throw insErr;
+          await addDoc(collection(db, 'contracts'), { employee_code: employeeCode, ...contractUpdate });
         }
       }
 
       alert('تم حفظ التعديلات وتحديث العقد بنجاح ✅');
       setEditData(null);
-      await refreshGlobalData(); // تحديث الداش بورد
-      await fetchData();         // تحديث الجدول المحلي
+      await fetchEmployees(); 
     } catch (error: any) {
       alert('حدث خطأ أثناء الحفظ: ' + error.message);
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
     }
   };
 
+  // 🌟 إنهاء الخدمة في Firebase
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -493,25 +422,29 @@ export default function EmployeesPage() {
     try {
       const empCode = getEmployeeCode(selectedTermEmp);
 
-      const { data: termRes, error } = await supabase.from('employees').update({
-        department: 'تحويلات/تحت الاعتماد', 
-        status: 'Inactive',
-        termination_reason: termReason,
-        termination_date: termDate,
-      }).eq('employee_code', empCode).select();
-
-      if (error) throw error;
-      if (!termRes || termRes.length === 0) {
+      const empQ = query(collection(db, 'employees'), where('employee_code', '==', empCode));
+      const empSnap = await getDocs(empQ);
+      if (empSnap.empty) {
         alert(`⚠️ لم يتم العثور على الموظف كود (${empCode}) لتحديثه.`);
         setTermSaving(false); return;
       }
 
-      await supabase.from('contracts').update({ status: 'Inactive' }).eq('employee_code', empCode);
+      await updateDoc(doc(db, 'employees', empSnap.docs[0].id), {
+        department: 'تحويلات/تحت الاعتماد', 
+        status: 'Inactive',
+        termination_reason: termReason,
+        termination_date: termDate,
+      });
+
+      const contQ = query(collection(db, 'contracts'), where('employee_code', '==', empCode), where('status', '==', 'Active'));
+      const contSnap = await getDocs(contQ);
+      for (const d of contSnap.docs) {
+        await updateDoc(doc(db, 'contracts', d.id), { status: 'Inactive' });
+      }
 
       alert(`✅ تم تحويل الموظف (${getEmployeeName(selectedTermEmp)}) إلى قسم تحويلات/تحت الاعتماد.`);
       setShowTermModal(false); setSelectedTermEmp(null); setTermSearch('');
-      await refreshGlobalData();
-      await fetchData();
+      await fetchEmployees();
     } catch (error: any) {
       alert('خطأ أثناء العملية: ' + error.message);
     } finally {
@@ -519,6 +452,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 النقل المجمع في Firebase
   const handleConfirmBulkTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedEmpIds.length === 0) return;
@@ -530,13 +464,19 @@ export default function EmployeesPage() {
       if (bulkDept) payload.department = bulkDept;
       if (bulkCompany) payload.company = bulkCompany;
 
-      const { error } = await supabase.from('employees').update(payload).in('employee_code', selectedEmpIds);
-      if (error) throw error;
+      const batch = writeBatch(db);
+      for (const code of selectedEmpIds) {
+        const empQ = query(collection(db, 'employees'), where('employee_code', '==', code));
+        const snap = await getDocs(empQ);
+        if (!snap.empty) {
+          batch.update(doc(db, 'employees', snap.docs[0].id), payload);
+        }
+      }
+      await batch.commit();
 
       alert(`✅ تم نقل ${selectedEmpIds.length} موظف بنجاح.`);
       setShowBulkTransferModal(false); setSelectedEmpIds([]); setBulkDept(''); setBulkCompany('');
-      await refreshGlobalData();
-      await fetchData();
+      await fetchEmployees();
     } catch (error: any) {
       alert('خطأ أثناء النقل المجمع: ' + error.message);
     } finally {
@@ -544,6 +484,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 حذف موظف في Firebase
   const handleDeleteSelected = async () => {
     if (selectedEmpIds.length === 0) return;
     const confirmed = window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف نهائيًا؟`);
@@ -551,14 +492,23 @@ export default function EmployeesPage() {
     setIsDeleting(true);
 
     try {
-      await supabase.from('contracts').delete().in('employee_code', selectedEmpIds);
-      const { error } = await supabase.from('employees').delete().in('employee_code', selectedEmpIds);
-      if (error) throw error;
+      const batch = writeBatch(db);
+      for (const code of selectedEmpIds) {
+        // حذف من الموظفين
+        const empQ = query(collection(db, 'employees'), where('employee_code', '==', code));
+        const empSnap = await getDocs(empQ);
+        empSnap.forEach(d => batch.delete(doc(db, 'employees', d.id)));
+
+        // حذف من العقود
+        const contQ = query(collection(db, 'contracts'), where('employee_code', '==', code));
+        const contSnap = await getDocs(contQ);
+        contSnap.forEach(d => batch.delete(doc(db, 'contracts', d.id)));
+      }
+      await batch.commit();
 
       alert('تم حذف الموظفين بنجاح 🗑️✅');
       setSelectedEmpIds([]);
-      await refreshGlobalData();
-      await fetchData();
+      await fetchEmployees();
     } catch (error: any) {
       alert('حدث خطأ أثناء الحذف: ' + error.message);
     } finally {
@@ -566,7 +516,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 إضافة موظف جديد
+  // 🌟 إضافة موظف جديد في Firebase
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -579,7 +529,7 @@ export default function EmployeesPage() {
         if (notYetBirthday) age--;
       }
 
-      const { error: employeeError } = await supabase.from('employees').insert([{
+      await addDoc(collection(db, 'employees'), {
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
@@ -589,29 +539,24 @@ export default function EmployeesPage() {
         company: newEmp.company,
         job_title: newEmp.job_title,
         hiring_date: newEmp.hiring_date || null,
-        contract_type: newEmp.contract_type, // 🌟 حفظ النوع الجديد هنا
+        contract_type: newEmp.contract_type, 
         status: newEmp.status,
         email: newEmp.email,
         mobile: newEmp.mobile,
-      }]);
+      });
 
-      if (employeeError) throw employeeError;
-
-      const { error: contractError } = await supabase.from('contracts').insert([{
+      await addDoc(collection(db, 'contracts'), {
         employee_code: newEmp.employee_code,
         contract_type: newEmp.contract_type,
         contract_start_date: newEmp.hiring_date || null,
         contract_end_date: newEmp.contract_type.includes('دائم') || !newEmp.contract_end_date ? null : newEmp.contract_end_date,
         status: newEmp.status,
-      }]);
-
-      if (contractError) throw contractError;
+      });
 
       alert('تم إضافة الموظف وعقده بنجاح ✅');
       setShowAddModal(false);
       setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
-      await refreshGlobalData();
-      await fetchData();
+      await fetchEmployees();
     } catch (error: any) {
       alert('خطأ أثناء الإضافة: ' + error.message);
     }
