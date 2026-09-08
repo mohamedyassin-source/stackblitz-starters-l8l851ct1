@@ -1,4 +1,5 @@
 'use client';
+
 import { useState } from 'react';
 import { db } from '@/lib/firebase';
 import { collection, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
@@ -31,10 +32,12 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setErrorMsg('');
 
     try {
+      // 1. البحث في حسابات المستخدمين
       const userQ = query(collection(db, 'app_users'), where('employee_code', '==', cleanCode));
       const userSnap = await getDocs(userQ);
       const userData = !userSnap.empty ? userSnap.docs[0].data() : null;
 
+      // 2. البحث في جدول الموظفين
       const empQ = query(collection(db, 'employees'), where('employee_code', '==', cleanCode));
       const empSnap = await getDocs(empQ);
       const empData = !empSnap.empty ? empSnap.docs[0].data() : null;
@@ -49,15 +52,18 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       const mergedData = { ...empData, ...userData };
       const storedPassword = userData?.password;
 
-      const isDefaultPassword = password === '123456' || password === String(cleanCode);
-      const hasCustomPassword = storedPassword && storedPassword !== '';
-
-      if (hasCustomPassword && storedPassword !== password && !isDefaultPassword) {
-        setErrorMsg('كلمة السر غير صحيحة.');
-        return;
-      }
-
-      if (!hasCustomPassword || isDefaultPassword) {
+      // التحقق الصارم من كلمة المرور المسجلة
+      if (storedPassword && storedPassword !== '') {
+        if (storedPassword !== password) {
+          setErrorMsg('كلمة السر غير صحيحة.');
+          return;
+        }
+      } else {
+        // حساب جديد بدون كلمة سر مسجلة يتطلب كلمة سر افتراضية
+        if (password !== '123' && password !== '123456' && password !== cleanCode) {
+          setErrorMsg('كلمة السر غير صحيحة.');
+          return;
+        }
         setTempUserData(mergedData);
         setRequirePasswordChange(true);
         return;
@@ -123,6 +129,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     const userNameVal = tempUserData.employee_name || tempUserData.username || cleanCode;
 
     try {
+      // حفظ كلمة المرور الجديدة بأسلوب مباشر في Firestore
       await setDoc(doc(db, 'app_users', cleanCode), {
         employee_code: cleanCode,
         username: userNameVal,
@@ -130,7 +137,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       }, { merge: true });
 
       setLoading(false);
-      alert('✅ تم حفظ كلمة السر بنجاح!');
+      alert('✅ تم حفظ كلمة السر الجديدة بنجاح!');
       proceedToLogin({ ...tempUserData, password: newPassword });
     } catch (err: any) {
       setLoading(false);
