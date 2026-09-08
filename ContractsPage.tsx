@@ -93,9 +93,9 @@ export default function ContractsPage() {
   };
 
   const calculateNewEndDate = (oldDateStr: string | undefined, months: number) => {
-    if (!oldDateStr) return null; // ✅ تم التعديل لـ null لمنع خطأ ""
+    if (!oldDateStr) return null; 
     const date = new Date(oldDateStr);
-    if (isNaN(date.getTime())) return null; // ✅ تم التعديل لـ null
+    if (isNaN(date.getTime())) return null; 
     date.setMonth(date.getMonth() + months);
     return date.toISOString().split('T')[0];
   };
@@ -252,9 +252,9 @@ export default function ContractsPage() {
       department: emp.department,
       job_title: emp.job_title,
       company: emp.company,
-      contract_start_date: newContractStartDate || null, // ✅ تعديل لتفادي الخطأ
-      contract_end_date: newContractStartDate || null, // ✅ تعديل لتفادي الخطأ
-      new_contract_end_date: newContractEndDate || null, // ✅ تعديل لتفادي الخطأ
+      contract_start_date: newContractStartDate || null, 
+      contract_end_date: newContractStartDate || null, 
+      new_contract_end_date: newContractEndDate || null, 
       status: 'Pending',
       signature_status: 'قيد التوقيع',
       request_date: new Date().toISOString().split('T')[0],
@@ -294,8 +294,8 @@ export default function ContractsPage() {
         department: emp.department,
         job_title: emp.job_title,
         company: emp.company,
-        contract_end_date: emp.contract_end_date || null, // ✅ تعديل لتفادي الخطأ
-        new_contract_end_date: targetEndDate || null, // ✅ تعديل لتفادي الخطأ
+        contract_end_date: emp.contract_end_date || null, 
+        new_contract_end_date: targetEndDate || null, 
         renewal_months: renewalMode === 'months' ? renewalMonths : null,
         status: 'Pending',
         signature_status: 'قيد التوقيع',
@@ -317,8 +317,8 @@ export default function ContractsPage() {
           department: emp.department,
           job_title: emp.job_title,
           company: emp.company,
-          contract_end_date: emp.contract_end_date || null, // ✅ تعديل لتفادي الخطأ
-          new_contract_end_date: targetEndDate || null, // ✅ تعديل لتفادي الخطأ
+          contract_end_date: emp.contract_end_date || null, 
+          new_contract_end_date: targetEndDate || null, 
           renewal_months: renewalMode === 'months' ? renewalMonths : null,
           status: 'Pending',
           signature_status: 'قيد التوقيع',
@@ -619,9 +619,7 @@ export default function ContractsPage() {
                 <select value={newContractType} onChange={(e) => setNewContractType(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', fontWeight: 'bold', background: '#f8fafc' }}>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                  <option value="مكافأة شاملة">مكافأة شاملة</option>
-                  <option value="غير محدد المدة">غير محدد المدة (دائم)</option>
-                  <option value="مهمة/مشروع">عقد مشروع/مهمة محدودة</option>
+                  <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
                 </select>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
