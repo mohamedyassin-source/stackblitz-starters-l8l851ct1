@@ -8,7 +8,7 @@ export default function DataSyncPage() {
   const [syncing, setSyncing] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
-  // دالة الشحن والتكرار عبر الصفحات لسحب كافة البيانات بدون حد 1000
+  // دالة متطورة لسحب كل البيانات بالالتفاف على سقف الـ 1000 المكونة في Supabase
   const fetchAllFromSupabase = async (tableName: string, supabaseUrl: string, supabaseKey: string) => {
     let allData: any[] = [];
     let page = 0;
@@ -18,14 +18,18 @@ export default function DataSyncPage() {
     while (hasMore) {
       const from = page * pageSize;
       const to = from + pageSize - 1;
-      
+
+      // استخدام البارامترات المباشرة لطلب النطاق من Supabase REST API
+      const url = `${supabaseUrl}/rest/v1/${tableName}?select=*&offset=${from}&limit=${pageSize}`;
+
       try {
-        const res = await fetch(`${supabaseUrl}/rest/v1/${tableName}?select=*`, {
+        const res = await fetch(url, {
           headers: {
             apikey: supabaseKey,
             Authorization: `Bearer ${supabaseKey}`,
+            'Range-Unit': 'items',
             Range: `${from}-${to}`,
-            'Range-Unit': 'items'
+            Prefer: 'count=exact'
           }
         });
 
@@ -37,6 +41,7 @@ export default function DataSyncPage() {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           allData = [...allData, ...data];
+          // إذا كان العدد الجاري سحبه أقل من 1000، فهذا يعني وصولنا لنهاية السجلات
           if (data.length < pageSize) {
             hasMore = false;
           } else {
@@ -46,7 +51,7 @@ export default function DataSyncPage() {
           hasMore = false;
         }
       } catch (err) {
-        console.warn(`تنبيه: متعذر جلب بيانات ${tableName}`, err);
+        console.warn(`خطأ أثناء سحب ${tableName}:`, err);
         hasMore = false;
       }
     }
@@ -54,11 +59,11 @@ export default function DataSyncPage() {
   };
 
   const handleSyncFromSupabase = async () => {
-    const confirmSync = window.confirm('هل أنت متأكد من سحب كافة الجداول الثمانية من Supabase ونقلها بالكامل إلى Firebase؟');
+    const confirmSync = window.confirm('هل أنت متأكد من سحب كافة الجداول الثمانية بدون أي حد للبيانات ونقلها لـ Firebase؟');
     if (!confirmSync) return;
 
     setSyncing(true);
-    setStatusMsg('جاري الاتصال بـ Supabase لبدء نقل الجداول الثمانية... ⏳');
+    setStatusMsg('جاري الاتصال بـ Supabase وبدء سحب الجداول كاملاً... ⏳');
 
     try {
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -68,7 +73,6 @@ export default function DataSyncPage() {
         throw new Error('بيانات الاتصال بـ Supabase غير موجودة في Vercel Environment Variables');
       }
 
-      // الجداول الثمانية المحددة بالصورة
       const tablesList = [
         'employees',
         'contracts',
@@ -84,23 +88,22 @@ export default function DataSyncPage() {
 
       for (let index = 0; index < tablesList.length; index++) {
         const tableName = tablesList[index];
-        setStatusMsg(`[${index + 1}/8] جاري سحب بيانات جدول (${tableName})... ⏳`);
+        setStatusMsg(`[${index + 1}/8] جاري سحب كافة صفوف جدول (${tableName})... ⏳`);
 
         const tableData = await fetchAllFromSupabase(tableName, supabaseUrl, supabaseKey);
         summaryStats[tableName] = tableData.length;
 
         if (tableData.length > 0) {
-          setStatusMsg(`[${index + 1}/8] جاري كتابة ${tableData.length} سجل من (${tableName}) في Firebase... 📤`);
-          
-          const chunkSize = 450;
+          setStatusMsg(`[${index + 1}/8] جاري كتابة إجمالي ${tableData.length} سجل من (${tableName}) في Firebase... 📤`);
+
+          const chunkSize = 400; // حجم الدفعة لعدم تجاوز سقف فايربيز
           for (let i = 0; i < tableData.length; i += chunkSize) {
             const batch = writeBatch(db);
             const chunk = tableData.slice(i, i + chunkSize);
 
             chunk.forEach((item: any) => {
               let docId = item.id ? String(item.id) : undefined;
-              
-              // معالجة المفاتيح الخاصة بالموظفين والمستخدمين
+
               if (tableName === 'employees') {
                 docId = String(item.employee_code || item.code || item.id || '').trim() || docId;
               } else if (tableName === 'app_users') {
@@ -109,8 +112,8 @@ export default function DataSyncPage() {
                 docId = String(item.request_id || item.id || '').trim() || docId;
               }
 
-              const docRef = docId 
-                ? doc(collection(db, tableName), docId) 
+              const docRef = docId
+                ? doc(collection(db, tableName), docId)
                 : doc(collection(db, tableName));
 
               batch.set(docRef, { ...item }, { merge: true });
@@ -121,7 +124,7 @@ export default function DataSyncPage() {
         }
       }
 
-      // ضمان وجود حساب الأدمن في app_users
+      // تأكيد وجود حساب الأدمن
       const adminBatch = writeBatch(db);
       const adminRef = doc(db, 'app_users', '3577');
       adminBatch.set(adminRef, {
@@ -133,14 +136,14 @@ export default function DataSyncPage() {
       await adminBatch.commit();
 
       const statsFormatted = Object.entries(summaryStats)
-        .map(([key, val]) => `• ${key}: ${val}`)
+        .map(([key, val]) => `• ${key}: ${val} سجل`)
         .join('\n');
 
-      setStatusMsg(`🎉 تم بنجاح سحب ونقل كافة الجداول الثمانية بالكامل إلى Firebase Firestore!\n\nإحصائيات النقل:\n${statsFormatted}`);
-      alert(`تمت المزامنة بنجاح لجميع الجداول! ✅\n\n${statsFormatted}`);
+      setStatusMsg(`🎉 تم سحب ونقل كافة الجداول بنجاح ودون أي حد متبقي!\n\nنتائج المزامنة:\n${statsFormatted}`);
+      alert(`تمت المزامنة بنجاح! ✅\n\n${statsFormatted}`);
     } catch (err: any) {
       console.error(err);
-      setStatusMsg('❌ حدث خطأ أثناء النقل: ' + err.message);
+      setStatusMsg('❌ حدث خطأ أثناء المزامنة: ' + err.message);
       alert('خطأ: ' + err.message);
     } finally {
       setSyncing(false);
@@ -150,9 +153,9 @@ export default function DataSyncPage() {
   return (
     <div style={{ padding: '24px', direction: 'rtl' }}>
       <div style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '24px', borderRadius: '12px' }}>
-        <h3 style={{ margin: '0 0 8px', fontSize: '18px', color: '#0f172a' }}>🔄 النقل الشامل لجميع جداول Supabase الـ 8</h3>
+        <h3 style={{ margin: '0 0 8px', fontSize: '18px', color: '#0f172a' }}>🔄 المزامنة الشاملة والكاملة لجميع البيانات</h3>
         <p style={{ margin: '0 0 20px', fontSize: '12px', color: '#64748b' }}>
-          يقوم هذا الزر بسحب وثبات البيانات الكاملة من الجداول (employees, contracts, renewal_requests, app_users, audit_logs, documents, notifications, settings) ونقلها إلى Firebase.
+          هذا الخيار يتخطى حظر الـ 1000 عنصر المفرض في Supabase ويسحب كافة البيانات كاملة.
         </p>
 
         <button
@@ -169,7 +172,7 @@ export default function DataSyncPage() {
             cursor: syncing ? 'not-allowed' : 'pointer'
           }}
         >
-          {syncing ? 'جاري نقل الجداول الثمانية...' : '⚡ سحب ونقل الجداول الثمانية بالكامل إلى Firebase'}
+          {syncing ? 'جاري السحب والمزامنة الشاملة...' : '⚡ سحب كل الموظفين والجداول بدون استثناء'}
         </button>
 
         {statusMsg && (
