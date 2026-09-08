@@ -80,7 +80,7 @@ export default function EmployeesPage() {
         contract_id: contract.id || null,
         contract_start_date: getField(emp, 'contract_start_date', 'HiringDate') || contract.contract_start_date || '',
         contract_end_date: getField(emp, 'contract_end_date', 'ContractEndDate') || contract.contract_end_date || '',
-        contract_type: getField(emp, 'contract_type', 'ContractType') || contract.contract_type || 'محدد المدة',
+        contract_type: contract.contract_type || getField(emp, 'contract_type', 'ContractType') || 'محدد المدة',
       };
     });
   }, [rawEmployees, rawContracts]);
@@ -134,16 +134,17 @@ export default function EmployeesPage() {
     mobile: '',
   });
 
+  // 🌟 النطاق النشط المطابق تماماً لصفحة العقود
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter((emp: any) => {
       const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
       const dept = String(getField(emp, 'department', 'Department')).trim();
       const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
 
-      const isTransfer = dept.includes('تحويلات');
-      const isTerminatedType = type.includes('إنهاء');
+      const isTransfer = dept.includes('تحويلات تحت الاعتماد') || dept.includes('تحويلات/تحت الاعتماد');
+      const isTerminatedType = type === 'إنهاء تعاقد' || status === 'terminated' || status === 'inactive';
 
-      return status === 'active' && !isTransfer && !isTerminatedType;
+      return !isTransfer && !isTerminatedType;
     });
   }, [employees]);
 
@@ -158,24 +159,14 @@ export default function EmployeesPage() {
   const baseFilteredEmployees = useMemo(() => {
     const search = normalizeSearch(searchTerm);
 
-    return employees.filter((emp: any) => {
+    return activeEmployeesOnly.filter((emp: any) => {
       const code = normalizeSearch(getEmployeeCode(emp));
       const name = normalizeSearch(getEmployeeName(emp));
       const nationalId = normalizeSearch(getNationalId(emp));
       const department = normalizeSearch(getField(emp, 'department', 'Department'));
       const company = normalizeSearch(getField(emp, 'company', 'Company'));
       const contractType = normalizeSearch(getField(emp, 'contract_type', 'ContractType'));
-      const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
       const age = getEmployeeAge(emp);
-
-      const isTransfer = department.includes('تحويلات');
-      const isTerminatedType = contractType.includes('إنهاء');
-
-      const isExcludedByDefault = status !== 'active' || isTransfer || isTerminatedType;
-
-      if (isExcludedByDefault && !search) {
-        return false;
-      }
 
       const matchesSearch = !search || code.includes(search) || name.includes(search) || nationalId.includes(search) || department.includes(search);
       const matchesDept = !selectedDept || department.includes(normalizeSearch(selectedDept));
@@ -206,24 +197,22 @@ export default function EmployeesPage() {
 
       return matchesSearch && matchesDept && matchesCompany && matchesType && matchesAge;
     });
-  }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
+  }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
+  // 🌟 إحصائيات دقيقة ومطابقة لصفحة العقود
   const kpiStats = useMemo(() => {
-    const validForKpi = baseFilteredEmployees.filter((emp: any) => {
-      const dept = String(getField(emp, 'department', 'Department')).trim();
-      const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
-      const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
+    const total = baseFilteredEmployees.length;
+    const perm = baseFilteredEmployees.filter((emp: any) => {
+      const type = String(getField(emp, 'contract_type', 'ContractType'));
+      return type.includes('دائم') || type.includes('غير محدد');
+    }).length;
 
-      const isTransfer = dept.includes('تحويلات');
-      const isTerminatedType = type.includes('إنهاء');
+    const fixed = baseFilteredEmployees.filter((emp: any) => {
+      const type = String(getField(emp, 'contract_type', 'ContractType'));
+      return type.includes('محدد') && !type.includes('فوق السن');
+    }).length;
 
-      return status === 'active' && !isTransfer && !isTerminatedType;
-    });
-
-    const total = validForKpi.length;
-    const perm = validForKpi.filter((emp: any) => String(getField(emp, 'contract_type', 'ContractType')).includes('دائم')).length;
-    const fixed = validForKpi.filter((emp: any) => String(getField(emp, 'contract_type', 'ContractType')).includes('محدد')).length;
-    const aboveAge = validForKpi.filter((emp: any) => {
+    const aboveAge = baseFilteredEmployees.filter((emp: any) => {
       const type = String(getField(emp, 'contract_type', 'ContractType'));
       const age = getEmployeeAge(emp);
       return type.includes('فوق السن') || (age !== null && age >= 60);
@@ -247,8 +236,8 @@ export default function EmployeesPage() {
       const type = String(getField(emp, 'contract_type', 'ContractType'));
       const age = getEmployeeAge(emp);
 
-      if (activeCardFilter === 'PERM') return type.includes('دائم');
-      if (activeCardFilter === 'FIXED') return type.includes('محدد');
+      if (activeCardFilter === 'PERM') return type.includes('دائم') || type.includes('غير محدد');
+      if (activeCardFilter === 'FIXED') return type.includes('محدد') && !type.includes('فوق السن');
       if (activeCardFilter === 'ABOVE_AGE') return type.includes('فوق السن') || (age !== null && age >= 60);
       return true;
     });
@@ -302,7 +291,6 @@ export default function EmployeesPage() {
     });
   };
 
-  // Jump search logic
   useEffect(() => {
     if (loading || !employees || employees.length === 0) return;
 
@@ -329,7 +317,6 @@ export default function EmployeesPage() {
     sessionStorage.removeItem('selectedEmployeeId'); sessionStorage.removeItem('employeeSearch'); sessionStorage.removeItem('jumpSearch');
   }, [employees, loading]);
 
-  // 🌟 تعديل بيانات الموظف في Firebase Direct Update
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -362,11 +349,9 @@ export default function EmployeesPage() {
         mobile: getField(emp, 'mobile', 'Mobile', 'MOBILE'),
       };
 
-      // 1. تحديث مستند الموظف في Firebase
       const empRef = doc(db, 'employees', employeeCode);
       await setDoc(empRef, employeeUpdate, { merge: true });
 
-      // 2. تحديث جدول contracts
       const contractUpdate = {
         employee_code: employeeCode,
         contract_type: contractType,
@@ -393,7 +378,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 إنهاء الخدمة في Firebase
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -426,7 +410,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 النقل المجمع في Firebase
   const handleConfirmBulkTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedEmpIds.length === 0) return;
@@ -455,7 +438,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 حذف موظف في Firebase
   const handleDeleteSelected = async () => {
     if (selectedEmpIds.length === 0) return;
     const confirmed = window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف نهائيًا؟`);
@@ -483,7 +465,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 إضافة موظف جديد في Firebase
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -568,7 +549,7 @@ export default function EmployeesPage() {
       if (days <= 60) return <span style={{ background: '#fffbe1', color: '#b45309', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDate} ⏳</span>;
       return <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDate}</span>;
     }
-    if (type?.includes('دائم')) return <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
+    if (type?.includes('دائم') || type?.includes('غير محدد')) return <span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
     return <span style={{ color: '#94a3b8' }}>—</span>;
   };
 
@@ -582,7 +563,7 @@ export default function EmployeesPage() {
   return (
     <div style={{ direction: 'rtl', animation: 'fadeIn 0.4s ease-in-out' }}>
       
-      {/* رأس الصفحة والمفاتيح الرئيسية */}
+      {/* رأس الصفحة */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900', letterSpacing: '-0.3px' }}>👥 بيانات الموظفين Active</h3>
@@ -595,7 +576,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت التفاعلية الحديثة (KPI Cards) */}
+      {/* 🌟 الكروت التفاعلية المطابقة 100% لصفحة العقود */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         
         {/* كارت 1: إجمالي الموظفين */}
