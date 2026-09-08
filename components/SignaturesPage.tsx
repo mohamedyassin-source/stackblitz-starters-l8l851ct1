@@ -52,7 +52,7 @@ export default function SignaturesPage() {
     try {
       const q = query(collection(db, 'renewal_requests'), where('status', '==', 'Approved'));
       const snap = await getDocs(q);
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = snap.docs.map((docSnap: any) => ({ id: docSnap.id, ...docSnap.data() }));
       setDirectRequests(data || []);
     } catch (err: any) {
       console.error('Error fetching approved requests:', err.message);
@@ -69,13 +69,13 @@ export default function SignaturesPage() {
   };
 
   const deptsList = useMemo(
-    () => Array.from(new Set(directRequests.map(r => r.department).filter(Boolean))),
+    () => Array.from(new Set(directRequests.map((r: any) => r.department).filter(Boolean))),
     [directRequests]
   );
 
   // التصفية والفلترة المركبة
   const filteredRequests = useMemo(() => {
-    return directRequests.filter(req => {
+    return directRequests.filter((req: any) => {
       const sigStatus = String(req.signature_status || '').trim();
       
       if (activeTab === 'PendingSignature' && sigStatus === 'تم التوقيع') return false;
@@ -95,7 +95,7 @@ export default function SignaturesPage() {
 
   // 🌟 الترتيب الديناميكي للأعمدة
   const sortedRequests = useMemo(() => {
-    return [...filteredRequests].sort((a, b) => {
+    return [...filteredRequests].sort((a: any, b: any) => {
       let valA = a[sortColumn] ?? '';
       let valB = b[sortColumn] ?? '';
 
@@ -107,13 +107,13 @@ export default function SignaturesPage() {
     });
   }, [filteredRequests, sortColumn, sortDirection]);
 
-  const countPending = directRequests.filter(r => String(r.signature_status || '').trim() !== 'تم التوقيع').length;
-  const countSigned = directRequests.filter(r => String(r.signature_status || '').trim() === 'تم التوقيع').length;
+  const countPending = directRequests.filter((r: any) => String(r.signature_status || '').trim() !== 'تم التوقيع').length;
+  const countSigned = directRequests.filter((r: any) => String(r.signature_status || '').trim() === 'تم التوقيع').length;
   const countAll = directRequests.length;
 
   const handleSort = (columnKey: string) => {
     if (sortColumn === columnKey) {
-      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortColumn(columnKey);
       setSortDirection('asc');
@@ -125,7 +125,7 @@ export default function SignaturesPage() {
     return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▼</span>;
   };
 
-  // 🌟 التوقيع المجمع بفايربيز (مع حماية الـ 30 عنصر)
+  // 🌟 التوقيع المجمع بفايربيز
   const handleSign = async (reqId?: string) => {
     const idsToSign = reqId ? [reqId] : selectedIds;
     if (idsToSign.length === 0) return alert('يرجى تحديد عقد واحد على الأقل للتوقيع.');
@@ -137,12 +137,11 @@ export default function SignaturesPage() {
     try {
       const batch = writeBatch(db);
       
-      // تقسيم المصفوفة لدفعات (30 عنصر كحد أقصى) لتجنب أخطاء Firebase IN query
       for (let i = 0; i < idsToSign.length; i += 30) {
         const chunk = idsToSign.slice(i, i + 30);
         const q = query(collection(db, 'renewal_requests'), where('request_id', 'in', chunk));
         const snap = await getDocs(q);
-        snap.forEach(d => {
+        snap.forEach((d: any) => {
           batch.update(doc(db, 'renewal_requests', d.id), { signature_status: 'تم التوقيع' });
         });
       }
@@ -160,7 +159,7 @@ export default function SignaturesPage() {
     }
   };
 
-  // 🌟 الحذف المجمع بفايربيز (مع حماية الـ 30 عنصر)
+  // 🌟 الحذف المجمع بفايربيز
   const handleDelete = async (reqId?: string) => {
     const idsToDelete = reqId ? [reqId] : selectedIds;
     if (idsToDelete.length === 0) return alert('يرجى تحديد طلب واحد على الأقل للحذف.');
@@ -176,7 +175,7 @@ export default function SignaturesPage() {
         const chunk = idsToDelete.slice(i, i + 30);
         const q = query(collection(db, 'renewal_requests'), where('request_id', 'in', chunk));
         const snap = await getDocs(q);
-        snap.forEach(d => {
+        snap.forEach((d: any) => {
           batch.delete(doc(db, 'renewal_requests', d.id));
         });
       }
@@ -270,7 +269,7 @@ export default function SignaturesPage() {
         )}
       </div>
 
-      {/* الكروت الإحصائية التفاعلية 📊 */}
+      {/* الكروت الإحصائية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '20px' }}>
         <div 
           onClick={() => setActiveTab('PendingSignature')}
@@ -325,7 +324,7 @@ export default function SignaturesPage() {
             type="text" 
             placeholder="بحث بالاسم، الكود، رقم الطلب..." 
             value={searchTerm} 
-            onChange={e => setSearchTerm(e.target.value)} 
+            onChange={(e) => setSearchTerm(e.target.value)} 
             style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '220px', fontWeight: 'bold' }} 
           />
           
@@ -333,10 +332,10 @@ export default function SignaturesPage() {
             list="deptList" 
             placeholder="الإدارة (اكتب للبحث)..." 
             value={selectedDept} 
-            onChange={e => setSelectedDept(e.target.value)} 
+            onChange={(e) => setSelectedDept(e.target.value)} 
             style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '180px', fontWeight: 'bold' }} 
           />
-          <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
+          <datalist id="deptList">{deptsList.map((d: any, i: number) => <option key={i} value={d} />)}</datalist>
 
           <button onClick={() => { setSearchTerm(''); setSelectedDept(''); }} style={{ background: 'var(--paper, #f8fafc)', border: '1px solid var(--line, #e2e8f0)', color: 'var(--ink, #0f172a)', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
         </div>
@@ -346,7 +345,7 @@ export default function SignaturesPage() {
         </div>
       </div>
 
-      {/* الجدول الرئيسي مع ترتيب الأعمدة */}
+      {/* الجدول الرئيسي */}
       <div className="table-responsive" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflowX: 'auto' }}>
         {dataLoading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري تحميل عقود التوقيعات... ⏳</div>
@@ -357,8 +356,8 @@ export default function SignaturesPage() {
                 <th style={{ padding: '12px', textAlign: 'center', width: '40px' }}>
                   <input 
                     type="checkbox" 
-                    onChange={e => {
-                      const selectableIds = sortedRequests.map(r => r.request_id);
+                    onChange={(e) => {
+                      const selectableIds = sortedRequests.map((r: any) => r.request_id);
                       setSelectedIds(e.target.checked ? selectableIds : []);
                     }} 
                     checked={selectedIds.length > 0 && selectedIds.length === sortedRequests.length}
@@ -378,7 +377,7 @@ export default function SignaturesPage() {
             <tbody>
               {sortedRequests.length === 0 ? (
                 <tr><td colSpan={9} style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا توجد عقود معتمدة بانتظار التوقيع 🔍</td></tr>
-              ) : sortedRequests.map((req) => {
+              ) : sortedRequests.map((req: any) => {
                 const isSigned = String(req.signature_status || '').trim() === 'تم التوقيع';
 
                 return (
@@ -387,7 +386,7 @@ export default function SignaturesPage() {
                       <input 
                         type="checkbox" 
                         checked={selectedIds.includes(req.request_id)} 
-                        onChange={e => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter(id => id !== req.request_id))} 
+                        onChange={(e) => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter((id) => id !== req.request_id))} 
                         style={{ accentColor: 'var(--brass-600)' }}
                       />
                     </td>
