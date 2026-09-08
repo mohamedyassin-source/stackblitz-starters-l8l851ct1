@@ -6,7 +6,7 @@ import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
 // ============================================================
-// HELPERS (تم نقلها خارج المكون لتجنب تحذيرات Vercel)
+// HELPERS (تم نقلها خارج المكون لمنع تحذيرات Vercel)
 // ============================================================
 
 const getField = (obj: any, ...keys: string[]) => {
@@ -71,7 +71,71 @@ const getEmployeeAge = (emp: any) => {
 // ============================================================
 
 export default function EmployeesPage() {
-  const { employees = [], loading, refresh: fetchEmployees } = useAppData();
+  const { refresh: refreshGlobalData } = useAppData(); // 🌟 أداة التحديث العمومي
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // ============================================================
+  // FETCH & MERGE DATA (نفس منطق صفحة العقود لضمان التحديث اللحظي)
+  // ============================================================
+  const fetchData = async () => {
+    setLoading(true);
+    let allEmps: any[] = [];
+    let allContracts: any[] = [];
+    let from = 0;
+    const step = 1000;
+
+    // 1. جلب بيانات الموظفين
+    while (true) {
+      const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
+      if (error || !data || data.length === 0) break;
+      allEmps = [...allEmps, ...data];
+      if (data.length < step) break;
+      from += step;
+    }
+
+    // 2. جلب العقود
+    from = 0;
+    while (true) {
+      const { data, error } = await supabase.from('contracts').select('*').range(from, from + step - 1);
+      if (error || !data || data.length === 0) break;
+      allContracts = [...allContracts, ...data];
+      if (data.length < step) break;
+      from += step;
+    }
+
+    // 3. الدمج الذكي لأحدث عقد
+    const mergedEmployees = allEmps.map((emp) => {
+      const cleanCode = String(emp.employee_code).trim();
+      const empContracts = allContracts.filter(c => String(c.employee_code).trim() === cleanCode);
+      
+      empContracts.sort((a, b) => {
+        const startA = a.contract_start_date ? new Date(a.contract_start_date).getTime() : 0;
+        const startB = b.contract_start_date ? new Date(b.contract_start_date).getTime() : 0;
+        if (startB !== startA) return startB - startA;
+        const endA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 9999999999999;
+        const endB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 9999999999999;
+        return endB - endA;
+      });
+
+      const myContract = empContracts[0];
+
+      return {
+        ...emp,
+        contract_id: myContract?.id || null,
+        contract_type: myContract?.contract_type || emp.contract_type,
+        contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
+        contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
+      };
+    });
+
+    setEmployees(mergedEmployees);
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   // ============================================================
   // FILTER STATES
@@ -163,7 +227,7 @@ export default function EmployeesPage() {
   }, [activeEmployeesOnly]);
 
   // ============================================================
-  // MAIN FILTER & KPI
+  // MAIN FILTER
   // ============================================================
 
   const baseFilteredEmployees = useMemo(() => {
@@ -219,6 +283,10 @@ export default function EmployeesPage() {
     });
   }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
+  // ============================================================
+  // KPI 
+  // ============================================================
+
   const kpiStats = useMemo(() => {
     const validForKpi = baseFilteredEmployees.filter((emp: any) => {
       const dept = String(getField(emp, 'department', 'Department')).trim();
@@ -242,10 +310,12 @@ export default function EmployeesPage() {
 
     const pct = (value: number) => total ? ((value / total) * 100).toFixed(1) : '0';
 
-    return {
-      total, perm, permPct: pct(perm), fixed, fixedPct: pct(fixed), aboveAge, aboveAgePct: pct(aboveAge),
-    };
+    return { total, perm, permPct: pct(perm), fixed, fixedPct: pct(fixed), aboveAge, aboveAgePct: pct(aboveAge) };
   }, [baseFilteredEmployees]);
+
+  // ============================================================
+  // TABLE EMPLOYEES
+  // ============================================================
 
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter((emp: any) => {
@@ -262,7 +332,8 @@ export default function EmployeesPage() {
       if (sortColumn === 'age') {
         const aAge = getEmployeeAge(a) ?? 0;
         const bAge = getEmployeeAge(b) ?? 0;
-        return sortDirection === 'asc' ? aAge - bAge : bAge - aAge;
+        const result = aAge - bAge;
+        return sortDirection === 'asc' ? result : -result;
       }
       const aValue = String(getField(a, sortColumn) || '');
       const bValue = String(getField(b, sortColumn) || '');
@@ -270,6 +341,10 @@ export default function EmployeesPage() {
       return sortDirection === 'asc' ? result : -result;
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
+
+  // ============================================================
+  // TERMINATION SEARCH
+  // ============================================================
 
   const termSearchResults = useMemo(() => {
     const search = normalizeSearch(termSearch);
@@ -286,7 +361,7 @@ export default function EmployeesPage() {
 
   const handleSort = (column: string) => {
     if (sortColumn === column) {
-      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      setSortDirection((prev) => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
       setSortDirection('asc');
@@ -306,6 +381,7 @@ export default function EmployeesPage() {
     });
   };
 
+  // Jump search logic
   useEffect(() => {
     if (loading || !employees || employees.length === 0) return;
 
@@ -332,7 +408,7 @@ export default function EmployeesPage() {
     sessionStorage.removeItem('selectedEmployeeId'); sessionStorage.removeItem('employeeSearch'); sessionStorage.removeItem('jumpSearch');
   }, [employees, loading]);
 
-  // 🌟 نظام (Upsert) المُحصّن لمنع تحديث الأشباح
+  // 🌟 تعديل بيانات الموظف (محصن بـ Upsert و Select)
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -340,17 +416,16 @@ export default function EmployeesPage() {
 
     try {
       const emp = editData.emp;
-      const cleanCode = getEmployeeCode(emp);
-      if (!cleanCode) throw new Error('كود الموظف غير موجود.');
+      const employeeCode = getEmployeeCode(emp);
+      if (!employeeCode) throw new Error('كود الموظف غير موجود.');
 
       const rawHiring = getField(emp, 'hiring_date', 'HiringDate');
       const rawBirth = getField(emp, 'birth_date', 'BirthDate');
       const rawEnd = getField(emp, 'contract_end_date', 'ContractEndDate');
-      const empStatus = getField(emp, 'status', 'Status') || 'Active';
       const contractType = getField(emp, 'contract_type', 'ContractType');
 
       const employeeUpdate = {
-        employee_code: cleanCode,
+        employee_code: employeeCode,
         employee_name: getField(emp, 'employee_name', 'EmployeeName', 'ArabicName'),
         national_id: getField(emp, 'national_id', 'NationalID'),
         birth_date: rawBirth || null,
@@ -359,57 +434,47 @@ export default function EmployeesPage() {
         company: getField(emp, 'company', 'Company'),
         job_title: getField(emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring || null,
-        status: empStatus,
+        status: getField(emp, 'status', 'Status') || 'Active',
         email: getField(emp, 'email', 'Email'),
         mobile: getField(emp, 'mobile', 'Mobile', 'MOBILE'),
       };
 
-      // 1. تحديث الموظف مع التأكد من وجوده (select)
-      const { data: empDataResult, error: employeeError } = await supabase
-        .from('employees')
-        .update(employeeUpdate)
-        .eq('employee_code', cleanCode)
-        .select();
-
+      // 1. تحديث جدول الموظفين والتأكد إنه سمع
+      const { data: empRes, error: employeeError } = await supabase.from('employees').update(employeeUpdate).eq('employee_code', employeeCode).select();
       if (employeeError) throw employeeError;
-      if (!empDataResult || empDataResult.length === 0) {
-        alert(`⚠️ لم يتم العثور على الموظف (${cleanCode}) في قاعدة البيانات الأساسية لتحديثه.`);
+      if (!empRes || empRes.length === 0) {
+        alert(`⚠️ لم يتم العثور على الموظف كود (${employeeCode}) في الداتا بيز لتحديثه.`);
         setEditData({ ...editData, saving: false });
         return;
       }
 
-      // 2. تحديث العقد بنظام أوجد أو أنشئ (Upsert)
+      // 2. تحديث العقود بنظام (Upsert) عشان نتجنب الخطأ الصامت
       const contractUpdate = {
         contract_type: contractType,
         contract_end_date: rawEnd || null,
-        status: empStatus,
+        status: getField(emp, 'status', 'Status') || 'Active',
       };
 
-      const { data: existingContracts } = await supabase
-        .from('contracts')
-        .select('id')
-        .eq('employee_code', cleanCode)
-        .limit(1);
-
+      const { data: existingContracts } = await supabase.from('contracts').select('id').eq('employee_code', employeeCode).limit(1);
+      
       if (existingContracts && existingContracts.length > 0) {
-        const { error: updErr } = await supabase.from('contracts').update(contractUpdate).eq('employee_code', cleanCode);
-        if (updErr) throw updErr;
+        const { error: contractError } = await supabase.from('contracts').update(contractUpdate).eq('employee_code', employeeCode);
+        if (contractError) throw contractError;
       } else {
-        // لو ملوش عقد قديم متسجل، هنكريتله عقد جديد فوراً
-        const { error: insErr } = await supabase.from('contracts').insert([{ employee_code: cleanCode, ...contractUpdate }]);
-        if (insErr) throw insErr;
+        const { error: contractError } = await supabase.from('contracts').insert([{ employee_code: employeeCode, ...contractUpdate }]);
+        if (contractError) throw contractError;
       }
 
-      alert('تم حفظ التعديلات وتحديث العقد بنجاح ✅');
+      alert('تم حفظ التعديلات بنجاح ✅');
       setEditData(null);
-      await fetchEmployees();
+      await refreshGlobalData(); // تحديث الداش بورد
+      await fetchData();         // تحديث الجدول المحلي
     } catch (error: any) {
       alert('حدث خطأ أثناء الحفظ: ' + error.message);
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
     }
   };
 
-  // 🌟 تعديل الإنهاء: محصّن بـ Select
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -418,7 +483,7 @@ export default function EmployeesPage() {
     try {
       const empCode = getEmployeeCode(selectedTermEmp);
 
-      const { data: empDataResult, error } = await supabase.from('employees').update({
+      const { data: termRes, error } = await supabase.from('employees').update({
         department: 'تحويلات/تحت الاعتماد', 
         status: 'Inactive',
         termination_reason: termReason,
@@ -426,19 +491,17 @@ export default function EmployeesPage() {
       }).eq('employee_code', empCode).select();
 
       if (error) throw error;
-      if (!empDataResult || empDataResult.length === 0) {
-        alert(`⚠️ لم يتم العثور على الموظف (${empCode}).`);
-        setTermSaving(false);
-        return;
+      if (!termRes || termRes.length === 0) {
+        alert(`⚠️ لم يتم العثور على الموظف كود (${empCode}) لتحديثه.`);
+        setTermSaving(false); return;
       }
 
       await supabase.from('contracts').update({ status: 'Inactive' }).eq('employee_code', empCode);
 
       alert(`✅ تم تحويل الموظف (${getEmployeeName(selectedTermEmp)}) إلى قسم تحويلات/تحت الاعتماد.`);
-      setShowTermModal(false);
-      setSelectedTermEmp(null);
-      setTermSearch('');
-      await fetchEmployees();
+      setShowTermModal(false); setSelectedTermEmp(null); setTermSearch('');
+      await refreshGlobalData();
+      await fetchData();
     } catch (error: any) {
       alert('خطأ أثناء العملية: ' + error.message);
     } finally {
@@ -461,11 +524,9 @@ export default function EmployeesPage() {
       if (error) throw error;
 
       alert(`✅ تم نقل ${selectedEmpIds.length} موظف بنجاح.`);
-      setShowBulkTransferModal(false);
-      setSelectedEmpIds([]);
-      setBulkDept('');
-      setBulkCompany('');
-      await fetchEmployees();
+      setShowBulkTransferModal(false); setSelectedEmpIds([]); setBulkDept(''); setBulkCompany('');
+      await refreshGlobalData();
+      await fetchData();
     } catch (error: any) {
       alert('خطأ أثناء النقل المجمع: ' + error.message);
     } finally {
@@ -486,7 +547,8 @@ export default function EmployeesPage() {
 
       alert('تم حذف الموظفين بنجاح 🗑️✅');
       setSelectedEmpIds([]);
-      await fetchEmployees();
+      await refreshGlobalData();
+      await fetchData();
     } catch (error: any) {
       alert('حدث خطأ أثناء الحذف: ' + error.message);
     } finally {
@@ -494,7 +556,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 إضافة موظف جديد محصن
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -536,11 +597,9 @@ export default function EmployeesPage() {
 
       alert('تم إضافة الموظف وعقده بنجاح ✅');
       setShowAddModal(false);
-      setNewEmp({
-        employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '',
-      });
-
-      await fetchEmployees();
+      setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
+      await refreshGlobalData();
+      await fetchData();
     } catch (error: any) {
       alert('خطأ أثناء الإضافة: ' + error.message);
     }
@@ -563,7 +622,6 @@ export default function EmployeesPage() {
       Mobile: getField(emp, 'mobile', 'Mobile'),
       Email: getField(emp, 'email', 'Email'),
     }));
-
     const ws = XLSX.utils.json_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Employees');
@@ -582,7 +640,6 @@ export default function EmployeesPage() {
       if (days <= 60) return <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDate} ⏳</span>;
       return <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDate}</span>;
     }
-
     if (type === 'دائم') return <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
     return <span style={{ color: 'var(--muted)' }}>—</span>;
   };
@@ -601,7 +658,6 @@ export default function EmployeesPage() {
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين Active</h3>
           <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي للموظفين</p>
         </div>
-
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
           <button onClick={() => handleExportToExcel(false)} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>📥 تصدير Excel</button>
           <button onClick={() => { setShowTermModal(true); setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>🚫 Terminated</button>
@@ -615,19 +671,16 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)' }}>{kpiStats.total.toLocaleString('en-US')}</div>
           <div style={{ fontSize: '10px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>100% من القوة الحالية</div>
         </div>
-
         <div onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')} style={{ background: activeCardFilter === 'PERM' ? '#f0fdf4' : 'var(--paper-card)', border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid var(--line)', padding: '12px 16px', borderRadius: '12px', cursor: 'pointer' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold' }}>عقود دائمة</div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
           <div style={{ fontSize: '10px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>{kpiStats.permPct}% من القوة الحالية</div>
         </div>
-
         <div onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')} style={{ background: activeCardFilter === 'FIXED' ? '#eff6ff' : 'var(--paper-card)', border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid var(--line)', padding: '12px 16px', borderRadius: '12px', cursor: 'pointer' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold' }}>عقود محددة المدة</div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-blue)' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
           <div style={{ fontSize: '10px', color: 'var(--stamp-blue)', fontWeight: 'bold' }}>{kpiStats.fixedPct}% من القوة الحالية</div>
         </div>
-
         <div onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')} style={{ background: activeCardFilter === 'ABOVE_AGE' ? '#fef3c7' : 'var(--paper-card)', border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid var(--line)', padding: '12px 16px', borderRadius: '12px', cursor: 'pointer' }}>
           <div style={{ fontSize: '11px', fontWeight: 'bold' }}>موظفين فوق السن (60+)</div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
