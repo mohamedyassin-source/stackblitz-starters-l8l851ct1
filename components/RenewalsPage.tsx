@@ -1,8 +1,9 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import { useAppData } from '@/lib/DataContext';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 
 // 🌟 دالة تقطيع وتطهير نصوص التواريخ لمنع أخطاء التوقيع الزمني والـ ISO
 const parseDateParts = (dateStr: string | null | undefined) => {
@@ -50,7 +51,7 @@ const calculateNewEndDateFromStart = (startDateStr: string | null | undefined, m
 };
 
 export default function RenewalsPage() {
-  const { refresh: refreshGlobalData } = useAppData();
+  const { employees: globalEmployees, refresh: refreshGlobalData } = useAppData();
 
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,12 +88,18 @@ export default function RenewalsPage() {
     }
   }, [approvalModal, confirmedMonths]);
 
+  // 🌟 جلب الطلبات من Firebase
   const fetchRequests = async () => {
     setLoading(true);
-    const { data, error } = await supabase.from('renewal_requests').select('*');
-    if (error) console.error('Error fetching requests:', error.message);
-    if (data) setRequests(data);
-    setLoading(false);
+    try {
+      const snap = await getDocs(collection(db, 'renewal_requests'));
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRequests(data);
+    } catch (error: any) {
+      console.error('Error fetching requests:', error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getDaysRemaining = (endDateStr: string) => {
@@ -137,109 +144,83 @@ export default function RenewalsPage() {
   const countRejected = requests.filter(r => r.status === 'Rejected').length;
   const countAll = requests.length;
 
+  // 🌟 اعتماد مجمع أو فردي (مدمج باستخدام Firebase Batch)
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
-      if (approvalModal.type === 'single' && approvalModal.req) {
-        const req = approvalModal.req;
-        const newStartDate = customStartDate || calculateNewStartDate(req.contract_end_date);
-        const newEndDate = customEndDate || calculateNewEndDateFromStart(newStartDate, confirmedMonths);
+      const batch = writeBatch(db); // لضمان تنفيذ كل العمليات بنجاح أو التراجع عنها
+      const reqsToApprove = approvalModal.type === 'single' && approvalModal.req 
+        ? [approvalModal.req] 
+        : requests.filter(r => selectedIds.includes(r.request_id));
 
-        if (!newStartDate || !newEndDate) {
-          setActionLoading(false);
-          return alert('يرجى التأكد من إدخال تواريخ البداية والنهاية بشكل صحيح.');
-        }
+      for (const req of reqsToApprove) {
+        const newStartDate = approvalModal.type === 'single' && customStartDate ? customStartDate : calculateNewStartDate(req.contract_end_date);
+        const newEndDate = approvalModal.type === 'single' && customEndDate ? customEndDate : calculateNewEndDateFromStart(newStartDate, confirmedMonths);
 
-        if (!isValidYear(newStartDate) || !isValidYear(newEndDate)) {
-          setActionLoading(false);
-          return alert('يرجى التأكد من إدخال سنة صحيحة من 4 أرقام (مثال: 2026).');
+        if (!newStartDate || !newEndDate || !isValidYear(newStartDate) || !isValidYear(newEndDate)) {
+          throw new Error(`تواريخ غير صالحة للموظف: ${req.employee_name}`);
         }
 
         // 1. تحديث جدول طلبات التجديد
-        const { error: reqError } = await supabase.from('renewal_requests').update({
-          status: 'Approved',
-          signature_status: 'في انتظار توقيع الموظف',
-          renewal_months: confirmedMonths,
-          new_contract_end_date: newEndDate
-        }).eq('request_id', req.request_id);
-
-        if (reqError) throw reqError;
+        const reqQ = query(collection(db, 'renewal_requests'), where('request_id', '==', req.request_id));
+        const reqSnap = await getDocs(reqQ);
+        if (!reqSnap.empty) {
+          batch.update(doc(db, 'renewal_requests', reqSnap.docs[0].id), {
+            status: 'Approved',
+            signature_status: 'في انتظار توقيع الموظف',
+            renewal_months: confirmedMonths,
+            new_contract_end_date: newEndDate
+          });
+        }
 
         // 2. تحديث جدول العقود
-        await supabase.from('contracts').update({
-          contract_start_date: newStartDate,
-          contract_end_date: newEndDate,
-          status: 'Active'
-        }).eq('employee_code', req.employee_code);
-
-        // 3. تحديث جدول الموظفين لربط البيانات مباشرة
-        await supabase.from('employees').update({
-          contract_start_date: newStartDate,
-          contract_end_date: newEndDate
-        }).eq('employee_code', req.employee_code);
-
-        alert(`تم اعتماد الطلب وتحديث العقد بنجاح: \n يبدأ في: ${newStartDate} \n ينتهي في: ${newEndDate} ✅`);
-        await refreshGlobalData();
-
-      } else if (approvalModal.type === 'bulk') {
-        const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
-        const updatePromises = reqsToApprove.map(async (req) => {
-          const newStartDate = calculateNewStartDate(req.contract_end_date);
-          const newEndDate = calculateNewEndDateFromStart(newStartDate, confirmedMonths);
-
-          if (newStartDate && newEndDate && isValidYear(newStartDate) && isValidYear(newEndDate)) {
-            // تحديث الطلب
-            const { error: reqError } = await supabase.from('renewal_requests').update({
-              status: 'Approved',
-              signature_status: 'في انتظار توقيع الموظف',
-              renewal_months: confirmedMonths,
-              new_contract_end_date: newEndDate
-            }).eq('request_id', req.request_id);
-
-            if (reqError) throw reqError;
-
-            // تحديث جدول العقود وجدول الموظفين
-            await supabase.from('contracts').update({
-              contract_start_date: newStartDate,
-              contract_end_date: newEndDate,
-              status: 'Active'
-            }).eq('employee_code', req.employee_code);
-
-            await supabase.from('employees').update({
-              contract_start_date: newStartDate,
-              contract_end_date: newEndDate
-            }).eq('employee_code', req.employee_code);
-          }
+        const contQ = query(collection(db, 'contracts'), where('employee_code', '==', req.employee_code), where('status', '==', 'Active'));
+        const contSnap = await getDocs(contQ);
+        contSnap.forEach(d => {
+          batch.update(doc(db, 'contracts', d.id), {
+            contract_start_date: newStartDate,
+            contract_end_date: newEndDate,
+            status: 'Active'
+          });
         });
 
-        await Promise.all(updatePromises);
-        alert(`تم اعتماد ${reqsToApprove.length} طلب وتحديث عقود الموظفين بنجاح ✅`);
-        await refreshGlobalData();
+        // 3. تحديث جدول الموظفين
+        const empQ = query(collection(db, 'employees'), where('employee_code', '==', req.employee_code));
+        const empSnap = await getDocs(empQ);
+        empSnap.forEach(d => {
+          batch.update(doc(db, 'employees', d.id), {
+            contract_start_date: newStartDate,
+            contract_end_date: newEndDate
+          });
+        });
       }
 
+      await batch.commit(); // تنفيذ كل التحديثات دفعة واحدة!
+
+      alert(`تم اعتماد ${reqsToApprove.length} طلب وتحديث العقود بنجاح ✅`);
       setSelectedIds([]);
       setApprovalModal({ isOpen: false, type: 'single' });
+      await refreshGlobalData();
       await fetchRequests();
-
     } catch (err: any) {
-      alert('حدث خطأ أثناء الاعتماد أو تحديث بيانات العقد: ' + err.message);
+      alert('حدث خطأ أثناء الاعتماد: ' + err.message);
     } finally {
       setActionLoading(false);
     }
   };
 
+  // 🌟 حذف الطلب من Firebase
   const handleDeleteRequest = async (requestId: string) => {
     const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟\n\nتنبيه: سيتم إزالة الطلب وكأنه لم يكن.');
     if (!confirmDelete) return;
 
     setActionLoading(true);
     try {
-      const { error } = await supabase
-        .from('renewal_requests')
-        .delete()
-        .eq('request_id', requestId);
-
-      if (error) throw error;
+      const reqQ = query(collection(db, 'renewal_requests'), where('request_id', '==', requestId));
+      const snap = await getDocs(reqQ);
+      if (!snap.empty) {
+        await deleteDoc(doc(db, 'renewal_requests', snap.docs[0].id));
+      }
 
       alert('تم حذف طلب التجديد بنجاح 🗑️✅');
       setApprovalModal({ isOpen: false, type: 'single' });
@@ -252,25 +233,33 @@ export default function RenewalsPage() {
     }
   };
 
+  // 🌟 رفض الطلب في Firebase
   const handleReject = async (requestId: string) => {
     const confirmReject = window.confirm('هل أنت متأكد من رفض هذا الطلب نهائياً؟');
     if (!confirmReject) return;
 
     setActionLoading(true);
-    const { error } = await supabase.from('renewal_requests').update({
-      status: 'Rejected',
-      signature_status: 'مرفوض'
-    }).eq('request_id', requestId);
+    try {
+      const reqQ = query(collection(db, 'renewal_requests'), where('request_id', '==', requestId));
+      const snap = await getDocs(reqQ);
+      if (!snap.empty) {
+        await updateDoc(doc(db, 'renewal_requests', snap.docs[0].id), {
+          status: 'Rejected',
+          signature_status: 'مرفوض'
+        });
+      }
 
-    if (error) alert('حدث خطأ أثناء رفض الطلب: ' + error.message);
-    else {
       alert('تم رفض الطلب بنجاح ❌');
       await refreshGlobalData();
-      fetchRequests();
+      await fetchRequests();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء رفض الطلب: ' + err.message);
+    } finally {
+      setActionLoading(false);
     }
-    setActionLoading(false);
   };
 
+  // 🌟 تصدير للإكسيل (تم الاستغناء عن جلب البيانات لأنها جاهزة في globalEmployees)
   const handleExportApprovedToExcel = async () => {
     if (selectedIds.length === 0) return alert('يرجى تحديد طلبات أولاً.');
     setActionLoading(true);
@@ -283,12 +272,9 @@ export default function RenewalsPage() {
         return alert('⚠️ لا يمكن تصدير هذا الكشف. يرجى التأكد من تحديد طلبات معتمدة فقط من الجدول.');
       }
 
-      const empCodes = selectedReqs.map(r => r.employee_code);
-      const { data: emps, error } = await supabase.from('employees').select('employee_code, national_id').in('employee_code', empCodes);
-      if (error) throw error;
-
       const exportData = selectedReqs.map(req => {
-        const empDetails = emps?.find(e => e.employee_code === req.employee_code);
+        // سحب البيانات من الداتا الجاهزة في الداش بورد بدون استدعاء من السيرفر! 🚀
+        const empDetails = globalEmployees?.find((e: any) => e.employee_code === req.employee_code);
         const newStart = calculateNewStartDate(req.contract_end_date);
 
         return {
@@ -312,7 +298,6 @@ export default function RenewalsPage() {
       XLSX.writeFile(wb, `كشف_عقود_التجديد_${new Date().toISOString().split('T')[0]}.xlsx`);
 
       setActionLoading(false);
-
     } catch (err: any) {
       alert('حدث خطأ أثناء تجهيز الإكسيل: ' + err.message);
       setActionLoading(false);
