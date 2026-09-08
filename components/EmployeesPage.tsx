@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
 
 // ============================================================
 // HELPERS
@@ -438,9 +438,9 @@ export default function EmployeesPage() {
 
       const contQ = query(collection(db, 'contracts'), where('employee_code', '==', empCode), where('status', '==', 'Active'));
       const contSnap = await getDocs(contQ);
-      for (const d of contSnap.docs) {
-        await updateDoc(doc(db, 'contracts', d.id), { status: 'Inactive' });
-      }
+      contSnap.forEach((d: any) => {
+        updateDoc(doc(db, 'contracts', d.id), { status: 'Inactive' });
+      });
 
       alert(`✅ تم تحويل الموظف (${getEmployeeName(selectedTermEmp)}) إلى قسم تحويلات/تحت الاعتماد.`);
       setShowTermModal(false); setSelectedTermEmp(null); setTermSearch('');
@@ -497,12 +497,12 @@ export default function EmployeesPage() {
         // حذف من الموظفين
         const empQ = query(collection(db, 'employees'), where('employee_code', '==', code));
         const empSnap = await getDocs(empQ);
-        empSnap.forEach(d => batch.delete(doc(db, 'employees', d.id)));
+        empSnap.forEach((d: any) => batch.delete(doc(db, 'employees', d.id)));
 
         // حذف من العقود
         const contQ = query(collection(db, 'contracts'), where('employee_code', '==', code));
         const contSnap = await getDocs(contQ);
-        contSnap.forEach(d => batch.delete(doc(db, 'contracts', d.id)));
+        contSnap.forEach((d: any) => batch.delete(doc(db, 'contracts', d.id)));
       }
       await batch.commit();
 
