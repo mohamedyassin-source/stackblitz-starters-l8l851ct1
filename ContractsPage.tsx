@@ -94,6 +94,13 @@ export default function ContractsPage() {
     setLoading(false);
   };
 
+  // ✅ الدالة اللي كانت ناقصة وعملت الإيرور في الرفع
+  const isValidYear = (dateStr: string) => {
+    if (!dateStr) return false;
+    const year = parseInt(dateStr.split('-')[0], 10);
+    return year >= 2000 && year <= 2099;
+  };
+
   const getDaysRemaining = (endDateStr: string) => {
     if (!endDateStr) return null;
     const end = new Date(endDateStr);
@@ -154,7 +161,8 @@ export default function ContractsPage() {
       if (selectedType === 'دائم_مجمع') matchesType = emp.contract_type?.includes('دائم') || emp.contract_type?.includes('غير محدد');
       else if (selectedType === 'محدد_مجمع') matchesType = emp.contract_type?.includes('محدد') && !emp.contract_type?.includes('فوق السن');
       else if (selectedType === 'فوق_السن_مجمع') matchesType = emp.contract_type?.includes('فوق السن');
-      else if (selectedType === 'مكافأة_مجمع') matchesType = emp.contract_type?.includes('مكافأة') || emp.contract_type?.includes('مكافأه');
+      else if (selectedType === 'مكافأة_مجمع') matchesType = emp.contract_type?.includes('مكافأة') || emp.contract_type?.includes('مكافأه') || emp.contract_type?.includes('reward');
+      else if (selectedType === 'filter_project') matchesType = emp.contract_type?.includes('مهمة') || emp.contract_type?.includes('مشروع');
       else matchesType = emp.contract_type === selectedType;
     }
 
@@ -317,6 +325,7 @@ export default function ContractsPage() {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
     if (!newContractStartDate || !newContractEndDate) return alert('يرجى استكمال جميع البيانات.');
+    if (!isValidYear(newContractStartDate) || !isValidYear(newContractEndDate)) return alert('يرجى إدخال سنة صحيحة (مثال: 2024).');
     if (new Date(newContractEndDate) <= new Date(newContractStartDate)) return alert('تاريخ نهاية العقد يجب أن يكون بعد تاريخ البداية.');
     
     setActionLoading(true);
@@ -359,6 +368,7 @@ export default function ContractsPage() {
 
   const confirmRenewalAction = async () => {
     if (renewalMode === 'custom' && !customEndDate) return alert('يرجى إدخال تاريخ الانتهاء المخصص.');
+    if (renewalMode === 'custom' && !isValidYear(customEndDate)) return alert('يرجى إدخال تاريخ انتهاء صحيح.');
     setActionLoading(true);
 
     if (modalState.type === 'single' && modalState.emp) {
@@ -484,7 +494,6 @@ export default function ContractsPage() {
       {/* 📊 الكروت الإحصائية */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '20px' }}>
         
-        {/* العقود الدائمة */}
         <div className="erp-card" onClick={() => { setSelectedType('دائم_مجمع'); setExpiryStatus(''); }} style={{ borderRight: '4px solid #0284c7', background: selectedType === 'دائم_مجمع' ? '#f0f9ff' : '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>العقود الدائمة</span>
@@ -497,7 +506,6 @@ export default function ContractsPage() {
           <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
 
-        {/* العقود المحددة */}
         <div className="erp-card" onClick={() => { setSelectedType('محدد_مجمع'); setExpiryStatus(''); }} style={{ borderRight: '4px solid #2563eb', background: selectedType === 'محدد_مجمع' ? '#eff6ff' : '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>العقود المحددة</span>
@@ -510,7 +518,6 @@ export default function ContractsPage() {
           <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
 
-        {/* عقود فوق السن */}
         <div className="erp-card" onClick={() => { setSelectedType('فوق_السن_مجمع'); setExpiryStatus(''); }} style={{ borderRight: '4px solid #7c3aed', background: selectedType === 'فوق_السن_مجمع' ? '#f5f3ff' : '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>عقود فوق السن</span>
@@ -523,7 +530,6 @@ export default function ContractsPage() {
           <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
 
-        {/* المكافأة الشاملة */}
         <div className="erp-card" onClick={() => { setSelectedType('مكافأة_مجمع'); setExpiryStatus(''); }} style={{ borderRight: '4px solid #059669', background: selectedType === 'مكافأة_مجمع' ? '#ecfdf5' : '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>المكافأة الشاملة</span>
@@ -536,7 +542,6 @@ export default function ContractsPage() {
           <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>من إجمالي قوة العمل</span>
         </div>
 
-        {/* تنتهي قريباً */}
         <div className="erp-card" onClick={() => { setExpiryStatus('expiring_60'); setSelectedType(''); }} style={{ borderRight: '4px solid #ea580c', background: expiryStatus === 'expiring_60' ? '#fff7ed' : '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>تنتهي قريباً</span>
@@ -548,7 +553,6 @@ export default function ContractsPage() {
           <span style={{ fontSize: '10px', color: '#94a3b8', marginTop: '6px' }}>متبقي 60 يوم أو أقل</span>
         </div>
 
-        {/* منتهية المدة */}
         <div className="erp-card" onClick={() => { setExpiryStatus('expired'); setSelectedType(''); }} style={{ borderRight: '4px solid #dc2626', background: expiryStatus === 'expired' ? '#fef2f2' : '#fff' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '11px', fontWeight: '700', color: '#475569' }}>منتهية المدة</span>
@@ -561,7 +565,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🌟 شريط الفلاتر بعد النظافة الشاملة */}
+      {/* شريط الفلاتر */}
       <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '250px' }} />
@@ -692,7 +696,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* ✏️ نافذة التعديل السريع للموظف بعد النظافة */}
+      {/* ✏️ نافذة التعديل السريع للموظف */}
       {isEditModalOpen && editEmpData && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '450px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
