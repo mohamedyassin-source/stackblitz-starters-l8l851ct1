@@ -16,11 +16,13 @@ export default function ContractsPage() {
   const [selectedType, setSelectedType] = useState('');
   const [expiryStatus, setExpiryStatus] = useState('');
 
-  // 🔄 حالة الترتيب
+  // 🔄 حالة الترتيب (Sorting)
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' } | null>(null);
 
+  // حالة التحديد المجمع (Checkboxes)
   const [selectedEmpCodes, setSelectedEmpCodes] = useState<string[]>([]);
 
+  // حالات نافذة التجديد (فردي ومجمع)
   const [modalState, setModalState] = useState<{
     isOpen: boolean;
     type: 'single' | 'bulk';
@@ -30,6 +32,7 @@ export default function ContractsPage() {
   const [renewalMonths, setRenewalMonths] = useState<number>(12);
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
+  // حالات نافذة إنشاء عقد جديد
   const [isNewContractModalOpen, setIsNewContractModalOpen] = useState(false);
   const [selectedEmployeeCode, setSelectedEmployeeCode] = useState('');
   const [empSearchTerm, setEmpSearchTerm] = useState('');
@@ -37,18 +40,22 @@ export default function ContractsPage() {
   const [newContractEndDate, setNewContractEndDate] = useState('');
   const [newContractType, setNewContractType] = useState('مكافأة شاملة');
 
+  // حالة نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
   const [terminateSearchTerm, setTerminateSearchTerm] = useState('');
 
+  // ✏️ حالات نافذة التعديل السريع للموظف
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editEmpData, setEditEmpData] = useState<any>(null);
 
+  // 🔄 حالات نافذة عودة الموظفين غير النشطين
   const [isReactivateModalOpen, setIsReactivateModalOpen] = useState(false);
   const [reactivateEmployeeCode, setReactivateEmployeeCode] = useState('');
   const [reactivateSearchTerm, setReactivateSearchTerm] = useState('');
   const [reactivateDept, setReactivateDept] = useState('');
 
+  // حالة نموذج الـ PDF
   const [createdRequestData, setCreatedRequestData] = useState<any>(null);
 
   useEffect(() => {
@@ -68,7 +75,6 @@ export default function ContractsPage() {
     let from = 0;
     const step = 1000;
 
-    // 1. جلب الموظفين
     while (true) {
       const { data, error } = await supabase.from('employees').select('*').range(from, from + step - 1);
       if (error || !data || data.length === 0) break;
@@ -77,17 +83,15 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 2. جلب كافة العقود (حتى المنتهية عشان نعرف الهيستوري)
     from = 0;
     while (true) {
-      const { data, error } = await supabase.from('contracts').select('*').range(from, from + step - 1);
+      const { data, error } = await supabase.from('contracts').select('*').eq('status', 'Active').range(from, from + step - 1);
       if (error || !data || data.length === 0) break;
       allContracts = [...allContracts, ...data];
       if (data.length < step) break;
       from += step;
     }
 
-    // 3. جلب طلبات التجديد
     from = 0;
     while (true) {
       const { data, error } = await supabase.from('renewal_requests').select('employee_code, status, signature_status, request_id').range(from, from + step - 1);
@@ -97,26 +101,14 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 4. الدمج الذكي لاختيار أحدث عقد
     const mergedEmployees = allEmps.map(emp => {
-      const cleanEmpCode = String(emp.employee_code).trim();
-      const empContracts = allContracts.filter(c => String(c.employee_code).trim() === cleanEmpCode);
-      
-      // الترتيب: الأحدث بدايةً عشان نتفادى عقود الـ null
-      empContracts.sort((a, b) => {
-        const startA = a.contract_start_date ? new Date(a.contract_start_date).getTime() : 0;
-        const startB = b.contract_start_date ? new Date(b.contract_start_date).getTime() : 0;
-        if (startB !== startA) return startB - startA;
-        const endA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 9999999999999;
-        const endB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 9999999999999;
-        return endB - endA;
-      });
-
+      const empContracts = allContracts.filter(c => String(c.employee_code) === String(emp.employee_code));
+      empContracts.sort((a, b) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
       const myContract = empContracts[0];
 
       return {
         ...emp,
-        contract_id: myContract?.id || null, // 🌟 بنحفظ الـ ID عشان نعدل عليه بسهولة
+        contract_id: myContract?.id || null, 
         contract_type: myContract?.contract_type || emp.contract_type,
         contract_start_date: myContract?.contract_start_date || emp.contract_start_date,
         contract_end_date: myContract?.contract_end_date || emp.contract_end_date,
@@ -264,7 +256,12 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  // 🌟 معالجة الأخطاء الصارمة في الإنهاء
+  const getEmpId = (emp: any) => {
+    if (!emp) return '0';
+    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
+  };
+
+  // 🌟 تعديل صارم: بنطلب من السيستم يرجعلنا بيانات التعديل عشان نتأكد إنها ماكنتش 0 صفوف
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -272,13 +269,16 @@ export default function ContractsPage() {
     if (!confirmTerm) return;
     
     setActionLoading(true);
-    const cleanCode = String(terminateEmployeeCode).trim();
+    const exactCode = terminateEmployeeCode; // بدون trim عشان لو الداتا بيز فيها مسافات تتجاب بالظبط
     
     try {
-      const { error: empErr } = await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', cleanCode);
+      const { data: empData, error: empErr } = await supabase.from('employees').update({ status: 'Terminated' }).eq('employee_code', exactCode).select();
       if (empErr) throw empErr;
+      if (!empData || empData.length === 0) {
+        alert(`⚠️ لم يتم العثور على الموظف (${exactCode}) في جدول الموظفين لتحديثه.`);
+      }
 
-      const { error: updErr } = await supabase.from('contracts').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', cleanCode).eq('status', 'Active');
+      const { data: updData, error: updErr } = await supabase.from('contracts').update({ contract_type: 'إنهاء تعاقد', status: 'Terminated' }).eq('employee_code', exactCode).eq('status', 'Active').select();
       if (updErr) throw updErr;
 
       alert('تم إنهاء التعاقد بنجاح ✅'); 
@@ -301,12 +301,12 @@ export default function ContractsPage() {
       contract_type: emp.contract_type || 'محدد المدة',
       contract_start_date: emp.contract_start_date ? String(emp.contract_start_date).split('T')[0] : '',
       contract_end_date: emp.contract_end_date ? String(emp.contract_end_date).split('T')[0] : '',
-      contract_id: emp.contract_id // 🌟
+      contract_id: emp.contract_id 
     });
     setIsEditModalOpen(true);
   };
 
-  // 🌟 تعديل العقد: محمي ضد الـ Silent Failures
+  // 🌟 تعديل العقد: محمي ضد الأشباح
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEmpData) return;
@@ -315,9 +315,9 @@ export default function ContractsPage() {
     if (editEmpData.contract_end_date && !isValidYear(editEmpData.contract_end_date)) return alert('يرجى إدخال سنة نهاية صحيحة.');
 
     setActionLoading(true);
+    const exactCode = editEmpData.employee_code;
     
     try {
-      const cleanCode = String(editEmpData.employee_code).trim();
       const contractData = {
         contract_type: editEmpData.contract_type,
         contract_start_date: editEmpData.contract_start_date || null,
@@ -326,19 +326,22 @@ export default function ContractsPage() {
       };
 
       if (editEmpData.contract_id) {
-        const { error: updErr } = await supabase.from('contracts').update(contractData).eq('id', editEmpData.contract_id);
+        const { data, error: updErr } = await supabase.from('contracts').update(contractData).eq('id', editEmpData.contract_id).select();
         if (updErr) throw updErr;
       } else {
-        const { data: updated, error: updErr2 } = await supabase.from('contracts').update(contractData).eq('employee_code', cleanCode).select();
+        const { data: updated, error: updErr2 } = await supabase.from('contracts').update(contractData).eq('employee_code', exactCode).select();
         if (updErr2) throw updErr2;
         if (!updated || updated.length === 0) {
-          const { error: insErr } = await supabase.from('contracts').insert([{ employee_code: cleanCode, ...contractData }]);
+          const { error: insErr } = await supabase.from('contracts').insert([{ employee_code: exactCode, ...contractData }]);
           if (insErr) throw insErr;
         }
       }
 
-      const { error: empErr } = await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', cleanCode);
+      const { data: empData, error: empErr } = await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', exactCode).select();
       if (empErr) throw empErr;
+      if (!empData || empData.length === 0) {
+        alert(`⚠️ تم تحديث العقد لكن لم يتم العثور على الموظف في جدول الموظفين لتنشيطه!`);
+      }
 
       alert('تم تعديل بيانات العقد بنجاح ✅');
       setIsEditModalOpen(false);
@@ -351,20 +354,25 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 إعادة التفعيل: إضافة عقد جديد أو تعديل الحالي بقوة
+  // 🌟 إعادة التفعيل: محمي ومراقب
   const handleReactivateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmployeeCode) return alert('يرجى اختيار الموظف المراد إعادة تفعيله.');
     if (!reactivateDept) return alert('يرجى تحديد الإدارة التي سيعود إليها الموظف.');
 
     setActionLoading(true);
+    const exactCode = reactivateEmployeeCode;
 
     try {
-      const cleanCode = String(reactivateEmployeeCode).trim();
-      const { error: empErr } = await supabase.from('employees').update({ status: 'Active', department: reactivateDept }).eq('employee_code', cleanCode);
-      if (empErr) throw empErr;
+      const { data: empData, error: empErr } = await supabase.from('employees').update({
+        status: 'Active',
+        department: reactivateDept,
+      }).eq('employee_code', exactCode).select();
 
-      const contractData = { employee_code: cleanCode, contract_type: 'محدد المدة', status: 'Active' };
+      if (empErr) throw empErr;
+      if (!empData || empData.length === 0) alert(`⚠️ الموظف كود ${exactCode} غير موجود بجدول employees`);
+
+      const contractData = { employee_code: exactCode, contract_type: 'محدد المدة', status: 'Active' };
       const { error: insErr } = await supabase.from('contracts').insert([contractData]);
       if (insErr) throw insErr;
 
@@ -382,7 +390,7 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 إنشاء العقد الجديد تماماً: بيعمل Insert إجباري لضمان حفظ التاريخ وتجاهل القديم
+  // 🌟 إنشاء العقد الجديد تماماً: فحص دقيق ورد فعل واضح لو الجدول ملمسش صفوف
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -392,31 +400,32 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     const emp = employees.find((e) => e.employee_code === selectedEmployeeCode);
+    const exactCode = emp.employee_code; // أخذنا الكود الحقيقي بالضبط
     const [reqId] = generateSequentialIds(1);
 
     try {
-      const cleanCode = String(emp.employee_code).trim();
-      
       const contractData = {
-        employee_code: cleanCode,
+        employee_code: exactCode,
         contract_type: newContractType,
         contract_start_date: newContractStartDate,
         contract_end_date: newContractEndDate,
         status: 'Active'
       };
 
-      // 1. Insert New Contract Always (to keep history of terminated ones)
-      const { error: insErr } = await supabase.from('contracts').insert([contractData]);
+      // 1. Insert New Contract Always
+      const { data: insData, error: insErr } = await supabase.from('contracts').insert([contractData]).select();
       if (insErr) throw insErr;
+      if (!insData || insData.length === 0) alert('⚠️ لم يتم إدراج العقد في جدول contracts لأسباب غير معروفة!');
 
       // 2. Update Employee Status
-      const { error: empErr } = await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', cleanCode);
+      const { data: empData, error: empErr } = await supabase.from('employees').update({ status: 'Active' }).eq('employee_code', exactCode).select();
       if (empErr) throw empErr;
+      if (!empData || empData.length === 0) alert(`⚠️ تم إنشاء العقد لكن الكود (${exactCode}) لم يتم العثور عليه في جدول employees لتفعيله!`);
 
       // 3. Insert to Renewal Requests for Signature Tracking
       const requestPayload = {
         request_id: reqId,
-        employee_code: cleanCode,
+        employee_code: exactCode,
         employee_name: emp.employee_name,
         department: emp.department,
         job_title: emp.job_title,
@@ -428,12 +437,11 @@ export default function ContractsPage() {
         request_date: new Date().toISOString().split('T')[0],
       };
 
-      const { error: reqErr } = await supabase.from('renewal_requests').insert([requestPayload]);
+      const { data: reqData, error: reqErr } = await supabase.from('renewal_requests').insert([requestPayload]).select();
       if (reqErr) throw reqErr;
 
       setActionLoading(false);
       setIsNewContractModalOpen(false);
-      // 🌟 بنمرر نوع العقد للذاكرة المؤقتة عشان الـ PDF يفهمه ويطبع بند الـ 50%
       setCreatedRequestData({ ...requestPayload, contract_type: newContractType });
       alert(`تم إنشاء العقد وتحويله لصفحة التوقيع بنجاح ✅`);
       await refreshGlobalData();
@@ -930,7 +938,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة الـ PDF للطباعة (فيها بند الـ 50% الخاص بالمكافأة الشاملة) */}
+      {/* نافذة الـ PDF للطباعة */}
       {createdRequestData && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ background: '#fff', borderRadius: '12px', width: '750px', maxHeight: '90vh', overflowY: 'auto', padding: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.4)' }}>
@@ -958,7 +966,6 @@ export default function ContractsPage() {
               <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}>
                 <strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.
                 
-                {/* 🌟 بند المكافأة الشاملة 50% */}
                 {String(createdRequestData.contract_type || '').includes('مكافأة') && (
                   <div style={{ marginTop: '10px', color: '#b8934a', fontWeight: 'bold' }}>* يُتفق بين الطرفين على أن يكون هذا العقد بنظام المكافأة الشاملة، على أن تمثل هذه المكافأة نسبة 50% من إجمالي الأجر المتفق عليه.</div>
                 )}
