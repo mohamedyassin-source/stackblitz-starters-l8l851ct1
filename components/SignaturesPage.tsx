@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, doc, writeBatch } from 'firebase/firestore';
 
 const ARABIC_WEEKDAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
@@ -45,16 +46,13 @@ export default function SignaturesPage() {
     fetchApprovedData();
   }, []);
 
-  // 🌟 جلب مباشر ومضمون لكافة الطلبات المعتمدة من قاعدة البيانات
+  // 🌟 جلب مباشر ومضمون لكافة الطلبات المعتمدة من Firebase
   const fetchApprovedData = async () => {
     setDataLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('renewal_requests')
-        .select('*')
-        .ilike('status', 'Approved');
-
-      if (error) throw error;
+      const q = query(collection(db, 'renewal_requests'), where('status', '==', 'Approved'));
+      const snap = await getDocs(q);
+      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setDirectRequests(data || []);
     } catch (err: any) {
       console.error('Error fetching approved requests:', err.message);
@@ -127,6 +125,7 @@ export default function SignaturesPage() {
     return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600)', marginRight: '4px' }}>▼</span>;
   };
 
+  // 🌟 التوقيع المجمع بفايربيز (مع حماية الـ 30 عنصر)
   const handleSign = async (reqId?: string) => {
     const idsToSign = reqId ? [reqId] : selectedIds;
     if (idsToSign.length === 0) return alert('يرجى تحديد عقد واحد على الأقل للتوقيع.');
@@ -136,12 +135,19 @@ export default function SignaturesPage() {
 
     setActionLoading(true);
     try {
-      const { error } = await supabase
-        .from('renewal_requests')
-        .update({ signature_status: 'تم التوقيع' })
-        .in('request_id', idsToSign);
+      const batch = writeBatch(db);
+      
+      // تقسيم المصفوفة لدفعات (30 عنصر كحد أقصى) لتجنب أخطاء Firebase IN query
+      for (let i = 0; i < idsToSign.length; i += 30) {
+        const chunk = idsToSign.slice(i, i + 30);
+        const q = query(collection(db, 'renewal_requests'), where('request_id', 'in', chunk));
+        const snap = await getDocs(q);
+        snap.forEach(d => {
+          batch.update(doc(db, 'renewal_requests', d.id), { signature_status: 'تم التوقيع' });
+        });
+      }
 
-      if (error) throw error;
+      await batch.commit();
 
       alert('تم تسجيل التوقيع بنجاح ✍️✅');
       setSelectedIds([]);
@@ -154,6 +160,7 @@ export default function SignaturesPage() {
     }
   };
 
+  // 🌟 الحذف المجمع بفايربيز (مع حماية الـ 30 عنصر)
   const handleDelete = async (reqId?: string) => {
     const idsToDelete = reqId ? [reqId] : selectedIds;
     if (idsToDelete.length === 0) return alert('يرجى تحديد طلب واحد على الأقل للحذف.');
@@ -163,12 +170,18 @@ export default function SignaturesPage() {
 
     setActionLoading(true);
     try {
-      const { error } = await supabase
-        .from('renewal_requests')
-        .delete()
-        .in('request_id', idsToDelete);
+      const batch = writeBatch(db);
+      
+      for (let i = 0; i < idsToDelete.length; i += 30) {
+        const chunk = idsToDelete.slice(i, i + 30);
+        const q = query(collection(db, 'renewal_requests'), where('request_id', 'in', chunk));
+        const snap = await getDocs(q);
+        snap.forEach(d => {
+          batch.delete(doc(db, 'renewal_requests', d.id));
+        });
+      }
 
-      if (error) throw error;
+      await batch.commit();
 
       alert('تم حذف الطلبات بنجاح 🗑️✅');
       setSelectedIds([]);
