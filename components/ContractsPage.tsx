@@ -101,8 +101,8 @@ export default function ContractsPage() {
       from += step;
     }
 
-    // 🌟 دمج ذكي يجلب "أحدث" عقد للموظف لو عنده كذا عقد
     const mergedEmployees = allEmps.map(emp => {
+      // نجلب أحدث عقد نشط للموظف
       const empContracts = allContracts.filter(c => String(c.employee_code) === String(emp.employee_code));
       empContracts.sort((a, b) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
       const myContract = empContracts[0];
@@ -289,7 +289,6 @@ export default function ContractsPage() {
     setIsEditModalOpen(true);
   };
 
-  // 🌟 تعديل العقد: حلينا مشكلة الأشباح بإضافة Upsert Logic
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editEmpData) return;
@@ -298,7 +297,7 @@ export default function ContractsPage() {
     if (editEmpData.contract_end_date && !isValidYear(editEmpData.contract_end_date)) return alert('يرجى إدخال سنة نهاية صحيحة.');
 
     setActionLoading(true);
-
+    
     try {
       const contractData = {
         contract_type: editEmpData.contract_type,
@@ -307,13 +306,14 @@ export default function ContractsPage() {
         status: 'Active'
       };
 
-      const { data: existingContract } = await supabase
+      // حل آمن 100% لمنع التعارض إذا وجد أكثر من عقد للموظف
+      const { data: existingContracts } = await supabase
         .from('contracts')
-        .select('employee_code')
+        .select('id')
         .eq('employee_code', editEmpData.employee_code)
-        .maybeSingle();
+        .limit(1);
 
-      if (existingContract) {
+      if (existingContracts && existingContracts.length > 0) {
         await supabase.from('contracts').update(contractData).eq('employee_code', editEmpData.employee_code);
       } else {
         await supabase.from('contracts').insert([{ employee_code: editEmpData.employee_code, ...contractData }]);
@@ -332,7 +332,6 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 إعادة تفعيل الموظف: حلينا مشكلة الأشباح بإضافة Upsert Logic
   const handleReactivateEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmployeeCode) return alert('يرجى اختيار الموظف المراد إعادة تفعيله.');
@@ -348,13 +347,13 @@ export default function ContractsPage() {
 
       const contractData = { contract_type: 'محدد المدة', status: 'Active' };
 
-      const { data: existingContract } = await supabase
+      const { data: existingContracts } = await supabase
         .from('contracts')
-        .select('employee_code')
+        .select('id')
         .eq('employee_code', reactivateEmployeeCode)
-        .maybeSingle();
+        .limit(1);
 
-      if (existingContract) {
+      if (existingContracts && existingContracts.length > 0) {
         await supabase.from('contracts').update(contractData).eq('employee_code', reactivateEmployeeCode);
       } else {
         await supabase.from('contracts').insert([{ employee_code: reactivateEmployeeCode, ...contractData }]);
@@ -393,13 +392,14 @@ export default function ContractsPage() {
         status: 'Active'
       };
 
-      const { data: existingContract } = await supabase
+      // البحث بأمان لتفادي التعارض مع العقود المتعددة
+      const { data: existingContracts } = await supabase
         .from('contracts')
-        .select('employee_code')
+        .select('id')
         .eq('employee_code', emp.employee_code)
-        .maybeSingle();
+        .limit(1);
 
-      if (existingContract) {
+      if (existingContracts && existingContracts.length > 0) {
         await supabase.from('contracts').update(contractData).eq('employee_code', emp.employee_code);
       } else {
         await supabase.from('contracts').insert([{ employee_code: emp.employee_code, ...contractData }]);
@@ -409,6 +409,7 @@ export default function ContractsPage() {
         status: 'Active' 
       }).eq('employee_code', emp.employee_code);
 
+      // 🌟 رمي الطلب في جدول التجديدات ليظهر في صفحة التوقيع
       const requestPayload = {
         request_id: reqId,
         employee_code: emp.employee_code,
@@ -416,6 +417,7 @@ export default function ContractsPage() {
         department: emp.department,
         job_title: emp.job_title,
         company: emp.company,
+        contract_type: newContractType, // 🌟 ضروري عشان الـ PDF يطبع بند الـ 50%
         contract_start_date: newContractStartDate, 
         new_contract_end_date: newContractEndDate, 
         status: 'Approved',
@@ -455,6 +457,7 @@ export default function ContractsPage() {
         department: emp.department,
         job_title: emp.job_title,
         company: emp.company,
+        contract_type: emp.contract_type, // 🌟 لإظهار بند المكافأة لو موجود
         contract_end_date: emp.contract_end_date || null, 
         new_contract_end_date: targetEndDate || null, 
         renewal_months: renewalMode === 'months' ? renewalMonths : null,
@@ -481,6 +484,7 @@ export default function ContractsPage() {
           department: emp.department,
           job_title: emp.job_title,
           company: emp.company,
+          contract_type: emp.contract_type,
           contract_end_date: emp.contract_end_date || null, 
           new_contract_end_date: targetEndDate || null, 
           renewal_months: renewalMode === 'months' ? renewalMonths : null,
@@ -837,7 +841,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد - تدعم المفصولين وتسمع في الداش بورد */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -924,7 +928,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة الـ PDF للطباعة */}
+      {/* نافذة الـ PDF للطباعة (فيها بند الـ 50% الخاص بالمكافأة الشاملة) */}
       {createdRequestData && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.85)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ background: '#fff', borderRadius: '12px', width: '750px', maxHeight: '90vh', overflowY: 'auto', padding: '24px', boxShadow: '0 25px 50px rgba(0,0,0,0.4)' }}>
@@ -951,7 +955,9 @@ export default function ContractsPage() {
               </div>
               <div style={{ background: '#f8fafc', padding: '12px', borderRight: '4px solid #b8934a', fontSize: '12px', marginBottom: '30px' }}>
                 <strong>القرار والتعهد:</strong> يتعهد الطرفان بالالتزام بكافة بنود لائحة العمل الداخلية المعتمدة بالشركة، ويسري هذا العقد اعتباراً من تاريخ البداية وحتى تاريخ النهاية الموضحين أعلاه.
-                {createdRequestData.contract_type?.includes('مكافأة') && (
+                
+                {/* 🌟 إضافة شرط لطباعة بند المكافأة الشاملة 50% */}
+                {String(createdRequestData.contract_type || '').includes('مكافأة') && (
                   <div style={{ marginTop: '10px', color: '#b8934a', fontWeight: 'bold' }}>* يُتفق بين الطرفين على أن يكون هذا العقد بنظام المكافأة الشاملة، على أن تمثل هذه المكافأة نسبة 50% من إجمالي الأجر المتفق عليه.</div>
                 )}
               </div>
