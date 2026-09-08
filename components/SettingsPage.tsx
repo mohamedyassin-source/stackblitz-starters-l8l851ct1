@@ -62,14 +62,13 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   }, [activeTab]);
 
-  // 🌟 1. جلب مستخدمي النظام من Firebase
+  // 1. جلب مستخدمي النظام من Firebase
   const fetchAppUsers = async () => {
     setLoadingAppUsers(true);
     try {
       const snap = await getDocs(collection(db, 'app_users'));
-      const data = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[];
-      // ترتيب زمني من الأحدث للأقدم في الذاكرة
-      data.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+      const data = snap.docs.map((d: any) => ({ id: d.id, ...d.data() })) as any[];
+      data.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
       setAppUsers(data);
     } catch (err: any) {
       console.error('Error fetching app_users:', err.message);
@@ -78,20 +77,19 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 2. جلب جميع الموظفين من Firebase
+  // 2. جلب جميع الموظفين من Firebase
   const fetchAllEmployees = async () => {
     setLoadingRoles(true);
     try {
       const snap = await getDocs(collection(db, 'employees'));
-      const data = snap.docs.map(d => ({
+      const data = snap.docs.map((d: any) => ({
         id: d.id,
         employee_code: d.data().employee_code,
         employee_name: d.data().employee_name,
         role: d.data().role
       })) as any[];
       
-      // ترتيب تصاعدي بالكود
-      data.sort((a, b) => String(a.employee_code).localeCompare(String(b.employee_code)));
+      data.sort((a: any, b: any) => String(a.employee_code || '').localeCompare(String(b.employee_code || '')));
       setEmployees(data);
     } catch (error: any) {
       console.error('Firebase Error:', error.message);
@@ -100,7 +98,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 3. إضافة مستخدم جديد في Firebase
+  // 3. إضافة مستخدم جديد في Firebase
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
@@ -115,7 +113,6 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         created_at: new Date().toISOString()
       };
 
-      // لو دخل كود موظف، نحفظه بيه كـ ID عشان التناسق مع صفحة تسجيل الدخول
       if (insertPayload.employee_code) {
         await setDoc(doc(db, 'app_users', insertPayload.employee_code), insertPayload);
       } else {
@@ -133,7 +130,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 4. حذف مستخدم بدلالة الـ id السري
+  // 4. حذف مستخدم
   const handleDeleteAppUser = async (user: any) => {
     if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username}) نهائياً من app_users؟`)) return;
 
@@ -146,7 +143,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 5. تعديل صلاحية مستخدم في app_users
+  // 5. تعديل صلاحية مستخدم في app_users
   const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
       await updateDoc(doc(db, 'app_users', user.id), { role: newRole });
@@ -166,7 +163,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  // 🌟 6. تعديل صلاحية موظف في employees
+  // 6. تعديل صلاحية موظف في employees
   const handleRoleChange = async (empCode: string, newRole: string) => {
     try {
       const q = query(collection(db, 'employees'), where('employee_code', '==', empCode));
@@ -181,7 +178,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  const filteredAppUsers = appUsers.filter(u => {
+  const filteredAppUsers = appUsers.filter((u: any) => {
     if (!userSearch) return true;
     const term = userSearch.toLowerCase().trim();
     const name = String(u.username || '').toLowerCase();
@@ -189,7 +186,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     return name.includes(term) || code.includes(term);
   });
 
-  const filteredEmployees = employees.filter(emp => {
+  const filteredEmployees = employees.filter((emp: any) => {
     if (!search) return true;
     const searchTerm = search.toLowerCase().trim();
     const name = String(emp?.employee_name || '').toLowerCase();
@@ -246,11 +243,9 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         ))}
       </div>
 
-      {/* 🌟 1. الأمان ومديري النظام (جدول app_users المباشر) */}
+      {/* 1. الأمان ومديري النظام */}
       {activeTab === 'security' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          
-          {/* قسم حسابات الأدمن والمستخدمين app_users */}
           <div style={{ background: 'var(--paper-card)', border: '2px solid var(--brass-500, #d97706)', padding: '20px', borderRadius: '14px', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
@@ -295,7 +290,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                   ) : filteredAppUsers.length === 0 ? (
                     <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>لا توجد حسابات مسجلة 🚫</td></tr>
                   ) : (
-                    filteredAppUsers.map((user, idx) => (
+                    filteredAppUsers.map((user: any, idx: number) => (
                       <tr key={user.id || idx} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--ink)' }}>{user.username}</td>
                         <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--brass-600)' }}>{user.employee_code || '—'}</td>
@@ -326,7 +321,6 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
             </div>
           </div>
 
-          {/* قسم صلاحيات جدول الموظفين العادي employees */}
           <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '14px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
@@ -360,7 +354,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                   ) : filteredEmployees.length === 0 ? (
                     <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: 'var(--muted)' }}>لا توجد نتائج 🚫</td></tr>
                   ) : (
-                    filteredEmployees.map((emp, i) => (
+                    filteredEmployees.map((emp: any, i: number) => (
                       <tr key={i} style={{ borderBottom: '1px solid var(--line)' }}>
                         <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{emp.employee_code}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.employee_name}</td>
@@ -391,11 +385,10 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
               </table>
             </div>
           </div>
-
         </div>
       )}
 
-      {/* 🌟 2. التنبيهات والإيميل */}
+      {/* 2. التنبيهات والإيميل */}
       {activeTab === 'notifications' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '12px' }}>
@@ -424,7 +417,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         </div>
       )}
 
-      {/* 🌟 3. قواعد التجديد */}
+      {/* 3. قواعد التجديد */}
       {activeTab === 'business' && (
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '12px', maxWidth: '600px' }}>
           <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--navy-950)', fontWeight: '800' }}>📋 القواعد الافتراضية للمعالجة</h4>
@@ -449,7 +442,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         </div>
       )}
 
-      {/* 🌟 4. بيانات المنشأة */}
+      {/* 4. بيانات المنشأة */}
       {activeTab === 'system' && (
         <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '12px', maxWidth: '600px' }}>
           <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--navy-950)', fontWeight: '800' }}>🏢 الهوية والبيانات المؤسسية</h4>
@@ -464,7 +457,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         </div>
       )}
 
-      {/* 👑 نافذة إضافة أدمن جديد في app_users */}
+      {/* نافذة إضافة أدمن جديد */}
       {showAddUserModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '480px', background: 'var(--paper-card)', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', direction: 'rtl' }}>
@@ -508,7 +501,6 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
           </div>
         </div>
       )}
-
     </div>
   );
 }
