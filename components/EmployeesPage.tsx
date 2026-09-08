@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, addDoc, updateDoc, doc, writeBatch } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 
 // ============================================================
 // HELPERS
@@ -21,7 +21,7 @@ const getField = (obj: any, ...keys: string[]) => {
 };
 
 const getEmployeeId = (emp: any) =>
-  String(getField(emp, 'employee_id', 'EmployeeID', 'employeeId') || '').trim();
+  String(getField(emp, 'employee_id', 'EmployeeID', 'employeeId', 'id') || '').trim();
 
 const getEmployeeCode = (emp: any) =>
   String(getField(emp, 'employee_code', 'EmployeeCode', 'employeeCode', 'code', 'Code') || '').trim();
@@ -37,22 +37,15 @@ const normalizeSearch = (value: any) =>
 
 const getEmployeeAge = (emp: any) => {
   const rawAge = getField(emp, 'age', 'Age');
-
   if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
     return Number(rawAge);
   }
 
   const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
-
-  if (!birthDateRaw) {
-    return null;
-  }
+  if (!birthDateRaw) return null;
 
   const birthDate = new Date(birthDateRaw);
-
-  if (isNaN(birthDate.getTime())) {
-    return null;
-  }
+  if (isNaN(birthDate.getTime())) return null;
 
   const today = new Date();
   let age = today.getFullYear() - birthDate.getFullYear();
@@ -60,10 +53,7 @@ const getEmployeeAge = (emp: any) => {
     today.getMonth() > birthDate.getMonth() ||
     (today.getMonth() === birthDate.getMonth() && today.getDate() >= birthDate.getDate());
 
-  if (!hasBirthdayPassed) {
-    age--;
-  }
-
+  if (!hasBirthdayPassed) age--;
   return age;
 };
 
@@ -72,12 +62,30 @@ const getEmployeeAge = (emp: any) => {
 // ============================================================
 
 export default function EmployeesPage() {
-  const { employees, loading, refresh: fetchEmployees } = useAppData(); 
+  const { employees: rawEmployees, contracts: rawContracts, loading, refresh: fetchEmployees } = useAppData();
 
-  // ============================================================
+  // 🌟 دمج بيانات الموظفين والعقود القادمة من Firebase
+  const employees = useMemo(() => {
+    const contractsMap = new Map<string, any>();
+    rawContracts.forEach((c: any) => {
+      const code = getEmployeeCode(c);
+      if (code) contractsMap.set(code, c);
+    });
+
+    return rawEmployees.map((emp: any) => {
+      const code = getEmployeeCode(emp);
+      const contract = contractsMap.get(code) || {};
+      return {
+        ...emp,
+        contract_id: contract.id || null,
+        contract_start_date: getField(emp, 'contract_start_date', 'HiringDate') || contract.contract_start_date || '',
+        contract_end_date: getField(emp, 'contract_end_date', 'ContractEndDate') || contract.contract_end_date || '',
+        contract_type: getField(emp, 'contract_type', 'ContractType') || contract.contract_type || 'محدد المدة',
+      };
+    });
+  }, [rawEmployees, rawContracts]);
+
   // FILTER STATES
-  // ============================================================
-
   const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
@@ -85,28 +93,19 @@ export default function EmployeesPage() {
   const [selectedType, setSelectedType] = useState('');
   const [selectedAgeRange, setSelectedAgeRange] = useState('');
 
-  // ============================================================
   // SORT / SELECTION
-  // ============================================================
-
   const [sortColumn, setSortColumn] = useState('employee_code');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
 
-  // ============================================================
   // MODALS
-  // ============================================================
-
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTermModal, setShowTermModal] = useState(false);
   const [showBulkTransferModal, setShowBulkTransferModal] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [profileEmp, setProfileEmp] = useState<any>(null);
 
-  // ============================================================
   // BULK & TERMINATION
-  // ============================================================
-
   const [bulkDept, setBulkDept] = useState('');
   const [bulkCompany, setBulkCompany] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -118,10 +117,7 @@ export default function EmployeesPage() {
   const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
   const [termSaving, setTermSaving] = useState(false);
 
-  // ============================================================
   // NEW EMPLOYEE
-  // ============================================================
-
   const [newEmp, setNewEmp] = useState({
     employee_code: '',
     employee_name: '',
@@ -137,10 +133,6 @@ export default function EmployeesPage() {
     email: '',
     mobile: '',
   });
-
-  // ============================================================
-  // ACTIVE EMPLOYEES & LISTS
-  // ============================================================
 
   const activeEmployeesOnly = useMemo(() => {
     return employees.filter((emp: any) => {
@@ -162,10 +154,6 @@ export default function EmployeesPage() {
   const compsList = useMemo(() => {
     return Array.from(new Set(activeEmployeesOnly.map((emp: any) => getField(emp, 'company', 'Company')).filter(Boolean)));
   }, [activeEmployeesOnly]);
-
-  // ============================================================
-  // MAIN FILTER
-  // ============================================================
 
   const baseFilteredEmployees = useMemo(() => {
     const search = normalizeSearch(searchTerm);
@@ -220,16 +208,12 @@ export default function EmployeesPage() {
     });
   }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
-  // ============================================================
-  // KPI 
-  // ============================================================
-
   const kpiStats = useMemo(() => {
     const validForKpi = baseFilteredEmployees.filter((emp: any) => {
       const dept = String(getField(emp, 'department', 'Department')).trim();
       const type = String(getField(emp, 'contract_type', 'ContractType')).trim();
       const status = String(getField(emp, 'status', 'Status') || 'Active').trim().toLowerCase();
-      
+
       const isTransfer = dept.includes('تحويلات');
       const isTerminatedType = type.includes('إنهاء');
 
@@ -249,10 +233,6 @@ export default function EmployeesPage() {
 
     return { total, perm, permPct: pct(perm), fixed, fixedPct: pct(fixed), aboveAge, aboveAgePct: pct(aboveAge) };
   }, [baseFilteredEmployees]);
-
-  // ============================================================
-  // TABLE EMPLOYEES
-  // ============================================================
 
   const finalTableEmployees = useMemo(() => {
     const filtered = baseFilteredEmployees.filter((emp: any) => {
@@ -341,7 +321,7 @@ export default function EmployeesPage() {
     sessionStorage.removeItem('selectedEmployeeId'); sessionStorage.removeItem('employeeSearch'); sessionStorage.removeItem('jumpSearch');
   }, [employees, loading]);
 
-  // 🌟 تعديل بيانات الموظف في Firebase
+  // 🌟 تعديل بيانات الموظف في Firebase Direct Update
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -368,45 +348,37 @@ export default function EmployeesPage() {
         company: getField(emp, 'company', 'Company'),
         job_title: getField(emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring || null,
-        contract_type: contractType, 
+        contract_type: contractType,
         status: empStatus,
         email: getField(emp, 'email', 'Email'),
         mobile: getField(emp, 'mobile', 'Mobile', 'MOBILE'),
       };
 
-      // 1. تحديث جدول employees
-      const empQ = query(collection(db, 'employees'), where('employee_code', '==', employeeCode));
-      const empSnap = await getDocs(empQ);
-      if (empSnap.empty) {
-        alert(`⚠️ لم يتم العثور على الموظف (${employeeCode}) لتحديثه.`);
-        setEditData({ ...editData, saving: false });
-        return;
-      }
-      await updateDoc(doc(db, 'employees', empSnap.docs[0].id), employeeUpdate);
+      // 1. تحديث مستند الموظف في Firebase
+      const empRef = doc(db, 'employees', employeeCode);
+      await setDoc(empRef, employeeUpdate, { merge: true });
 
       // 2. تحديث جدول contracts
       const contractUpdate = {
+        employee_code: employeeCode,
         contract_type: contractType,
         contract_start_date: rawHiring || null,
         contract_end_date: rawEnd || null,
         status: empStatus,
       };
 
-      if (emp.contract_id) {
-        await updateDoc(doc(db, 'contracts', emp.contract_id), contractUpdate);
+      const contQ = query(collection(db, 'contracts'), where('employee_code', '==', employeeCode));
+      const contSnap = await getDocs(contQ);
+      if (!contSnap.empty) {
+        await updateDoc(doc(db, 'contracts', contSnap.docs[0].id), contractUpdate);
       } else {
-        const contQ = query(collection(db, 'contracts'), where('employee_code', '==', employeeCode));
-        const contSnap = await getDocs(contQ);
-        if (!contSnap.empty) {
-          await updateDoc(doc(db, 'contracts', contSnap.docs[0].id), contractUpdate);
-        } else {
-          await addDoc(collection(db, 'contracts'), { employee_code: employeeCode, ...contractUpdate });
-        }
+        const newContRef = doc(collection(db, 'contracts'));
+        await setDoc(newContRef, contractUpdate, { merge: true });
       }
 
       alert('تم حفظ التعديلات وتحديث العقد بنجاح ✅');
       setEditData(null);
-      await fetchEmployees(); 
+      await fetchEmployees();
     } catch (error: any) {
       alert('حدث خطأ أثناء الحفظ: ' + error.message);
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
@@ -421,24 +393,18 @@ export default function EmployeesPage() {
 
     try {
       const empCode = getEmployeeCode(selectedTermEmp);
+      const empRef = doc(db, 'employees', empCode);
 
-      const empQ = query(collection(db, 'employees'), where('employee_code', '==', empCode));
-      const empSnap = await getDocs(empQ);
-      if (empSnap.empty) {
-        alert(`⚠️ لم يتم العثور على الموظف كود (${empCode}) لتحديثه.`);
-        setTermSaving(false); return;
-      }
-
-      await updateDoc(doc(db, 'employees', empSnap.docs[0].id), {
-        department: 'تحويلات/تحت الاعتماد', 
+      await setDoc(empRef, {
+        department: 'تحويلات/تحت الاعتماد',
         status: 'Inactive',
         termination_reason: termReason,
         termination_date: termDate,
-      });
+      }, { merge: true });
 
-      const contQ = query(collection(db, 'contracts'), where('employee_code', '==', empCode), where('status', '==', 'Active'));
+      const contQ = query(collection(db, 'contracts'), where('employee_code', '==', empCode));
       const contSnap = await getDocs(contQ);
-      contSnap.forEach((d: any) => {
+      contSnap.forEach((d) => {
         updateDoc(doc(db, 'contracts', d.id), { status: 'Inactive' });
       });
 
@@ -466,11 +432,8 @@ export default function EmployeesPage() {
 
       const batch = writeBatch(db);
       for (const code of selectedEmpIds) {
-        const empQ = query(collection(db, 'employees'), where('employee_code', '==', code));
-        const snap = await getDocs(empQ);
-        if (!snap.empty) {
-          batch.update(doc(db, 'employees', snap.docs[0].id), payload);
-        }
+        const empRef = doc(db, 'employees', code);
+        batch.set(empRef, payload, { merge: true });
       }
       await batch.commit();
 
@@ -494,15 +457,11 @@ export default function EmployeesPage() {
     try {
       const batch = writeBatch(db);
       for (const code of selectedEmpIds) {
-        // حذف من الموظفين
-        const empQ = query(collection(db, 'employees'), where('employee_code', '==', code));
-        const empSnap = await getDocs(empQ);
-        empSnap.forEach((d: any) => batch.delete(doc(db, 'employees', d.id)));
+        batch.delete(doc(db, 'employees', code));
 
-        // حذف من العقود
         const contQ = query(collection(db, 'contracts'), where('employee_code', '==', code));
         const contSnap = await getDocs(contQ);
-        contSnap.forEach((d: any) => batch.delete(doc(db, 'contracts', d.id)));
+        contSnap.forEach((d) => batch.delete(doc(db, 'contracts', d.id)));
       }
       await batch.commit();
 
@@ -529,8 +488,11 @@ export default function EmployeesPage() {
         if (notYetBirthday) age--;
       }
 
-      await addDoc(collection(db, 'employees'), {
-        employee_code: newEmp.employee_code,
+      const empCode = newEmp.employee_code.trim();
+      const empRef = doc(db, 'employees', empCode);
+
+      await setDoc(empRef, {
+        employee_code: empCode,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
         birth_date: newEmp.birth_date || null,
@@ -539,19 +501,20 @@ export default function EmployeesPage() {
         company: newEmp.company,
         job_title: newEmp.job_title,
         hiring_date: newEmp.hiring_date || null,
-        contract_type: newEmp.contract_type, 
+        contract_type: newEmp.contract_type,
         status: newEmp.status,
         email: newEmp.email,
         mobile: newEmp.mobile,
-      });
+      }, { merge: true });
 
-      await addDoc(collection(db, 'contracts'), {
-        employee_code: newEmp.employee_code,
+      const contRef = doc(collection(db, 'contracts'));
+      await setDoc(contRef, {
+        employee_code: empCode,
         contract_type: newEmp.contract_type,
         contract_start_date: newEmp.hiring_date || null,
         contract_end_date: newEmp.contract_type.includes('دائم') || !newEmp.contract_end_date ? null : newEmp.contract_end_date,
         status: newEmp.status,
-      });
+      }, { merge: true });
 
       alert('تم إضافة الموظف وعقده بنجاح ✅');
       setShowAddModal(false);
@@ -663,7 +626,7 @@ export default function EmployeesPage() {
         <datalist id="deptList">{deptsList.map((d: any, i: number) => (<option key={i} value={d} />))}</datalist>
         <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px', width: '130px' }} />
         <datalist id="compList">{compsList.map((c: any, i: number) => (<option key={i} value={c} />))}</datalist>
-        
+
         <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px' }}>
           <option value="">كل أنواع العقود</option>
           <option value="filter_permanent">دائم / غير محدد المدة</option>
@@ -672,7 +635,7 @@ export default function EmployeesPage() {
           <option value="filter_reward">مكافأة شاملة</option>
           <option value="filter_project">مهمة / مشروع</option>
         </select>
-        
+
         <select value={selectedAgeRange} onChange={(e) => setSelectedAgeRange(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '11px' }}>
           <option value="">فئة السن (الكل)</option>
           <option value="60_plus">فوق السن (60+)</option>
@@ -836,7 +799,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* Edit Employee Modal (🌟 تم توحيد قوائم العقود هنا) */}
+      {/* Edit Employee Modal */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
@@ -928,14 +891,14 @@ export default function EmployeesPage() {
                 <input placeholder="الشركة" value={newEmp.company} onChange={(e) => setNewEmp({ ...newEmp, company: e.target.value })} />
                 <input placeholder="الوظيفة" value={newEmp.job_title} onChange={(e) => setNewEmp({ ...newEmp, job_title: e.target.value })} />
                 <input type="date" value={newEmp.hiring_date} onChange={(e) => setNewEmp({ ...newEmp, hiring_date: e.target.value })} />
-                
+
                 <select value={newEmp.contract_type} onChange={(e) => setNewEmp({ ...newEmp, contract_type: e.target.value })}>
                   <option value="دائم">دائم (غير محدد المدة)</option>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
                   <option value="مكافأة شاملة">مكافأة شاملة</option>
                 </select>
-                
+
                 <input type="date" disabled={newEmp.contract_type.includes('دائم')} value={newEmp.contract_end_date} onChange={(e) => setNewEmp({ ...newEmp, contract_end_date: e.target.value })} />
                 <input placeholder="الموبايل" value={newEmp.mobile} onChange={(e) => setNewEmp({ ...newEmp, mobile: e.target.value })} />
                 <input placeholder="البريد الإلكتروني" value={newEmp.email} onChange={(e) => setNewEmp({ ...newEmp, email: e.target.value })} />
