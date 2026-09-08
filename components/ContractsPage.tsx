@@ -73,23 +73,21 @@ export default function ContractsPage() {
     try {
       // 1. سحب بيانات الموظفين
       const empSnap = await getDocs(collection(db, 'employees'));
-      const allEmps = empSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-      // 1. سحب بيانات الموظفين
-      const empSnap = await getDocs(collection(db, 'employees'));
-      const allEmps = empSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allEmps = empSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
 
       // 2. سحب العقود النشطة فقط
       const contQ = query(collection(db, 'contracts'), where('status', '==', 'Active'));
       const contSnap = await getDocs(contQ);
-      const allContracts = contSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allContracts = contSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
 
       // 3. سحب طلبات التجديد
       const renSnap = await getDocs(collection(db, 'renewal_requests'));
-      const allRens = renSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const allRens = renSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
 
       const mergedEmployees = allEmps.map((emp: any) => {
         const empContracts = allContracts.filter((c: any) => String(c.employee_code) === String(emp.employee_code));
+        empContracts.sort((a: any, b: any) => new Date(b.contract_end_date || '1970').getTime() - new Date(a.contract_end_date || '1970').getTime());
+        const myContract = empContracts[0];
 
         return {
           ...emp,
@@ -243,11 +241,6 @@ export default function ContractsPage() {
     setRenewalMonths(12);
     setCustomEndDate('');
     setModalState({ isOpen: true, type: 'bulk' });
-  };
-
-  const getEmpId = (emp: any) => {
-    if (!emp) return '0';
-    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
   };
 
   // 🌟 إنهاء العقد بالفايربيز
