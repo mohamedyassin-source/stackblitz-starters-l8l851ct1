@@ -67,7 +67,6 @@ export default function ContractsPage() {
     fetchData();
   }, []);
 
-  // 🌟 الحل الجذري للمشكلة: تم إعادة جلب ودمج جدول العقود Contracts
   const fetchData = async () => {
     setLoading(true);
     let allEmps: any[] = [];
@@ -257,11 +256,6 @@ export default function ContractsPage() {
     setModalState({ isOpen: true, type: 'bulk' });
   };
 
-  const getEmpId = (emp: any) => {
-    if (!emp) return '0';
-    return emp.employee_id || emp.id || emp.emp_id || emp.employee_code || '0';
-  };
-
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return alert('يرجى كتابة واختيار الموظف بشكل صحيح من القائمة.');
@@ -437,9 +431,10 @@ export default function ContractsPage() {
       const emp = modalState.emp;
       const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
       const [reqId] = generateSequentialIds(1);
+      
+      // 🌟 تم مسح employee_id من هنا نهائياً
       const payload: any = {
         request_id: reqId,
-        employee_id: getEmpId(emp),
         employee_code: emp.employee_code,
         employee_name: emp.employee_name,
         department: emp.department,
@@ -452,17 +447,21 @@ export default function ContractsPage() {
         signature_status: 'قيد التوقيع',
         request_date: new Date().toISOString().split('T')[0],
       };
+      
       const { error } = await supabase.from('renewal_requests').insert([payload]);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
       if (error) alert('خطأ: ' + error.message); else { setCreatedRequestData(payload); await refreshGlobalData(); fetchData(); }
+    
     } else if (modalState.type === 'bulk') {
       const selectedEmps = employees.filter(e => selectedEmpCodes.includes(e.employee_code));
       const reqIds = generateSequentialIds(selectedEmps.length);
+      
       const payloads = selectedEmps.map((emp, index) => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : (customEndDate || null);
+        
+        // 🌟 تم مسح employee_id من هنا نهائياً
         return {
           request_id: reqIds[index],
-          employee_id: getEmpId(emp),
           employee_code: emp.employee_code,
           employee_name: emp.employee_name,
           department: emp.department,
@@ -476,6 +475,7 @@ export default function ContractsPage() {
           request_date: new Date().toISOString().split('T')[0],
         };
       });
+      
       const { error } = await supabase.from('renewal_requests').insert(payloads);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
       if (error) alert('خطأ: ' + error.message); else { alert('تم إنشاء طلبات التجديد المجمعة بنجاح!'); setSelectedEmpCodes([]); await refreshGlobalData(); fetchData(); }
@@ -823,7 +823,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* 🌟 🆕 نافذة إنشاء عقد جديد - تدعم المفصولين وتسمع في الداش بورد */}
+      {/* 🌟 🆕 نافذة إنشاء عقد جديد */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -863,7 +863,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة طلب التجديد */}
+      {/* نافذة طلب التجديد (تم إزالة employee_id تماماً) */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)', direction: 'rtl' }}>
