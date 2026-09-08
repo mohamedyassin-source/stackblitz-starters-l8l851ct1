@@ -22,55 +22,15 @@ const MONTHS_LIST = [
 ];
 
 const MONTH_NAMES = [
-  'يناير',
-  'فبراير',
-  'مارس',
-  'أبريل',
-  'مايو',
-  'يونيو',
-  'يوليو',
-  'أغسطس',
-  'سبتمبر',
-  'أكتوبر',
-  'نوفمبر',
-  'ديسمبر',
+  'يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو',
+  'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر',
 ];
-
-const MONTH_MAP: Record<string, number> = {
-  jan: 0,
-  january: 0,
-  feb: 1,
-  february: 1,
-  mar: 2,
-  march: 2,
-  apr: 3,
-  april: 3,
-  may: 4,
-  jun: 5,
-  june: 5,
-  jul: 6,
-  july: 6,
-  aug: 7,
-  august: 7,
-  sep: 8,
-  september: 8,
-  oct: 9,
-  october: 9,
-  nov: 10,
-  november: 10,
-  dec: 11,
-  december: 11,
-};
 
 const DAY_MS = 1000 * 60 * 60 * 24;
 
 function firstValue(...values: any[]) {
   for (const value of values) {
-    if (
-      value !== undefined &&
-      value !== null &&
-      String(value).trim() !== ''
-    ) {
+    if (value !== undefined && value !== null && String(value).trim() !== '') {
       return value;
     }
   }
@@ -83,405 +43,184 @@ function normalizeText(value: any) {
 
 function normalizeStatus(value: any) {
   const v = normalizeText(value);
-
-  if (
-    !v ||
-    v === 'active' ||
-    v === 'نشط' ||
-    v === 'ساري' ||
-    v === 'valid'
-  ) {
+  if (!v || v === 'active' || v === 'نشط' || v === 'ساري' || v === 'valid') {
     return 'active';
   }
-
-  if (
-    v === 'inactive' ||
-    v === 'غير نشط' ||
-    v === 'terminated' ||
-    v === 'منتهي خدمة' ||
-    v === 'متوقف'
-  ) {
+  if (v === 'inactive' || v === 'غير نشط' || v === 'terminated' || v === 'منتهي خدمة' || v === 'متوقف') {
     return 'inactive';
   }
-
   return v;
 }
 
 function isApprovedRenewal(req: any) {
-  const status = normalizeText(
-    firstValue(
-      req?.status,
-      req?.renewal_status,
-      req?.RenewalStatus
-    )
-  );
-
-  return (
-    status === 'approved' ||
-    status === 'معتمد' ||
-    status === 'مقبول'
-  );
+  const status = normalizeText(firstValue(req?.status, req?.renewal_status, req?.RenewalStatus));
+  return status === 'approved' || status === 'معتمد' || status === 'مقبول';
 }
 
 function isPendingRenewal(req: any) {
-  const status = normalizeText(
-    firstValue(
-      req?.status,
-      req?.renewal_status,
-      req?.RenewalStatus
-    )
-  );
-
-  return (
-    status === 'pending' ||
-    status === 'قيد الانتظار'
-  );
+  const status = normalizeText(firstValue(req?.status, req?.renewal_status, req?.RenewalStatus));
+  return status === 'pending' || status === 'قيد الانتظار' || status === 'معلق';
 }
 
 function getEmployeeId(emp: any) {
-  return String(
-    firstValue(
-      emp?.employee_id,
-      emp?.EmployeeID,
-      emp?.employeeId
-    )
-  ).trim();
+  return String(firstValue(emp?.employee_id, emp?.EmployeeID, emp?.employeeId, emp?.id)).trim();
 }
 
 function getEmployeeCode(emp: any) {
-  return String(
-    firstValue(
-      emp?.employee_code,
-      emp?.EmployeeCode,
-      emp?.employeeCode,
-      emp?.code,
-      emp?.Code
-    )
-  ).trim();
+  return String(firstValue(emp?.employee_code, emp?.EmployeeCode, emp?.employeeCode, emp?.code, emp?.Code)).trim();
 }
 
 function getEmployeeName(emp: any) {
-  return firstValue(
-    emp?.employee_name,
-    emp?.EmployeeName,
-    emp?.employeeName,
-    emp?.ArabicName,
-    emp?.name,
-    emp?.Name
-  );
+  return firstValue(emp?.employee_name, emp?.EmployeeName, emp?.employeeName, emp?.ArabicName, emp?.name, emp?.Name);
 }
 
 function getDepartment(emp: any) {
-  return firstValue(
-    emp?.department,
-    emp?.Department,
-    emp?.dept,
-    emp?.Dept,
-    'غير محدد'
-  );
+  return firstValue(emp?.department, emp?.Department, emp?.dept, emp?.Dept, 'غير محدد');
 }
 
 function getJobTitle(emp: any) {
-  return firstValue(
-    emp?.job_title,
-    emp?.JobTitle,
-    emp?.jobTitle,
-    emp?.Job,
-    emp?.job
-  );
+  return firstValue(emp?.job_title, emp?.JobTitle, emp?.jobTitle, emp?.Job, emp?.job);
 }
 
 function getCompany(emp: any) {
-  return firstValue(
-    emp?.company,
-    emp?.Company
-  );
+  return firstValue(emp?.company, emp?.Company);
 }
 
 function getNationalId(emp: any) {
-  return String(
-    firstValue(
-      emp?.national_id,
-      emp?.NationalID,
-      emp?.nationalId,
-      emp?.NationalId
-    )
-  ).trim();
+  return String(firstValue(emp?.national_id, emp?.NationalID, emp?.nationalId, emp?.NationalId)).trim();
 }
 
 function getMobile(emp: any) {
-  return firstValue(
-    emp?.mobile,
-    emp?.Mobile,
-    emp?.phone,
-    emp?.Phone
-  );
+  return firstValue(emp?.mobile, emp?.Mobile, emp?.phone, emp?.Phone);
 }
 
 function getContractType(emp: any) {
-  return String(
-    firstValue(
-      emp?.contract_type,
-      emp?.ContractType,
-      emp?.contractType
-    )
-  ).trim();
+  return String(firstValue(emp?.contract_type, emp?.ContractType, emp?.contractType)).trim();
 }
 
 function getContractStart(emp: any) {
-  return firstValue(
-    emp?.contract_start_date,
-    emp?.ContractStartDate,
-    emp?.contractStartDate
-  );
+  return firstValue(emp?.contract_start_date, emp?.ContractStartDate, emp?.contractStartDate);
 }
 
 function getContractEnd(emp: any) {
-  return firstValue(
-    emp?.contract_end_date,
-    emp?.ContractEndDate,
-    emp?.contractEndDate
-  );
+  return firstValue(emp?.contract_end_date, emp?.ContractEndDate, emp?.contractEndDate);
 }
 
 function getContractStatus(emp: any) {
-  return firstValue(
-    emp?.contract_status,
-    emp?.ContractStatus,
-    emp?.status,
-    emp?.Status,
-    'Active'
-  );
+  return firstValue(emp?.contract_status, emp?.ContractStatus, emp?.status, emp?.Status, 'Active');
 }
 
 function getRenewalEmployeeCode(req: any) {
-  return String(
-    firstValue(
-      req?.employee_code,
-      req?.EmployeeCode,
-      req?.employeeCode,
-      req?.employee_id,
-      req?.EmployeeID
-    )
-  ).trim();
+  return String(firstValue(req?.employee_code, req?.EmployeeCode, req?.employeeCode, req?.employee_id, req?.EmployeeID)).trim();
 }
 
 function parseDate(value: any): Date | null {
-  if (value instanceof Date) {
-    return isNaN(value.getTime())
-      ? null
-      : new Date(value);
-  }
-
-  if (
-    value === null ||
-    value === undefined ||
-    String(value).trim() === ''
-  ) {
-    return null;
-  }
-
+  if (value instanceof Date) return isNaN(value.getTime()) ? null : new Date(value);
+  if (value === null || value === undefined || String(value).trim() === '') return null;
   const raw = String(value).trim();
-
   if (!raw) return null;
-
   const direct = new Date(raw);
+  if (!isNaN(direct.getTime())) return direct;
 
-  if (!isNaN(direct.getTime())) {
-    return direct;
-  }
-
-  const clean = raw
-    .split('T')[0]
-    .trim();
-
-  const parts = clean
-    .split(/[\/\-\s]/)
-    .filter(Boolean);
-
+  const clean = raw.split('T')[0].trim();
+  const parts = clean.split(/[\/\-\s]/).filter(Boolean);
   if (parts.length >= 3) {
     let day = Number(parts[0]);
     let month = Number(parts[1]);
     let year = Number(parts[2]);
-
-    if (year < 100) {
-      year += year >= 30
-        ? 1900
-        : 2000;
-    }
-
-    if (
-      Number.isInteger(day) &&
-      Number.isInteger(month) &&
-      Number.isInteger(year) &&
-      month >= 1 &&
-      month <= 12 &&
-      day >= 1 &&
-      day <= 31
-    ) {
-      const result = new Date(
-        year,
-        month - 1,
-        day
-      );
-
-      if (
-        result.getFullYear() === year &&
-        result.getMonth() === month - 1 &&
-        result.getDate() === day
-      ) {
-        return result;
-      }
+    if (year < 100) year += year >= 30 ? 1900 : 2000;
+    if (Number.isInteger(day) && Number.isInteger(month) && Number.isInteger(year) && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const result = new Date(year, month - 1, day);
+      if (result.getFullYear() === year && result.getMonth() === month - 1 && result.getDate() === day) return result;
     }
   }
-
   return null;
 }
 
 function getDaysRemaining(endDateStr: any) {
   const end = parseDate(endDateStr);
-
   if (!end) return null;
-
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   const normalizedEnd = new Date(end);
   normalizedEnd.setHours(0, 0, 0, 0);
-
-  return Math.ceil(
-    (normalizedEnd.getTime() -
-      today.getTime()) /
-      DAY_MS
-  );
+  return Math.ceil((normalizedEnd.getTime() - today.getTime()) / DAY_MS);
 }
 
 function getAge60Info(nationalId: string) {
-  const idStr = String(nationalId || '')
-    .replace(/\D/g, '');
-
-  if (idStr.length !== 14) {
-    return null;
-  }
-
+  const idStr = String(nationalId || '').replace(/\D/g, '');
+  if (idStr.length !== 14) return null;
   const centuryDigit = idStr.charAt(0);
-
-  if (
-    centuryDigit !== '2' &&
-    centuryDigit !== '3'
-  ) {
-    return null;
-  }
+  if (centuryDigit !== '2' && centuryDigit !== '3') return null;
 
   const yearDigits = idStr.substring(1, 3);
   const monthDigits = idStr.substring(3, 5);
   const dayDigits = idStr.substring(5, 7);
-
   const month = Number(monthDigits);
   const day = Number(dayDigits);
 
-  if (
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return null;
-  }
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  const fullYear = Number((centuryDigit === '3' ? '20' : '19') + yearDigits);
+  const birthDate = new Date(fullYear, month - 1, day);
 
-  const fullYear = Number(
-    (centuryDigit === '3'
-      ? '20'
-      : '19') + yearDigits
-  );
-
-  const birthDate = new Date(
-    fullYear,
-    month - 1,
-    day
-  );
-
-  if (
-    birthDate.getFullYear() !== fullYear ||
-    birthDate.getMonth() !== month - 1 ||
-    birthDate.getDate() !== day
-  ) {
-    return null;
-  }
+  if (birthDate.getFullYear() !== fullYear || birthDate.getMonth() !== month - 1 || birthDate.getDate() !== day) return null;
 
   const age60Date = new Date(birthDate);
-
-  age60Date.setFullYear(
-    age60Date.getFullYear() + 60
-  );
+  age60Date.setFullYear(age60Date.getFullYear() + 60);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const normalizedAge60 = new Date(age60Date);
+  normalizedAge60.setHours(0, 0, 0, 0);
 
-  const normalizedAge60 =
-    new Date(age60Date);
+  const daysUntil60 = Math.ceil((normalizedAge60.getTime() - today.getTime()) / DAY_MS);
 
-  normalizedAge60.setHours(
-    0,
-    0,
-    0,
-    0
-  );
-
-  const daysUntil60 = Math.ceil(
-    (normalizedAge60.getTime() -
-      today.getTime()) /
-      DAY_MS
-  );
-
-  const formatDate = (date: Date) =>
-    `${date.getFullYear()}-${String(
-      date.getMonth() + 1
-    ).padStart(2, '0')}-${String(
-      date.getDate()
-    ).padStart(2, '0')}`;
+  const formatDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
   return {
     birthDate: formatDate(birthDate),
     age60Date: formatDate(age60Date),
-    age60Year: String(
-      age60Date.getFullYear()
-    ),
-    age60Month: String(
-      age60Date.getMonth() + 1
-    ),
+    age60Year: String(age60Date.getFullYear()),
+    age60Month: String(age60Date.getMonth() + 1),
     daysUntil60,
   };
 }
 
 function getRenewalMonths(req: any) {
-  const value = firstValue(
-    req?.renewal_months,
-    req?.RenewalMonths,
-    req?.renewalMonths
-  );
-
-  if (
-    value === '' ||
-    value === null ||
-    value === undefined
-  ) {
-    return null;
-  }
-
+  const value = firstValue(req?.renewal_months, req?.RenewalMonths, req?.renewalMonths);
+  if (value === '' || value === null || value === undefined) return null;
   const parsed = Number(value);
-
-  return Number.isFinite(parsed)
-    ? parsed
-    : null;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export default function DashboardPage() {
   const {
-    employees: allEmployees = [],
+    employees: rawEmployees = [],
+    contracts: rawContracts = [],
     renewals: allRenewals = [],
     loading,
   } = useAppData();
+
+  // 🌟 دمج بيانات العقود القادمة من كولكشن contracts مع الموظفين
+  const allEmployees = useMemo(() => {
+    const contractsMap = new Map<string, any>();
+    rawContracts.forEach((c: any) => {
+      const code = getEmployeeCode(c);
+      if (code) contractsMap.set(code, c);
+    });
+
+    return rawEmployees.map((emp: any) => {
+      const code = getEmployeeCode(emp);
+      const contract = contractsMap.get(code) || {};
+      return {
+        ...emp,
+        contract_start_date: firstValue(emp.contract_start_date, contract.contract_start_date),
+        contract_end_date: firstValue(emp.contract_end_date, contract.contract_end_date),
+        contract_type: firstValue(emp.contract_type, contract.contract_type, 'محدد المدة'),
+        contract_status: firstValue(emp.contract_status, contract.status, emp.status, 'Active'),
+      };
+    });
+  }, [rawEmployees, rawContracts]);
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
@@ -508,19 +247,11 @@ export default function DashboardPage() {
   }, []);
 
   const companiesList = useMemo(() => {
-    return Array.from(
-      new Set(
-        allEmployees.map((e: any) => getCompany(e)).filter(Boolean)
-      )
-    ).sort((a: any, b: any) => String(a).localeCompare(String(b), 'ar'));
+    return Array.from(new Set(allEmployees.map((e: any) => getCompany(e)).filter(Boolean))).sort((a: any, b: any) => String(a).localeCompare(String(b), 'ar'));
   }, [allEmployees]);
 
   const deptsList = useMemo(() => {
-    return Array.from(
-      new Set(
-        allEmployees.map((e: any) => getDepartment(e)).filter(Boolean)
-      )
-    ).sort((a: any, b: any) => String(a).localeCompare(String(b), 'ar'));
+    return Array.from(new Set(allEmployees.map((e: any) => getDepartment(e)).filter(Boolean))).sort((a: any, b: any) => String(a).localeCompare(String(b), 'ar'));
   }, [allEmployees]);
 
   const dashboardData = useMemo(() => {
@@ -625,7 +356,7 @@ export default function DashboardPage() {
       let isShort = false;
       let historyDesc = '';
 
-      if (typeNormalized === 'محدد المدة' || typeNormalized === 'fixed term' || typeNormalized === 'fixed_term') {
+      if (typeNormalized === 'محدد المدة' || typeNormalized === 'fixed term' || typeNormalized === 'fixed_term' || !typeNormalized) {
         if (approvedRens.length > 0) {
           const sortedApproved = [...approvedRens].sort((a, b) => {
             const dateA = parseDate(firstValue(a?.request_date, a?.RequestDate, a?.created_at, a?.CreatedAt));
@@ -669,19 +400,14 @@ export default function DashboardPage() {
         fixedEmps.push(emp);
       }
 
-      // 🌟 الشغل الفعلي للرسم البياني الشهري
       if (contractStart && contractStatus === 'active') {
         const startDate = parseDate(contractStart);
         if (startDate && startDate.getFullYear() === currentYear) {
           const monthIndex = startDate.getMonth();
-          
           const hasRenewal = empRens.length > 0;
           const parsedEnd = parseDate(contractEnd);
           const endYear = parsedEnd ? parsedEnd.getFullYear() : 0;
 
-          // 1. له طلب تجديد (يعني HR اتخذ إجرء)
-          // 2. أو عقده محدد وتم مده إلى السنة القادمة أو أكثر يدوياً
-          // 3. أو تاريخ بدايته يقع في شهر حالي أو في الماضي ضمن هذه السنة
           const isWorkedContract =
             hasRenewal ||
             (!isPermanent && endYear > currentYear) ||
@@ -818,7 +544,6 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px' }}>
-      
       {/* رأس الصفحة */}
       <div className="card flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 sm:px-6 py-5" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
         <div>
@@ -862,8 +587,6 @@ export default function DashboardPage() {
 
       {/* الرسوم البيانية */}
       <div className="grid lg:grid-cols-3 gap-5">
-        
-        {/* كارت أكبر 5 إدارات */}
         <div className="card px-5 sm:px-6 py-5" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-5 text-[13.5px] font-black" style={{ color: '#0f172a' }}>📊 أكبر 5 إدارات (اضغط لعرض الموظفين)</h4>
           <div className="flex flex-col gap-4">
@@ -889,7 +612,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 🌟 📈 التوزيع الشهري */}
+        {/* 📈 التوزيع الشهري */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-6 text-[13.5px] font-black" style={{ color: '#0f172a' }}>
             📈 التوزيع الشهري لبدايات العقود النشطة والمجددة لعام {new Date().getFullYear()}
@@ -931,8 +654,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
-        
-        {/* 🎨 🎯 الدونات */}
+        {/* الدونات */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col justify-center items-center relative lg:col-span-1" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-4 text-[13.5px] font-black w-full text-right" style={{ color: '#0f172a' }}>📑 توزيع هيكل العقود (اضغط للعرض)</h4>
           
@@ -1006,9 +728,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ============================================================
-          Modal نواقص البيانات
-      ============================================================ */}
+      {/* Modal نواقص البيانات */}
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -1058,9 +778,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ============================================================
-          Modal الإدارة
-      ============================================================ */}
+      {/* Modal الإدارة */}
       {selectedDeptDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', maxWidth: '100%', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -1106,9 +824,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ============================================================
-          باقي الـ Modals
-      ============================================================ */}
+      {/* باقي الـ Modals */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', maxWidth: '100%', height: '85vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
