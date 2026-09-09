@@ -664,7 +664,7 @@ export default function ContractsPage() {
           <div style={{ position: 'relative' }} ref={deptDropdownRef}>
             <button 
               onClick={() => setIsDeptDropdownOpen(!isDeptDropdownOpen)} 
-              style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', minWidth: '180px', justifyContent: 'space-between' }}
+              style={{ padding: '8px 14px', borderRadius: '8px', border: selectedDepts.length > 0 ? '2px solid #2563eb' : '1px solid #cbd5e1', background: selectedDepts.length > 0 ? '#eff6ff' : '#ffffff', color: selectedDepts.length > 0 ? '#2563eb' : '#0f172a', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', minWidth: '160px', justifyContent: 'space-between' }}
             >
               <span>{selectedDepts.length === 0 ? '🏢 كل الإدارات' : `🏢 الإدارات المختارة (${selectedDepts.length})`}</span>
               <span style={{ fontSize: '10px' }}>▼</span>
@@ -878,7 +878,7 @@ export default function ContractsPage() {
                   <option value="دائم">دائم (غير محدد المدة)</option>
                   <option value="محدد المدة">محدد المدة</option>
                   <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                  <option value="مكافأة شاملة">مكافأة شاملة</option>
+                  <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
                 </select>
               </div>
 
