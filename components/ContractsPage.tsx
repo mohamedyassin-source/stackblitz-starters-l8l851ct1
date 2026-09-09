@@ -334,12 +334,19 @@ export default function ContractsPage() {
     });
   }, [employees]);
 
+  // قائمة الإدارات في الفلاتر تشمل الجميع، بما في ذلك غير النشطين والتحويلات.
   const deptsList = useMemo(() => {
-    return Array.from(new Set(activeValidEmployees.map((e) => e.department).filter(Boolean))).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
+    return Array.from(new Set(employees.map((e) => e.department).filter(Boolean))).sort((a: any, b: any) => a.localeCompare(b, 'ar'));
+  }, [employees]);
+
+  // الكروت والإجراءات الخاصة بالتجديد تعتمد على القوة النشطة فقط،
+  // بينما الجدول نفسه يعرض كل الموظفين للبحث والرجوع للموظفين غير النشطين.
+  const activeEmployeeCodes = useMemo(() => {
+    return new Set(activeValidEmployees.map((emp) => normalizeCode(emp.employee_code)));
   }, [activeValidEmployees]);
 
   const filteredContracts = useMemo(() => {
-    return activeValidEmployees.filter((emp) => {
+    return employees.filter((emp) => {
       const term = searchTerm.toLowerCase();
       const days = getDaysRemaining(emp.contract_end_date);
       
@@ -412,14 +419,11 @@ export default function ContractsPage() {
   }, [searchTerm, selectedDepts, selectedType, expiryStatus]);
 
   useEffect(() => {
-    const validCodes = new Set(
-      activeValidEmployees.map((emp) => normalizeCode(emp.employee_code))
-    );
-
+    // التحديد المجمع مخصص للتجديد، لذلك لا نسمح ببقاء غير النشطين محددين.
     setSelectedEmpCodes((prev) =>
-      prev.filter((code) => validCodes.has(normalizeCode(code)))
+      prev.filter((code) => activeEmployeeCodes.has(normalizeCode(code)))
     );
-  }, [activeValidEmployees]);
+  }, [activeEmployeeCodes]);
 
   // 📊 حساب الإحصائيات (بدون موظفي التحويلات)
   const contractStats = useMemo(() => {
@@ -504,9 +508,13 @@ export default function ContractsPage() {
 
   const selectablePageCodes = useMemo(() => {
     return paginatedContracts
-      .filter((emp) => !getRenewalStatusInfo(emp.employee_code).locked)
+      .filter(
+        (emp) =>
+          activeEmployeeCodes.has(normalizeCode(emp.employee_code)) &&
+          !getRenewalStatusInfo(emp.employee_code).locked
+      )
       .map((emp) => normalizeCode(emp.employee_code));
-  }, [paginatedContracts, renewalStatusMap]);
+  }, [paginatedContracts, renewalStatusMap, activeEmployeeCodes]);
 
   const toggleAll = () => {
     if (selectablePageCodes.length === 0) return;
@@ -1111,7 +1119,7 @@ export default function ContractsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)' }}>العقود الحالية السارية</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل لعقود الموظفين النشطين (بدون التحويلات)</p>
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>أرشيف وسجل شامل للعقود والموظفين — غير النشطين والتحويلات متاحون للبحث والعودة</p>
         </div>
         
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -1210,7 +1218,7 @@ export default function ContractsPage() {
       {/* 🛠️ شريط الفلاتر والإدارات المتعددة */}
       <div className="no-print" style={{ background: '#fff', border: '1px solid var(--line)', padding: '12px', borderRadius: '10px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '220px' }} />
+          <input type="text" placeholder="بحث بالاسم، الكود، الرقم القومي، الإدارة..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', outline: 'none', width: '220px' }} />
           
           <div style={{ position: 'relative' }} ref={deptDropdownRef}>
             <button 
@@ -1278,7 +1286,7 @@ export default function ContractsPage() {
           </button>
         </div>
         <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>
-          النتائج: <strong style={{ color: '#0f172a', fontSize: '13px' }}>{sortedContracts.length.toLocaleString('en-US')}</strong> عقد
+          النتائج: <strong style={{ color: '#0f172a', fontSize: '13px' }}>{sortedContracts.length.toLocaleString('en-US')}</strong> موظف
         </div>
       </div>
 
@@ -1308,7 +1316,9 @@ export default function ContractsPage() {
               {paginatedContracts.length === 0 ? (
                  <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>لا توجد سجلات مطابقة للبحث.</td></tr>
               ) : paginatedContracts.map((emp) => {
-                const statusInfo = getRenewalStatusInfo(emp.employee_code);
+                const normalizedEmpCode = normalizeCode(emp.employee_code);
+                const isActiveRow = activeEmployeeCodes.has(normalizedEmpCode);
+                const statusInfo = getRenewalStatusInfo(normalizedEmpCode);
                 const daysLeft = getDaysRemaining(emp.contract_end_date);
                 let remainingLabel = <span style={{ color: 'var(--muted)' }}>—</span>;
                 if (daysLeft !== null) {
@@ -1320,7 +1330,7 @@ export default function ContractsPage() {
                 return (
                   <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9', background: selectedEmpCodes.includes(normalizeCode(emp.employee_code)) ? '#fefce8' : 'transparent' }}>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
-                      <input type="checkbox" checked={selectedEmpCodes.includes(normalizeCode(emp.employee_code))} onChange={() => toggleSelection(emp.employee_code)} disabled={statusInfo.locked} style={{ cursor: statusInfo.locked ? 'not-allowed' : 'pointer' }} />
+                      <input type="checkbox" checked={selectedEmpCodes.includes(normalizedEmpCode)} onChange={() => toggleSelection(emp.employee_code)} disabled={!isActiveRow || statusInfo.locked} style={{ cursor: !isActiveRow || statusInfo.locked ? 'not-allowed' : 'pointer' }} />
                     </td>
                     <td style={{ padding: '10px', fontWeight: 'bold', color: '#dc2626' }}>{emp.employee_code}</td>
                     <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
@@ -1332,12 +1342,30 @@ export default function ContractsPage() {
                     <td style={{ padding: '10px', fontWeight: 'bold', fontSize: '10px' }}><span style={{ color: statusInfo.color }}>{statusInfo.text}</span></td>
                     <td style={{ padding: '10px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                        <button onClick={() => openSingleRenewal(emp)} disabled={statusInfo.locked || actionLoading} style={{ background: statusInfo.locked ? '#e2e8f0' : '#b8934a', color: statusInfo.locked ? '#94a3b8' : '#fff', border: 0, padding: '6px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading ? 'not-allowed' : 'pointer' }}>
-                          + إنشاء طلب
-                        </button>
-                        <button onClick={() => openEditModal(emp)} disabled={actionLoading} style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '6px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer' }} title="تعديل بيانات العقد">
-                          ✏️
-                        </button>
+                        {isActiveRow ? (
+                          <>
+                            <button onClick={() => openSingleRenewal(emp)} disabled={statusInfo.locked || actionLoading} style={{ background: statusInfo.locked ? '#e2e8f0' : '#b8934a', color: statusInfo.locked ? '#94a3b8' : '#fff', border: 0, padding: '6px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: statusInfo.locked || actionLoading ? 'not-allowed' : 'pointer' }}>
+                              + إنشاء طلب
+                            </button>
+                            <button onClick={() => openEditModal(emp)} disabled={actionLoading} style={{ background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '6px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer' }} title="تعديل بيانات العقد">
+                              ✏️
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setReactivateSearchTerm(`${normalizedEmpCode} - ${emp.employee_name || ''}`);
+                              setReactivateEmployeeCode(normalizedEmpCode);
+                              setReactivateDept('');
+                              setIsReactivateModalOpen(true);
+                            }}
+                            disabled={actionLoading}
+                            style={{ background: '#16a34a', color: '#fff', border: 0, padding: '6px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer' }}
+                            title="إعادة تفعيل الموظف"
+                          >
+                            🔄 إعادة تفعيل
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
