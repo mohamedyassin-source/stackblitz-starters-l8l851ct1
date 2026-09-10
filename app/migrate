@@ -1,0 +1,74 @@
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { db } from '@/lib/firebase'; // تأكد إن مسار فايربيز ده صح عندك
+import { collection, getDocs } from 'firebase/firestore';
+
+const prisma = new PrismaClient();
+
+export async function GET() {
+  try {
+    // 1. سحب الموظفين من فايربيز
+    const empSnapshot = await getDocs(collection(db, 'employees'));
+    const employees = empSnapshot.docs.map(doc => doc.data());
+
+    // 2. سحب العقود من فايربيز
+    const contractSnapshot = await getDocs(collection(db, 'contracts'));
+    const contracts = contractSnapshot.docs.map(doc => doc.data());
+
+    let successCount = 0;
+
+    // 3. نقل الموظفين لـ Neon
+    for (const emp of employees) {
+      const code = String(emp.employee_code || emp.EmployeeCode || '').trim();
+      if (!code) continue; // تخطي لو مفيش كود موظف
+
+      // التأكد من التواريخ إنها صحيحة
+      const safeDate = (dateStr: any) => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        return isNaN(d.getTime()) ? null : d;
+      };
+
+      await prisma.employee.upsert({
+        where: { employee_code: code },
+        update: {}, // لو موجود متعملش حاجة
+        create: {
+          employee_code: code,
+          employee_name: String(emp.employee_name || emp.ArabicName || emp.EmployeeName || ''),
+          national_id: emp.national_id || emp.NationalID || null,
+          department: emp.department || emp.Department || null,
+          company: emp.company || emp.Company || null,
+          job_title: emp.job_title || emp.JobTitle || null,
+          contract_type: emp.contract_type || emp.ContractType || 'محدد المدة',
+          status: emp.status || emp.Status || 'Active',
+          birth_date: safeDate(emp.birth_date || emp.BirthDate),
+          hiring_date: safeDate(emp.hiring_date || emp.HiringDate),
+        },
+      });
+
+      // 4. نقل عقد الموظف ده (لو موجود)
+      const empContract = contracts.find(c => String(c.employee_code || c.EmployeeCode) === code);
+      if (empContract) {
+        await prisma.contract.create({
+          data: {
+            employee_code: code,
+            contract_type: empContract.contract_type || empContract.ContractType || 'محدد المدة',
+            contract_start_date: safeDate(empContract.contract_start_date || empContract.ContractStartDate),
+            contract_end_date: safeDate(empContract.contract_end_date || empContract.ContractEndDate),
+            status: empContract.status || empContract.Status || 'Active',
+          }
+        });
+      }
+      successCount++;
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      message: `🎉 تم نقل عدد ${successCount} موظف بعقودهم بنجاح إلى Neon PostgreSQL!` 
+    });
+
+  } catch (error: any) {
+    console.error("Migration Error:", error);
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
