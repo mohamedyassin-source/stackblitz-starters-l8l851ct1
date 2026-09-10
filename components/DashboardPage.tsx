@@ -556,7 +556,7 @@ export default function DashboardPage() {
       <div className="card flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 sm:px-6 py-5" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
         <div>
           <h2 className="m-0 text-lg sm:text-xl font-black tracking-tight" style={{ color: '#0f172a' }}>
-            بوابة تجديد العقود لشركة المراسم الدولية والشركات الشقيقة (Neon DB)
+            بوابة تجديد العقود لشركة المراسم الدولية والشركات الشقيقة
           </h2>
           <div className="flex items-center gap-3 mt-2 text-[12px] font-bold" style={{ color: '#64748b' }}>
             <span>📅 {dateFormatted}</span>
