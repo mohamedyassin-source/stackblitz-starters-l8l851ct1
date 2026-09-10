@@ -165,7 +165,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {requirePasswordChange ? '🛡️' : '🏢'}
           </div>
           <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>
-            {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية (Neon DB)'}
+            {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
             {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
