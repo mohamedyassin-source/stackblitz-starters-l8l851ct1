@@ -3,11 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "prisma generate && prisma db push && next build",
-    "start": "next start",
-    "lint": "next lint"
-  },
+    "scripts": {
+  "dev": "next dev",
+  "postinstall": "prisma generate",
+  "build": "next build",
+  "start": "next start",
+  "lint": "next lint"
+},
   "dependencies": {
     "@prisma/client": "^5.10.0",
     "firebase": "^10.8.0",
