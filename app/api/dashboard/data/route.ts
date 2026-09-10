@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 export async function GET() {
@@ -17,7 +19,7 @@ export async function GET() {
       orderBy: { created_at: 'desc' },
     });
 
-    // تحويل الـ BigInt لـ String لحماية السيرفر من أخطاء الـ JSON
+    // تحويل BigInt إلى String لحماية السيرفر وتقليل حجم البيانات
     const employees = employeesData.map((emp) => ({
       ...emp,
       national_id: emp.national_id ? emp.national_id.toString() : '',
