@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 export async function POST(req: Request) {
@@ -13,11 +15,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: 'كود الموظف غير صالح' }, { status: 400 });
     }
 
-    // 1. تسجيل الدخول والتحقق
+    // 1. عملية تسجيل الدخول
     if (action === 'login') {
       const appUser = await prisma.appUser.findFirst({
         where: { employee_code: cleanCode },
-        include: { employee: true },
       });
 
       const employee = await prisma.employee.findUnique({
@@ -25,7 +26,10 @@ export async function POST(req: Request) {
       });
 
       if (!appUser && !employee) {
-        return NextResponse.json({ success: false, error: `كود الموظف (${cleanCode}) غير موجود بالنظام.` }, { status: 404 });
+        return NextResponse.json(
+          { success: false, error: `كود الموظف (${cleanCode}) غير موجود بالنظام.` },
+          { status: 404 }
+        );
       }
 
       const mergedData = {
@@ -34,7 +38,6 @@ export async function POST(req: Request) {
         department: employee?.department || '',
         company: employee?.company || '',
         role: appUser?.role || (employee?.department?.includes('الموارد البشرية') ? 'admin' : 'Employee'),
-        password: appUser?.password || null,
       };
 
       const storedPassword = appUser?.password;
@@ -44,7 +47,6 @@ export async function POST(req: Request) {
           return NextResponse.json({ success: false, error: 'كلمة السر غير صحيحة.' }, { status: 401 });
         }
       } else {
-        // كلمة سر افتراضية للحسابات الجديدة
         if (password !== '123' && password !== '123456' && password !== String(cleanCode)) {
           return NextResponse.json({ success: false, error: 'كلمة السر غير صحيحة.' }, { status: 401 });
         }
@@ -62,7 +64,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // 2. تحديث كلمة المرور
+    // 2. عملية تغيير كلمة السر
     if (action === 'change_password') {
       if (!new_password || new_password.length < 6) {
         return NextResponse.json({ success: false, error: 'كلمة السر الجديدة يجب أن تكون 6 أحرف/أرقام على الأقل.' }, { status: 400 });
@@ -81,7 +83,7 @@ export async function POST(req: Request) {
           employee_code: cleanCode,
           username: usernameVal,
           password: new_password,
-          role: employee?.department?.includes('الموارد البشرية') ? 'Admin' : 'HR',
+          role: 'HR',
         },
       });
 
@@ -93,7 +95,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ success: false, error: 'إجراء غير معروف' }, { status: 400 });
   } catch (error: any) {
-    console.error('Auth API Error:', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    console.error('Auth API Server Error:', error);
+    return NextResponse.json({ success: false, error: `خطأ بالسيرفر: ${error.message}` }, { status: 500 });
   }
 }
