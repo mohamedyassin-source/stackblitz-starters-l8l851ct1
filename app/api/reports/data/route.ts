@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 const prisma = new PrismaClient();
 
@@ -35,7 +36,7 @@ export async function GET() {
 
     return NextResponse.json({ success: true, employees });
   } catch (error: any) {
-    console.error('Reports Data Fetch Error:', error);
+    console.error('Reports Fetch Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
