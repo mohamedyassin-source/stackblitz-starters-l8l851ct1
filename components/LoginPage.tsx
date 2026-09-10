@@ -30,18 +30,22 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'login',
-          employee_code: cleanCode,
-          password,
-        }),
-      });
+     const res = await fetch('/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    action: 'login',
+    employee_code: cleanCode,
+    password,
+  }),
+});
 
-      const data = await res.json();
-      setLoading(false);
+      const contentType = res.headers.get('content-type');
+if (!contentType || !contentType.includes('application/json')) {
+  throw new Error('تعذر الاتصال بالخادم، يُرجى التأكد من مسارات API ومصادقة قاعدة البيانات.');
+}
+
+const data = await res.json();
 
       if (data.success) {
         if (data.requirePasswordChange) {
