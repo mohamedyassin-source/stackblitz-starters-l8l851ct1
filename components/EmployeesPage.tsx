@@ -1,14 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, doc, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
-
-// ============================================================
-// HELPERS
-// ============================================================
 
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
@@ -20,17 +13,14 @@ const getField = (obj: any, ...keys: string[]) => {
   return '';
 };
 
-const getEmployeeId = (emp: any) =>
-  String(getField(emp, 'employee_id', 'EmployeeID', 'employeeId', 'id') || '').trim();
-
 const getEmployeeCode = (emp: any) =>
-  String(getField(emp, 'employee_code', 'EmployeeCode', 'employeeCode', 'code', 'Code') || '').trim();
+  String(getField(emp, 'employee_code', 'EmployeeCode', 'code') || '').trim();
 
 const getEmployeeName = (emp: any) =>
-  getField(emp, 'employee_name', 'EmployeeName', 'ArabicName', 'employeeName', 'name', 'Name');
+  getField(emp, 'employee_name', 'EmployeeName', 'ArabicName', 'name');
 
 const getNationalId = (emp: any) =>
-  String(getField(emp, 'national_id', 'NationalID', 'nationalId', 'NationalId') || '').trim();
+  String(getField(emp, 'national_id', 'NationalID') || '').trim();
 
 const normalizeSearch = (value: any) =>
   String(value ?? '').trim().toLowerCase();
@@ -57,7 +47,6 @@ const getEmployeeAge = (emp: any) => {
   return age;
 };
 
-// 🌟 دالة حساب تاريخ بلوغ المعاش (60 سنة)
 const getRetirementDate = (emp: any) => {
   const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
   if (!birthDateRaw) return null;
@@ -80,32 +69,9 @@ const isActiveEmployee = (emp: any) => {
   return !isTransfer && !isTerminatedType;
 };
 
-// ============================================================
-// MAIN COMPONENT
-// ============================================================
-
 export default function EmployeesPage() {
-  const { employees: rawEmployees, contracts: rawContracts, loading, refresh: fetchEmployees } = useAppData();
-
-  const employees = useMemo(() => {
-    const contractsMap = new Map<string, any>();
-    rawContracts.forEach((c: any) => {
-      const code = getEmployeeCode(c);
-      if (code) contractsMap.set(code, c);
-    });
-
-    return rawEmployees.map((emp: any) => {
-      const code = getEmployeeCode(emp);
-      const contract = contractsMap.get(code) || {};
-      return {
-        ...emp,
-        contract_id: contract.id || null,
-        contract_start_date: getField(emp, 'contract_start_date', 'HiringDate') || contract.contract_start_date || '',
-        contract_end_date: getField(emp, 'contract_end_date', 'ContractEndDate') || contract.contract_end_date || '',
-        contract_type: contract.contract_type || getField(emp, 'contract_type', 'ContractType') || 'محدد المدة',
-      };
-    });
-  }, [rawEmployees, rawContracts]);
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
@@ -139,6 +105,26 @@ export default function EmployeesPage() {
     employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '',
   });
 
+  // جلب البيانات من Neon PostgreSQL
+  const fetchEmployees = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/employees');
+      const json = await res.json();
+      if (json.success) {
+        setEmployees(json.employees || []);
+      }
+    } catch (e) {
+      console.error('Failed to fetch employees from Neon', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEmployees();
+  }, []);
+
   const deptsList = useMemo(() => Array.from(new Set(employees.map((emp: any) => getField(emp, 'department', 'Department')).filter(Boolean))), [employees]);
   const compsList = useMemo(() => Array.from(new Set(employees.map((emp: any) => getField(emp, 'company', 'Company')).filter(Boolean))), [employees]);
 
@@ -164,7 +150,6 @@ export default function EmployeesPage() {
         else if (selectedType === 'filter_fixed') matchesType = contractType.includes('محدد') && !contractType.includes('فوق السن');
         else if (selectedType === 'filter_overage') matchesType = contractType.includes('فوق السن');
         else if (selectedType === 'filter_reward') matchesType = contractType.includes('مكافأة') || contractType.includes('مكافأه') || contractType.includes('reward');
-        else if (selectedType === 'filter_project') matchesType = contractType.includes('مهمة') || contractType.includes('مشروع');
         else matchesType = contractType === selectedType;
       }
 
@@ -235,24 +220,7 @@ export default function EmployeesPage() {
 
   const handleOpenEdit = (emp: any) => setEditData({ emp: { ...emp }, loading: false, saving: false });
 
-  useEffect(() => {
-    if (loading || !employees || employees.length === 0) return;
-    const savedEmployeeId = localStorage.getItem('selectedEmployeeId') || sessionStorage.getItem('selectedEmployeeId') || '';
-    const savedEmployeeCode = localStorage.getItem('selectedEmployeeCode') || localStorage.getItem('employeeSearch') || localStorage.getItem('jumpSearch') || sessionStorage.getItem('employeeSearch') || sessionStorage.getItem('jumpSearch') || '';
-    const cleanId = String(savedEmployeeId).trim();
-    const cleanCode = String(savedEmployeeCode).trim();
-    if (!cleanId && !cleanCode) return;
-
-    const targetEmployee = employees.find((emp: any) => (cleanId && getEmployeeId(emp) === cleanId) || (cleanCode && getEmployeeCode(emp).toLowerCase() === cleanCode.toLowerCase()));
-    if (!targetEmployee) return;
-
-    setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setSelectedAgeRange(''); setActiveCardFilter(null);
-    handleOpenEdit(targetEmployee);
-
-    localStorage.removeItem('selectedEmployeeId'); localStorage.removeItem('selectedEmployeeCode'); localStorage.removeItem('jumpSearch');
-    sessionStorage.removeItem('selectedEmployeeId'); sessionStorage.removeItem('jumpSearch');
-  }, [employees, loading]);
-
+  // حفظ التعديلات المباشرة
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -260,119 +228,148 @@ export default function EmployeesPage() {
 
     try {
       const emp = editData.emp;
-      const employeeCode = getEmployeeCode(emp);
-      if (!employeeCode) throw new Error('كود الموظف غير موجود.');
-
-      const empRef = doc(db, 'employees', employeeCode);
-      await setDoc(empRef, {
-        employee_code: employeeCode,
-        employee_name: getField(emp, 'employee_name', 'EmployeeName', 'ArabicName'),
-        national_id: getField(emp, 'national_id', 'NationalID'),
-        birth_date: getField(emp, 'birth_date', 'BirthDate') || null,
-        age: emp.age !== undefined && emp.age !== '' ? Number(emp.age) : null,
-        department: getField(emp, 'department', 'Department'),
-        company: getField(emp, 'company', 'Company'),
-        job_title: getField(emp, 'job_title', 'JobTitle'),
-        hiring_date: getField(emp, 'hiring_date', 'HiringDate') || null,
-        contract_type: getField(emp, 'contract_type', 'ContractType'),
-        status: getField(emp, 'status', 'Status') || 'Active',
-        email: getField(emp, 'email', 'Email'),
-        mobile: getField(emp, 'mobile', 'Mobile', 'MOBILE'),
-      }, { merge: true });
-
-      const contQ = query(collection(db, 'contracts'), where('employee_code', '==', employeeCode));
-      const contSnap = await getDocs(contQ);
-      const contractUpdate = {
-        employee_code: employeeCode,
-        contract_type: getField(emp, 'contract_type', 'ContractType'),
-        contract_start_date: getField(emp, 'hiring_date', 'HiringDate') || null,
-        contract_end_date: getField(emp, 'contract_end_date', 'ContractEndDate') || null,
-        status: getField(emp, 'status', 'Status') || 'Active',
-      };
-      if (!contSnap.empty) await updateDoc(doc(db, 'contracts', contSnap.docs[0].id), contractUpdate);
-      else await setDoc(doc(collection(db, 'contracts')), contractUpdate, { merge: true });
-
-      alert('تم حفظ التعديلات وتحديث العقد بنجاح ✅');
-      setEditData(null);
-      await fetchEmployees();
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save', ...emp }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setEditData(null);
+        fetchEmployees();
+      } else {
+        alert('خطأ: ' + data.error);
+      }
     } catch (error: any) {
       alert('حدث خطأ أثناء الحفظ: ' + error.message);
+    } finally {
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
     }
   };
 
+  // إنهاء الخدمة
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return;
     setTermSaving(true);
     try {
-      const empCode = getEmployeeCode(selectedTermEmp);
-      await setDoc(doc(db, 'employees', empCode), { department: 'تحويلات/تحت الاعتماد', status: 'Inactive', termination_reason: termReason, termination_date: termDate }, { merge: true });
-      const contSnap = await getDocs(query(collection(db, 'contracts'), where('employee_code', '==', empCode)));
-      const batch = writeBatch(db);
-      contSnap.forEach((d) => batch.update(doc(db, 'contracts', d.id), { status: 'Inactive', contract_type: 'إنهاء تعاقد' }));
-      await batch.commit();
-
-      alert(`✅ تم تحويل الموظف وإنهائه.`);
-      setShowTermModal(false); setSelectedTermEmp(null); setTermSearch('');
-      await fetchEmployees();
-    } catch (error: any) { alert('خطأ: ' + error.message); } finally { setTermSaving(false); }
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'terminate',
+          employee_code: getEmployeeCode(selectedTermEmp),
+          termination_reason: termReason,
+          termination_date: termDate,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setShowTermModal(false);
+        setSelectedTermEmp(null);
+        setTermSearch('');
+        fetchEmployees();
+      } else {
+        alert('خطأ: ' + data.error);
+      }
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
+    } finally {
+      setTermSaving(false);
+    }
   };
 
+  // نقل مجمع
   const handleConfirmBulkTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedEmpIds.length === 0 || (!bulkDept && !bulkCompany)) return;
     setBulkSaving(true);
     try {
-      const payload: any = {};
-      if (bulkDept) payload.department = bulkDept;
-      if (bulkCompany) payload.company = bulkCompany;
-
-      const batch = writeBatch(db);
-      for (const code of selectedEmpIds) batch.set(doc(db, 'employees', code), payload, { merge: true });
-      await batch.commit();
-
-      alert(`✅ تم نقل ${selectedEmpIds.length} موظف بنجاح.`);
-      setShowBulkTransferModal(false); setSelectedEmpIds([]); setBulkDept(''); setBulkCompany('');
-      await fetchEmployees();
-    } catch (error: any) { alert('خطأ: ' + error.message); } finally { setBulkSaving(false); }
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk_transfer',
+          employee_codes: selectedEmpIds,
+          department: bulkDept,
+          company: bulkCompany,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setShowBulkTransferModal(false);
+        setSelectedEmpIds([]);
+        setBulkDept('');
+        setBulkCompany('');
+        fetchEmployees();
+      } else {
+        alert('خطأ: ' + data.error);
+      }
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
+    } finally {
+      setBulkSaving(false);
+    }
   };
 
+  // حذف مجمع
   const handleDeleteSelected = async () => {
     if (selectedEmpIds.length === 0) return;
     if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف نهائيًا؟`)) return;
     setIsDeleting(true);
     try {
-      const batch = writeBatch(db);
-      for (const code of selectedEmpIds) {
-        batch.delete(doc(db, 'employees', code));
-        const contSnap = await getDocs(query(collection(db, 'contracts'), where('employee_code', '==', code)));
-        contSnap.forEach((d) => batch.delete(doc(db, 'contracts', d.id)));
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'bulk_delete',
+          employee_codes: selectedEmpIds,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setSelectedEmpIds([]);
+        fetchEmployees();
+      } else {
+        alert('خطأ: ' + data.error);
       }
-      await batch.commit();
-      alert('تم حذف الموظفين بنجاح 🗑️✅');
-      setSelectedEmpIds([]);
-      await fetchEmployees();
-    } catch (error: any) { alert('خطأ: ' + error.message); } finally { setIsDeleting(false); }
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
+  // إضافة موظف جديد
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const empCode = newEmp.employee_code.trim();
-      await setDoc(doc(db, 'employees', empCode), { ...newEmp, employee_code: empCode }, { merge: true });
-      await setDoc(doc(collection(db, 'contracts')), { employee_code: empCode, contract_type: newEmp.contract_type, contract_start_date: newEmp.hiring_date || null, contract_end_date: newEmp.contract_type.includes('دائم') || !newEmp.contract_end_date ? null : newEmp.contract_end_date, status: newEmp.status }, { merge: true });
-      alert('تم الإضافة بنجاح ✅');
-      setShowAddModal(false);
-      setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
-      await fetchEmployees();
-    } catch (error: any) { alert('خطأ: ' + error.message); }
+      const res = await fetch('/api/employees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'add', ...newEmp }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setShowAddModal(false);
+        setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
+        fetchEmployees();
+      } else {
+        alert('خطأ: ' + data.error);
+      }
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
+    }
   };
 
   const handleExportToExcel = (onlySelected = false) => {
     const rows = onlySelected ? finalTableEmployees.filter((emp: any) => selectedEmpIds.includes(getEmployeeCode(emp))) : finalTableEmployees;
     const data = rows.map((emp: any) => ({
-      EmployeeID: getEmployeeId(emp),
       EmployeeCode: getEmployeeCode(emp),
       EmployeeName: getEmployeeName(emp),
       NationalID: getNationalId(emp),
@@ -403,7 +400,6 @@ export default function EmployeesPage() {
     return <span style={{ color: '#94a3b8' }}>—</span>;
   };
 
-  // 🌟 بادج السن وإضافة تنبيه 59 سنة
   const renderAgeBadge = (emp: any) => {
     const age = getEmployeeAge(emp);
     if (age === null) return <span style={{ color: '#94a3b8' }}>—</span>;
@@ -413,11 +409,11 @@ export default function EmployeesPage() {
   };
 
   return (
-    <div style={{ direction: 'rtl', animation: 'fadeIn 0.4s ease-in-out' }}>
+    <div style={{ direction: 'rtl' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900', letterSpacing: '-0.3px' }}>👥 بيانات القوة البشرية (HR)</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي للموظفين (شامل النشط وغير النشط)</p>
+          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900', letterSpacing: '-0.3px' }}>👥 بيانات القوة البشرية (HR - Neon DB)</h3>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي للموظفين عبر Neon PostgreSQL</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button onClick={() => handleExportToExcel(false)} style={{ background: '#10b981', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>📥 تصدير Excel</button>
@@ -427,22 +423,21 @@ export default function EmployeesPage() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        {/* الكروت كما هي */}
-        <div onClick={() => setActiveCardFilter('ALL_ACTIVE')} style={{ background: activeCardFilter === 'ALL_ACTIVE' ? 'linear-gradient(135deg, #ffffff, #f0fdf4)' : '#ffffff', border: activeCardFilter === 'ALL_ACTIVE' ? '2px solid #22c55e' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer', boxShadow: activeCardFilter === 'ALL_ACTIVE' ? '0 10px 20px rgba(34,197,94,0.12)' : '0 2px 6px rgba(0,0,0,0.03)' }}>
+        <div onClick={() => setActiveCardFilter('ALL_ACTIVE')} style={{ background: activeCardFilter === 'ALL_ACTIVE' ? 'linear-gradient(135deg, #ffffff, #f0fdf4)' : '#ffffff', border: activeCardFilter === 'ALL_ACTIVE' ? '2px solid #22c55e' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>إجمالي الموظفين (النشطين)</span><span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>100%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', marginTop: '10px', fontFamily: 'sans-serif' }}>{kpiStats.total.toLocaleString()}</div>
+          <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', marginTop: '10px' }}>{kpiStats.total.toLocaleString()}</div>
         </div>
-        <div onClick={() => setActiveCardFilter('PERM')} style={{ background: activeCardFilter === 'PERM' ? 'linear-gradient(135deg, #ffffff, #f0fdf4)' : '#ffffff', border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer', boxShadow: activeCardFilter === 'PERM' ? '0 10px 20px rgba(22,163,74,0.12)' : '0 2px 6px rgba(0,0,0,0.03)' }}>
+        <div onClick={() => setActiveCardFilter('PERM')} style={{ background: activeCardFilter === 'PERM' ? 'linear-gradient(135deg, #ffffff, #f0fdf4)' : '#ffffff', border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>عقود دائمة</span><span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>{kpiStats.permPct}%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', marginTop: '10px', fontFamily: 'sans-serif' }}>{kpiStats.perm.toLocaleString()}</div>
+          <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', marginTop: '10px' }}>{kpiStats.perm.toLocaleString()}</div>
         </div>
-        <div onClick={() => setActiveCardFilter('FIXED')} style={{ background: activeCardFilter === 'FIXED' ? 'linear-gradient(135deg, #ffffff, #eff6ff)' : '#ffffff', border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer', boxShadow: activeCardFilter === 'FIXED' ? '0 10px 20px rgba(37,99,235,0.12)' : '0 2px 6px rgba(0,0,0,0.03)' }}>
+        <div onClick={() => setActiveCardFilter('FIXED')} style={{ background: activeCardFilter === 'FIXED' ? 'linear-gradient(135deg, #ffffff, #eff6ff)' : '#ffffff', border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>عقود محددة المدة</span><span style={{ background: '#dbeafe', color: '#1e40af', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>{kpiStats.fixedPct}%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#2563eb', marginTop: '10px', fontFamily: 'sans-serif' }}>{kpiStats.fixed.toLocaleString()}</div>
+          <div style={{ fontSize: '26px', fontWeight: '900', color: '#2563eb', marginTop: '10px' }}>{kpiStats.fixed.toLocaleString()}</div>
         </div>
-        <div onClick={() => setActiveCardFilter('ABOVE_AGE')} style={{ background: activeCardFilter === 'ABOVE_AGE' ? 'linear-gradient(135deg, #ffffff, #fffbe1)' : '#ffffff', border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer', boxShadow: activeCardFilter === 'ABOVE_AGE' ? '0 10px 20px rgba(217,119,6,0.12)' : '0 2px 6px rgba(0,0,0,0.03)' }}>
+        <div onClick={() => setActiveCardFilter('ABOVE_AGE')} style={{ background: activeCardFilter === 'ABOVE_AGE' ? 'linear-gradient(135deg, #ffffff, #fffbe1)' : '#ffffff', border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>فوق السن (60+)</span><span style={{ background: '#fef3c7', color: '#92400e', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>{kpiStats.aboveAgePct}%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', marginTop: '10px', fontFamily: 'sans-serif' }}>{kpiStats.aboveAge.toLocaleString()}</div>
+          <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', marginTop: '10px' }}>{kpiStats.aboveAge.toLocaleString()}</div>
         </div>
       </div>
 
@@ -476,7 +471,7 @@ export default function EmployeesPage() {
 
       <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل البيانات... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل البيانات من Neon PostgreSQL... ⏳</div>
         ) : (
           <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', whiteSpace: 'nowrap', fontSize: '12px' }}>
@@ -496,11 +491,10 @@ export default function EmployeesPage() {
               <tbody>
                 {finalTableEmployees.map((emp: any) => {
                   const code = getEmployeeCode(emp);
-                  const employeeId = getEmployeeId(emp);
                   const isInactive = !isActiveEmployee(emp);
 
                   return (
-                    <tr key={employeeId || code} style={{ borderBottom: '1px solid #f1f5f9', background: isInactive ? '#fef2f2' : 'transparent', opacity: isInactive ? 0.85 : 1 }}>
+                    <tr key={code} style={{ borderBottom: '1px solid #f1f5f9', background: isInactive ? '#fef2f2' : 'transparent', opacity: isInactive ? 0.85 : 1 }}>
                       <td style={{ padding: '10px', textAlign: 'center' }}><input type="checkbox" checked={selectedEmpIds.includes(code)} onChange={(e) => setSelectedEmpIds(e.target.checked ? [...selectedEmpIds, code] : selectedEmpIds.filter((id) => id !== code))} /></td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: isInactive ? '#dc2626' : '#0d9488', fontFamily: 'monospace' }}>{code}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getEmployeeName(emp)}</td>
@@ -527,7 +521,7 @@ export default function EmployeesPage() {
         )}
       </div>
 
-      {/* 🌟 Profile Modal */}
+      {/* Profile Modal */}
       {profileEmp && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '650px', maxWidth: '100%', background: '#fff', borderRadius: '16px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -539,10 +533,7 @@ export default function EmployeesPage() {
               <div><strong>الكود:</strong> {getEmployeeCode(profileEmp) || '—'}</div>
               <div><strong>الاسم:</strong> {getEmployeeName(profileEmp) || '—'}</div>
               <div><strong>السن:</strong> {getEmployeeAge(profileEmp) ?? '—'}</div>
-              
-              {/* 🌟 إضافة تاريخ بلوغ المعاش في الملف */}
               <div><strong>تاريخ بلوغ المعاش:</strong> <span style={{color: '#ea580c', fontWeight: 'bold'}}>{getRetirementDate(profileEmp) || '—'}</span></div>
-              
               <div><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department') || '—'}</div>
               <div><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company') || '—'}</div>
               <div><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate') || '—'}</div>
@@ -552,15 +543,14 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* باقي الـ Modals هنا... */}
       {/* Edit Employee Modal */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>✏️ تعديل بيانات الموظف</h3>
-                <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>الكود: <strong>{getEmployeeCode(editData.emp)}</strong>{'  |  '}EmployeeID: <strong>{getEmployeeId(editData.emp) || '—'}</strong></div>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>✏️ تعديل بيانات الموظف (Neon DB)</h3>
+                <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>الكود: <strong>{getEmployeeCode(editData.emp)}</strong></div>
               </div>
               <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -643,9 +633,9 @@ export default function EmployeesPage() {
               {termSearchResults.length > 0 && !selectedTermEmp && (
                 <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', maxHeight: '180px', overflowY: 'auto' }}>
                   {termSearchResults.map((emp: any, index: number) => (
-                    <div key={getEmployeeId(emp) || index} onClick={() => { setSelectedTermEmp(emp); setTermSearch(`${getEmployeeCode(emp)} - ${getEmployeeName(emp)}`); }} style={{ padding: '12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', background: '#fff' }}>
+                    <div key={index} onClick={() => { setSelectedTermEmp(emp); setTermSearch(`${getEmployeeCode(emp)} - ${getEmployeeName(emp)}`); }} style={{ padding: '12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', background: '#fff' }}>
                       <strong>[{getEmployeeCode(emp)}]</strong> {getEmployeeName(emp)}
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>الإدارة: {getField(emp, 'department', 'Department') || '—'} | الرقم القومي: {getNationalId(emp) || '—'}</div>
+                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>الإدارة: {getField(emp, 'department', 'Department') || '—'}</div>
                     </div>
                   ))}
                 </div>
@@ -666,7 +656,7 @@ export default function EmployeesPage() {
                 <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
               </select>
 
-              <input type="date" value={termDate} onChange={(e) => setTermDate(e.target.value)} required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontFamily: 'monospace' }} />
+              <input type="date" value={termDate} onChange={(e) => setTermDate(e.target.value)} required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} />
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                 <button type="button" onClick={() => setShowTermModal(false)} style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>إلغاء</button>
