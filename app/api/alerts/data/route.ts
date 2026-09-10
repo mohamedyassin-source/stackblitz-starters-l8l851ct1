@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 const prisma = new PrismaClient();
 
@@ -39,7 +40,7 @@ export async function GET() {
       renewals: renewalsData,
     });
   } catch (error: any) {
-    console.error('Alerts Data Fetch Error:', error);
+    console.error('Alerts Fetch Error:', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
