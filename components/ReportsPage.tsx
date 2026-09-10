@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
 const MONTHS_LIST = [
@@ -49,7 +48,8 @@ const getEmployeeAge = (emp: any) => {
 };
 
 export default function ReportsPage() {
-  const { employees: rawEmployees, contracts: rawContracts, loading } = useAppData();
+  const [employees, setEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [activeReport, setActiveReport] = useState<'monthly' | 'above_60' | 'dept_summary' | 'full_roster'>('monthly');
 
@@ -60,11 +60,30 @@ export default function ReportsPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedContractType, setSelectedContractType] = useState('');
 
-  // 🌟 فلتر الإدارات المتعدد مع البحث والـ Checkbox
+  // فلتر الإدارات المتعدد مع البحث والـ Checkbox
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [deptSearchTerm, setDeptSearchTerm] = useState('');
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
+
+  // جلب البيانات المباشرة من Neon DB
+  useEffect(() => {
+    async function fetchReportsData() {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/reports/data');
+        const json = await res.json();
+        if (json.success) {
+          setEmployees(json.employees || []);
+        }
+      } catch (err) {
+        console.error('Error fetching reports data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchReportsData();
+  }, []);
 
   // إغلاق القائمة عند النقر خارجها
   useEffect(() => {
@@ -77,27 +96,7 @@ export default function ReportsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // 🌟 دمج بيانات العقود مع الموظفين
-  const employees = useMemo(() => {
-    const contractsMap = new Map<string, any>();
-    rawContracts.forEach((c: any) => {
-      const code = String(getField(c, 'employee_code', 'EmployeeCode')).trim();
-      if (code) contractsMap.set(code, c);
-    });
-
-    return rawEmployees.map((emp: any) => {
-      const code = String(getField(emp, 'employee_code', 'EmployeeCode')).trim();
-      const contract = contractsMap.get(code) || {};
-      return {
-        ...emp,
-        contract_start_date: getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate') || contract.contract_start_date || '',
-        contract_end_date: getField(emp, 'contract_end_date', 'ContractEndDate') || contract.contract_end_date || '',
-        contract_type: contract.contract_type || getField(emp, 'contract_type', 'ContractType') || 'محدد المدة',
-      };
-    });
-  }, [rawEmployees, rawContracts]);
-
-  // 🌟 استبعاد كافة الموظفين التابعين لإدارة التحويلات تلقائياً
+  // استبعاد كافة الموظفين التابعين لإدارة التحويلات تلقائياً
   const activeEmployees = useMemo(() => {
     return employees.filter(e => {
       const dept = String(getField(e, 'department', 'Department')).trim();
@@ -121,7 +120,7 @@ export default function ReportsPage() {
     return deptsList.filter(d => String(d).toLowerCase().includes(deptSearchTerm.toLowerCase().trim()));
   }, [deptsList, deptSearchTerm]);
 
-  // 🌟 فلترة البيانات الشاملة للتقارير
+  // فلترة البيانات الشاملة للتقارير
   const reportData = useMemo(() => {
     return activeEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type', 'ContractType');
@@ -173,7 +172,7 @@ export default function ReportsPage() {
     });
   }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm]);
 
-  // 📊 ملخص الإدارات (مخصص لتقرير dept_summary)
+  // ملخص الإدارات (مخصص لتقرير dept_summary)
   const deptSummaryData = useMemo(() => {
     const summary: Record<string, { total: number; fixed: number; perm: number; above60: number }> = {};
 
@@ -249,8 +248,8 @@ export default function ReportsPage() {
       {/* الهيدر العلوي */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات</h3>
-          <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تقارير منظمة ومباشرة حسب الشهر، الإدارات المحددة، والشركات</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات (Neon DB)</h3>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تقارير منظمة ومباشرة عبر قاعدة بيانات Neon PostgreSQL</p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -292,7 +291,7 @@ export default function ReportsPage() {
         ))}
       </div>
 
-      {/* 🛠️ شريط الفلاتر */}
+      {/* شريط الفلاتر */}
       <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
         
         {/* فلتر الشهر والسنة */}
@@ -328,7 +327,7 @@ export default function ReportsPage() {
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        {/* 🌟 فلتر الإدارات المطور */}
+        {/* فلتر الإدارات المطور */}
         <div style={{ position: 'relative' }} ref={deptDropdownRef}>
           <button
             type="button"
@@ -448,7 +447,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 📄 منطقة عرض وطباعة التقرير */}
+      {/* منطقة عرض وطباعة التقرير */}
       <div className="print-area" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px' }}>
         
         {/* ترويسة التقرير */}
@@ -473,10 +472,10 @@ export default function ReportsPage() {
 
         {/* عرض البيانات */}
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري إعداد التقرير... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري استخراج التقرير من قاعدة البيانات Neon PostgreSQL... ⏳</div>
         ) : activeReport === 'dept_summary' ? (
           
-          /* 📊 جدول إحصائيات الإدارات */
+          /* جدول إحصائيات الإدارات */
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
@@ -506,7 +505,7 @@ export default function ReportsPage() {
 
         ) : (
 
-          /* 📄 جدول تفاصيل الموظفين العادي */
+          /* جدول تفاصيل الموظفين العادي */
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
             <thead>
               <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
