@@ -4,8 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+"build": "prisma generate && prisma db push && next build",    "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
@@ -30,5 +29,6 @@
   },
   "devDependencies": {
     "@types/nodemailer": "^8.0.1"
+    "prisma": "^5.10.0"
   }
 }
