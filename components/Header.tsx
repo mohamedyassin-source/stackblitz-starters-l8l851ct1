@@ -3,9 +3,20 @@ import { useState, useEffect } from 'react';
 
 export default function Header({ activePage }: { activePage?: string }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [sessionUser, setSessionUser] = useState<any>(null);
 
   useEffect(() => {
     setIsDarkMode(document.documentElement.classList.contains('dark'));
+
+    // سحب بيانات المستخدم صاحب الجلسة الحالية
+    const savedUser = localStorage.getItem('session_user');
+    if (savedUser) {
+      try {
+        setSessionUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Error parsing session user', e);
+      }
+    }
   }, []);
 
   const toggleTheme = () => {
@@ -30,6 +41,15 @@ export default function Header({ activePage }: { activePage?: string }) {
   if (activePage === 'audit') pageTitle = 'سجل النظام';
   if (activePage === 'settings') pageTitle = 'الإعدادات';
 
+  // استخراج اسم المستخدم والدور
+  const userName = sessionUser?.name || sessionUser?.username || 'مدير النظام';
+  const userDept = sessionUser?.department || 'إدارة الموارد البشرية';
+  
+  // استخراج الحروف الأولى للـ Avatar
+  const avatarInitials = userName
+    ? userName.split(' ').map((n: string) => n[0]).slice(0, 2).join('')
+    : 'HR';
+
   return (
     <header className="bg-card border-b border-border h-16 flex items-center justify-between px-6 transition-colors duration-300 z-10 shadow-sm shrink-0">
       <h1 className="text-lg font-extrabold text-primary tracking-tight">{pageTitle}</h1>
@@ -46,13 +66,14 @@ export default function Header({ activePage }: { activePage?: string }) {
         
         <div className="w-px h-6 bg-border"></div>
 
+        {/* 👤 بيانات المستخدم الحقيقي للجلسة */}
         <div className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity">
-          <div className="w-9 h-9 rounded-full bg-gold text-white flex items-center justify-center font-bold text-sm shadow-md">
-            HR
+          <div className="w-9 h-9 rounded-full bg-teal-600 text-white flex items-center justify-center font-bold text-xs shadow-md uppercase">
+            {avatarInitials}
           </div>
           <div className="hidden sm:block text-right">
-            <div className="text-xs font-bold text-primary">مدير النظام</div>
-            <div className="text-[10px] font-bold text-muted">إدارة الموارد البشرية</div>
+            <div className="text-xs font-bold text-primary">{userName}</div>
+            <div className="text-[10px] font-bold text-muted">{userDept}</div>
           </div>
         </div>
       </div>
