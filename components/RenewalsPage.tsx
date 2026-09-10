@@ -1,11 +1,8 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { useAppData } from '@/lib/DataContext';
-import { db } from '@/lib/firebase';
-import { collection, query, where, getDocs, updateDoc, deleteDoc, doc, writeBatch } from 'firebase/firestore';
 
-// 🌟 دالة تقطيع وتطهير نصوص التواريخ لمنع أخطاء التوقيع الزمني والـ ISO
 const parseDateParts = (dateStr: string | null | undefined) => {
   if (!dateStr) return null;
   const clean = String(dateStr).split('T')[0].split(' ')[0].trim();
@@ -18,13 +15,11 @@ const parseDateParts = (dateStr: string | null | undefined) => {
   return { year, month, day, clean };
 };
 
-// 🌟 التحقق من صحة السنة (4 أرقام من 2000 إلى 2099)
 const isValidYear = (dateStr: string | null | undefined) => {
   const parsed = parseDateParts(dateStr);
   return parsed ? parsed.year >= 2000 && parsed.year <= 2099 : false;
 };
 
-// 🌟 حساب تاريخ بداية العقد الجديد (يوم بعد نهاية العقد القديم)
 const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
   const parsed = parseDateParts(oldEndDateStr);
   if (!parsed) {
@@ -38,7 +33,6 @@ const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-// 🌟 حساب تاريخ نهاية العقد الجديد بناءً على تاريخ البداية وعدد الشهور
 const calculateNewEndDateFromStart = (startDateStr: string | null | undefined, monthsToAdd: number) => {
   const parsed = parseDateParts(startDateStr);
   if (!parsed) return null;
@@ -51,8 +45,6 @@ const calculateNewEndDateFromStart = (startDateStr: string | null | undefined, m
 };
 
 export default function RenewalsPage() {
-  const { employees: globalEmployees, refresh: refreshGlobalData } = useAppData();
-
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -71,6 +63,22 @@ export default function RenewalsPage() {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
+  // جلب الطلبات من Neon PostgreSQL
+  const fetchRequests = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/renewals');
+      const json = await res.json();
+      if (json.success) {
+        setRequests(json.requests || []);
+      }
+    } catch (error: any) {
+      console.error('Error fetching requests from Neon:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchRequests();
   }, []);
@@ -87,20 +95,6 @@ export default function RenewalsPage() {
       setCustomEndDate(end);
     }
   }, [approvalModal, confirmedMonths]);
-
-  // 🌟 جلب الطلبات من Firebase
-  const fetchRequests = async () => {
-    setLoading(true);
-    try {
-      const snap = await getDocs(collection(db, 'renewal_requests'));
-      const data = snap.docs.map((docSnap: any) => ({ id: docSnap.id, ...docSnap.data() }));
-      setRequests(data);
-    } catch (error: any) {
-      console.error('Error fetching requests:', error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const getDaysRemaining = (endDateStr: string) => {
     const parsed = parseDateParts(endDateStr);
@@ -144,64 +138,35 @@ export default function RenewalsPage() {
   const countRejected = requests.filter((r: any) => r.status === 'Rejected').length;
   const countAll = requests.length;
 
-  // 🌟 اعتماد مجمع أو فردي (مدمج باستخدام Firebase Batch)
+  // اعتماد الطلبات عبر Neon API
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
-      const batch = writeBatch(db);
       const reqsToApprove = approvalModal.type === 'single' && approvalModal.req 
-        ? [approvalModal.req] 
-        : requests.filter((r: any) => selectedIds.includes(r.request_id));
+        ? [approvalModal.req.request_id] 
+        : selectedIds;
 
-      for (const req of reqsToApprove) {
-        const newStartDate = approvalModal.type === 'single' && customStartDate ? customStartDate : calculateNewStartDate(req.contract_end_date);
-        const newEndDate = approvalModal.type === 'single' && customEndDate ? customEndDate : calculateNewEndDateFromStart(newStartDate, confirmedMonths);
+      const res = await fetch('/api/renewals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'approve',
+          request_ids: reqsToApprove,
+          confirmed_months: confirmedMonths,
+          custom_start_date: customStartDate,
+          custom_end_date: customEndDate,
+        }),
+      });
 
-        if (!newStartDate || !newEndDate || !isValidYear(newStartDate) || !isValidYear(newEndDate)) {
-          throw new Error(`تواريخ غير صالحة للموظف: ${req.employee_name}`);
-        }
-
-        // 1. تحديث جدول طلبات التجديد
-        const reqQ = query(collection(db, 'renewal_requests'), where('request_id', '==', req.request_id));
-        const reqSnap = await getDocs(reqQ);
-        if (!reqSnap.empty) {
-          batch.update(doc(db, 'renewal_requests', reqSnap.docs[0].id), {
-            status: 'Approved',
-            signature_status: 'في انتظار توقيع الموظف',
-            renewal_months: confirmedMonths,
-            new_contract_end_date: newEndDate
-          });
-        }
-
-        // 2. تحديث جدول العقود
-        const contQ = query(collection(db, 'contracts'), where('employee_code', '==', req.employee_code), where('status', '==', 'Active'));
-        const contSnap = await getDocs(contQ);
-        contSnap.forEach((d: any) => {
-          batch.update(doc(db, 'contracts', d.id), {
-            contract_start_date: newStartDate,
-            contract_end_date: newEndDate,
-            status: 'Active'
-          });
-        });
-
-        // 3. تحديث جدول الموظفين
-        const empQ = query(collection(db, 'employees'), where('employee_code', '==', req.employee_code));
-        const empSnap = await getDocs(empQ);
-        empSnap.forEach((d: any) => {
-          batch.update(doc(db, 'employees', d.id), {
-            contract_start_date: newStartDate,
-            contract_end_date: newEndDate
-          });
-        });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setSelectedIds([]);
+        setApprovalModal({ isOpen: false, type: 'single' });
+        fetchRequests();
+      } else {
+        alert('خطأ: ' + data.error);
       }
-
-      await batch.commit();
-
-      alert(`تم اعتماد ${reqsToApprove.length} طلب وتحديث العقود بنجاح ✅`);
-      setSelectedIds([]);
-      setApprovalModal({ isOpen: false, type: 'single' });
-      await refreshGlobalData();
-      await fetchRequests();
     } catch (err: any) {
       alert('حدث خطأ أثناء الاعتماد: ' + err.message);
     } finally {
@@ -209,23 +174,27 @@ export default function RenewalsPage() {
     }
   };
 
-  // 🌟 حذف الطلب من Firebase
+  // حذف الطلب
   const handleDeleteRequest = async (requestId: string) => {
-    const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟\n\nتنبيه: سيتم إزالة الطلب وكأنه لم يكن.');
+    const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟');
     if (!confirmDelete) return;
 
     setActionLoading(true);
     try {
-      const reqQ = query(collection(db, 'renewal_requests'), where('request_id', '==', requestId));
-      const snap = await getDocs(reqQ);
-      if (!snap.empty) {
-        await deleteDoc(doc(db, 'renewal_requests', snap.docs[0].id));
-      }
+      const res = await fetch('/api/renewals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', request_id: requestId }),
+      });
 
-      alert('تم حذف طلب التجديد بنجاح 🗑️✅');
-      setApprovalModal({ isOpen: false, type: 'single' });
-      await refreshGlobalData();
-      await fetchRequests();
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        setApprovalModal({ isOpen: false, type: 'single' });
+        fetchRequests();
+      } else {
+        alert('خطأ: ' + data.error);
+      }
     } catch (err: any) {
       alert('حدث خطأ أثناء الحذف: ' + err.message);
     } finally {
@@ -233,25 +202,26 @@ export default function RenewalsPage() {
     }
   };
 
-  // 🌟 رفض الطلب في Firebase
+  // رفض الطلب
   const handleReject = async (requestId: string) => {
     const confirmReject = window.confirm('هل أنت متأكد من رفض هذا الطلب نهائياً؟');
     if (!confirmReject) return;
 
     setActionLoading(true);
     try {
-      const reqQ = query(collection(db, 'renewal_requests'), where('request_id', '==', requestId));
-      const snap = await getDocs(reqQ);
-      if (!snap.empty) {
-        await updateDoc(doc(db, 'renewal_requests', snap.docs[0].id), {
-          status: 'Rejected',
-          signature_status: 'مرفوض'
-        });
-      }
+      const res = await fetch('/api/renewals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', request_id: requestId }),
+      });
 
-      alert('تم رفض الطلب بنجاح ❌');
-      await refreshGlobalData();
-      await fetchRequests();
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchRequests();
+      } else {
+        alert('خطأ: ' + data.error);
+      }
     } catch (err: any) {
       alert('حدث خطأ أثناء رفض الطلب: ' + err.message);
     } finally {
@@ -259,48 +229,37 @@ export default function RenewalsPage() {
     }
   };
 
-  // 🌟 تصدير للإكسيل
+  // تصدير للإكسيل
   const handleExportApprovedToExcel = async () => {
     if (selectedIds.length === 0) return alert('يرجى تحديد طلبات أولاً.');
-    setActionLoading(true);
 
-    try {
-      const selectedReqs = requests.filter((r: any) => selectedIds.includes(r.request_id) && r.status === 'Approved');
+    const selectedReqs = requests.filter((r: any) => selectedIds.includes(r.request_id) && r.status === 'Approved');
 
-      if (selectedReqs.length === 0) {
-        setActionLoading(false);
-        return alert('⚠️ لا يمكن تصدير هذا الكشف. يرجى التأكد من تحديد طلبات معتمدة فقط من الجدول.');
-      }
-
-      const exportData = selectedReqs.map((req: any) => {
-        const empDetails = globalEmployees?.find((e: any) => e.employee_code === req.employee_code);
-        const newStart = calculateNewStartDate(req.contract_end_date);
-
-        return {
-          'رقم الطلب': req.request_id,
-          'كود الموظف': req.employee_code,
-          'اسم الموظف': req.employee_name,
-          'الرقم القومي': empDetails?.national_id || '—',
-          'الإدارة': req.department || '—',
-          'الوظيفة': req.job_title || '—',
-          'الشركة': req.company || '—',
-          'تاريخ نهاية العقد القديم': req.contract_end_date || '—',
-          'تاريخ بداية العقد الجديد': newStart,
-          'مدة التجديد (شهور)': req.renewal_months || 12,
-          'تاريخ نهاية العقد الجديد': req.new_contract_end_date || calculateNewEndDateFromStart(newStart, req.renewal_months || 12),
-        };
-      });
-
-      const ws = XLSX.utils.json_to_sheet(exportData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'عقود التجديد المعتمدة');
-      XLSX.writeFile(wb, `كشف_عقود_التجديد_${new Date().toISOString().split('T')[0]}.xlsx`);
-
-      setActionLoading(false);
-    } catch (err: any) {
-      alert('حدث خطأ أثناء تجهيز الإكسيل: ' + err.message);
-      setActionLoading(false);
+    if (selectedReqs.length === 0) {
+      return alert('⚠️ يرجى التأكد من تحديد طلبات معتمدة فقط من الجدول.');
     }
+
+    const exportData = selectedReqs.map((req: any) => {
+      const newStart = calculateNewStartDate(req.contract_end_date);
+
+      return {
+        'رقم الطلب': req.request_id,
+        'كود الموظف': req.employee_code,
+        'اسم الموظف': req.employee_name,
+        'الإدارة': req.department || '—',
+        'الوظيفة': req.job_title || '—',
+        'الشركة': req.company || '—',
+        'تاريخ نهاية العقد القديم': req.contract_end_date || '—',
+        'تاريخ بداية العقد الجديد': newStart,
+        'مدة التجديد (شهور)': req.renewal_months || 12,
+        'تاريخ نهاية العقد الجديد': req.new_contract_end_date || calculateNewEndDateFromStart(newStart, req.renewal_months || 12),
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'عقود التجديد المعتمدة');
+    XLSX.writeFile(wb, `كشف_عقود_التجديد_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -313,25 +272,25 @@ export default function RenewalsPage() {
   };
 
   return (
-    <div style={{ paddingBottom: '40px' }}>
+    <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>طلبات التجديد</h3>
-            <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>دورة الاعتماد وإدارة العقود قيد المعالجة لتوجيهها للتوقيع</p>
+            <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950, #0f172a)' }}>طلبات التجديد (Neon DB)</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted, #64748b)' }}>دورة الاعتماد وإدارة العقود قيد المعالجة عبر Neon PostgreSQL</p>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {activeTab === 'Pending' && (
               <button onClick={() => {
                 if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
                 setApprovalModal({ isOpen: true, type: 'bulk' });
-              }} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--brass-600)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+              }} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
                 ✅ اعتماد مجمع ({selectedIds.length})
               </button>
             )}
 
             {activeTab === 'Approved' && (
-              <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
+              <button onClick={handleExportApprovedToExcel} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#16a34a', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1 }}>
                 {actionLoading ? 'جاري التجهيز...' : `📥 تصدير كشف عقود (${selectedIds.length})`}
               </button>
             )}
@@ -339,56 +298,56 @@ export default function RenewalsPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-          <button onClick={() => setActiveTab('Pending')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Pending' ? '2px solid var(--stamp-blue)' : '1px solid var(--line)', background: activeTab === 'Pending' ? 'var(--stamp-blue-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>قيد المعالجة</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-blue)', marginTop: '4px' }}>{countPending}</div>
+          <button onClick={() => setActiveTab('Pending')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Pending' ? '2px solid #2563eb' : '1px solid #e2e8f0', background: activeTab === 'Pending' ? '#eff6ff' : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>قيد المعالجة</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#2563eb', marginTop: '4px' }}>{countPending}</div>
           </button>
-          <button onClick={() => setActiveTab('Approved')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Approved' ? '2px solid var(--stamp-green)' : '1px solid var(--line)', background: activeTab === 'Approved' ? 'var(--stamp-green-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>معتمدة (تنتظر التوقيع)</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '4px' }}>{countApproved}</div>
+          <button onClick={() => setActiveTab('Approved')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Approved' ? '2px solid #16a34a' : '1px solid #e2e8f0', background: activeTab === 'Approved' ? '#f0fdf4' : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>معتمدة (تنتظر التوقيع)</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#16a34a', marginTop: '4px' }}>{countApproved}</div>
           </button>
-          <button onClick={() => setActiveTab('Rejected')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Rejected' ? '2px solid var(--stamp-red)' : '1px solid var(--line)', background: activeTab === 'Rejected' ? 'var(--stamp-red-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>مرفوضة</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--stamp-red)', marginTop: '4px' }}>{countRejected}</div>
+          <button onClick={() => setActiveTab('Rejected')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'Rejected' ? '2px solid #dc2626' : '1px solid #e2e8f0', background: activeTab === 'Rejected' ? '#fef2f2' : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>مرفوضة</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#dc2626', marginTop: '4px' }}>{countRejected}</div>
           </button>
-          <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: activeTab === 'All' ? 'var(--paper)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center', transition: 'all 0.2s' }}>
-            <div style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الجميع</div>
-            <div style={{ fontSize: '18px', fontWeight: 'bold', color: 'var(--navy-950)', marginTop: '4px' }}>{countAll}</div>
+          <button onClick={() => setActiveTab('All')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: activeTab === 'All' ? '2px solid #0f172a' : '1px solid #e2e8f0', background: activeTab === 'All' ? '#f8fafc' : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>الجميع</div>
+            <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#0f172a', marginTop: '4px' }}>{countAll}</div>
           </button>
         </div>
 
-        <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '220px' }} />
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '10px', outline: 'none', width: '220px' }} />
 
-          <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
+          <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
 
-          <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '130px' }} />
+          <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '10px', outline: 'none', width: '130px' }} />
           <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <span style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--muted)', marginLeft: '6px' }}>شهر البداية:</span>
+            <span style={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b', marginLeft: '6px' }}>شهر البداية:</span>
             <input
               type="month"
               value={selectedMonth}
               onChange={e => setSelectedMonth(e.target.value)}
-              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }}
+              style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '10px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }}
             />
           </div>
 
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
 
-          <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>معروض: <span style={{ color: 'var(--navy-950)' }}>{sortedRequests.length}</span> طلب</div>
+          <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: '#64748b', fontWeight: 'bold' }}>معروض: <span style={{ color: '#0f172a' }}>{sortedRequests.length}</span> طلب</div>
         </div>
 
-        <div className="table-responsive" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', overflowX: 'auto' }}>
+        <div className="table-responsive" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', overflowX: 'auto' }}>
           {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري تحميل الطلبات وترتيبها...</div>
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل الطلبات وترتيبها من Neon PostgreSQL...</div>
           ) : (
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '10.5px', whiteSpace: 'nowrap' }}>
               <thead>
                 <tr>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', textAlign: 'center', width: '30px' }}>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'center', width: '30px' }}>
                     <input
                       type="checkbox"
                       onChange={handleSelectAll}
@@ -396,25 +355,25 @@ export default function RenewalsPage() {
                       disabled={activeTab === 'All' || activeTab === 'Rejected'}
                     />
                   </th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>رقم الطلب</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الكود</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الموظف</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الإدارة</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>انتهاء العقد</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>المتبقي</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>التجديد</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الطلب</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>التوقيع</th>
-                  <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>رقم الطلب</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الكود</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الموظف</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الإدارة</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>انتهاء العقد</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>المتبقي</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>التجديد</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الطلب</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>التوقيع</th>
+                  <th style={{ padding: '10px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>إجراء</th>
                 </tr>
               </thead>
               <tbody>
                 {sortedRequests.length === 0 ? (
-                  <tr><td colSpan={11} style={{ padding: '20px', textAlign: 'center', color: 'var(--muted)' }}>لا توجد طلبات مطابقة.</td></tr>
+                  <tr><td colSpan={11} style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>لا توجد طلبات مطابقة.</td></tr>
                 ) : sortedRequests.map((req: any) => {
                   const days = getDaysRemaining(req.contract_end_date);
                   return (
-                    <tr key={req.request_id} style={{ borderBottom: '1px solid var(--line)', background: selectedIds.includes(req.request_id) ? 'var(--paper)' : 'transparent' }}>
+                    <tr key={req.request_id} style={{ borderBottom: '1px solid #e2e8f0', background: selectedIds.includes(req.request_id) ? '#f8fafc' : 'transparent' }}>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         <input
                           type="checkbox"
@@ -423,37 +382,37 @@ export default function RenewalsPage() {
                           onChange={e => setSelectedIds(e.target.checked ? [...selectedIds, req.request_id] : selectedIds.filter(id => id !== req.request_id))}
                         />
                       </td>
-                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: 'var(--muted)' }}>{req.request_id}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{req.employee_code}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: '#64748b' }}>{req.request_id}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{req.employee_code}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.employee_name}</td>
-                      <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{req.department || '—'}</td>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>{req.department || '—'}</td>
                       <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{req.contract_end_date || '—'}</td>
                       <td style={{ padding: '8px 10px' }}>
                         {days !== null ? (
-                          <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', background: days < 0 ? 'var(--stamp-red-bg)' : days <= 60 ? 'var(--stamp-amber-bg)' : 'var(--stamp-green-bg)', color: days < 0 ? 'var(--stamp-red)' : days <= 60 ? 'var(--stamp-amber)' : 'var(--stamp-green)' }}>
+                          <span style={{ padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', background: days < 0 ? '#fef2f2' : days <= 60 ? '#fffbe1' : '#f0fdf4', color: days < 0 ? '#dc2626' : days <= 60 ? '#b45309' : '#16a34a' }}>
                             {days < 0 ? `منتهي (${Math.abs(days)})` : `${days} يوم`}
                           </span>
                         ) : '—'}
                       </td>
                       <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{req.renewal_months || 12} ش</td>
                       <td style={{ padding: '8px 10px' }}>
-                        {req.status === 'Approved' && <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>معتمد</span>}
-                        {req.status === 'Pending' && <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>قيد المعالجة</span>}
-                        {req.status === 'Rejected' && <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>مرفوض</span>}
+                        {req.status === 'Approved' && <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>معتمد</span>}
+                        {req.status === 'Pending' && <span style={{ background: '#eff6ff', color: '#2563eb', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>قيد المعالجة</span>}
+                        {req.status === 'Rejected' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>مرفوض</span>}
                       </td>
-                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px', color: req.signature_status === 'تم التوقيع' ? 'var(--stamp-green)' : 'var(--muted)' }}>
+                      <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px', color: req.signature_status === 'تم التوقيع' ? '#16a34a' : '#64748b' }}>
                         {req.signature_status || '—'}
                       </td>
                       <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                         {req.status === 'Pending' ? (
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                            <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
-                            <button onClick={() => handleReject(req.request_id)} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
+                            <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: '#16a34a', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
+                            <button onClick={() => handleReject(req.request_id)} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
                             <button onClick={() => handleDeleteRequest(req.request_id)} style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold', cursor: 'pointer' }}>حذف 🗑️</button>
                           </div>
                         ) : (
                           <div style={{ display: 'flex', gap: '4px', justifyContent: 'center', alignItems: 'center' }}>
-                            <span style={{ fontSize: '9px', color: 'var(--muted)' }}>— تمت المعالجة —</span>
+                            <span style={{ fontSize: '9px', color: '#64748b' }}>— تمت المعالجة —</span>
                             <button onClick={() => handleDeleteRequest(req.request_id)} style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '2px 6px', borderRadius: '4px', fontSize: '8.5px', fontWeight: 'bold', cursor: 'pointer' }}>حذف 🗑️</button>
                           </div>
                         )}
@@ -468,9 +427,9 @@ export default function RenewalsPage() {
 
         {approvalModal.isOpen && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-            <div style={{ width: '420px', background: 'var(--paper-card)', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ width: '420px', background: '#fff', borderRadius: '12px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--stamp-green)' }}>
+                <h3 style={{ margin: 0, fontSize: '15px', color: '#16a34a' }}>
                   {approvalModal.type === 'single' ? `اعتماد طلب تجديد: ${approvalModal.req?.employee_name}` : `اعتماد مجمع لعدد (${selectedIds.length}) طلب`}
                 </h3>
                 {approvalModal.type === 'single' && approvalModal.req && (
@@ -483,39 +442,39 @@ export default function RenewalsPage() {
                 )}
               </div>
 
-              <p style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '16px', lineHeight: '1.6' }}>
+              <p style={{ fontSize: '11px', color: '#64748b', marginBottom: '16px', lineHeight: '1.6' }}>
                 سيتم اعتماد الطلب وتحديث تاريخ نهاية وبداية العقد للموظف مباشرة. ويمكنك تعديل التواريخ يدوياً قبل الاعتماد.
               </p>
 
               {approvalModal.type === 'single' && approvalModal.req && (
-                <div style={{ background: 'var(--paper)', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: 'var(--ink)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginBottom: '16px', fontSize: '11px', color: '#0f172a', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <div style={{ marginBottom: '2px' }}><strong>تاريخ النهاية القديم:</strong> {approvalModal.req.contract_end_date || 'غير مسجل'}</div>
 
                   <div>
-                    <label style={{ display: 'block', marginBottom: '4px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>تاريخ البداية الجديد (قابل للتعديل):</label>
+                    <label style={{ display: 'block', marginBottom: '4px', color: '#16a34a', fontWeight: 'bold' }}>تاريخ البداية الجديد (قابل للتعديل):</label>
                     <input
                       type="date"
                       value={customStartDate}
                       onChange={e => setCustomStartDate(e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}
                     />
                   </div>
 
                   <div>
-                    <label style={{ display: 'block', marginBottom: '4px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>تاريخ النهاية المتوقع (قابل للتعديل):</label>
+                    <label style={{ display: 'block', marginBottom: '4px', color: '#16a34a', fontWeight: 'bold' }}>تاريخ النهاية المتوقع (قابل للتعديل):</label>
                     <input
                       type="date"
                       value={customEndDate}
                       onChange={e => setCustomEndDate(e.target.value)}
-                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}
+                      style={{ width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px', fontWeight: 'bold', fontFamily: 'monospace' }}
                     />
                   </div>
                 </div>
               )}
 
               <div style={{ marginBottom: '20px' }}>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '8px', fontWeight: 'bold' }}>المدة المعتمدة للتجديد بالشهور (تلقائي):</label>
-                <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>المدة المعتمدة للتجديد بالشهور (تلقائي):</label>
+                <select value={confirmedMonths} onChange={e => setConfirmedMonths(Number(e.target.value))} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
                   <option value={1}>شهر واحد (1)</option>
                   <option value={2}>شهران (2)</option>
                   <option value={3}>3 شهور (ربع سنوي)</option>
@@ -526,8 +485,8 @@ export default function RenewalsPage() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', color: 'var(--ink)' }}>إلغاء</button>
-                <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
+                <button onClick={() => setApprovalModal({ isOpen: false, type: 'single' })} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', color: '#0f172a' }}>إلغاء</button>
+                <button onClick={handleConfirmApproval} disabled={actionLoading} style={{ background: '#16a34a', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
                   {actionLoading ? 'جاري الاعتماد...' : 'تأكيد الاعتماد ✅'}
                 </button>
               </div>
