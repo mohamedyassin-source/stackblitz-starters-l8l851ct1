@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { navigateTo } from '@/lib/navigation';
-import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
 
@@ -194,33 +193,42 @@ function getRenewalMonths(req: any) {
 }
 
 export default function DashboardPage() {
-  const {
-    employees: rawEmployees = [],
-    contracts: rawContracts = [],
-    renewals: allRenewals = [],
-    loading,
-  } = useAppData();
+  const [rawEmployees, setRawEmployees] = useState<any[]>([]);
+  const [allRenewals, setAllRenewals] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // 🌟 دمج بيانات العقود القادمة من كولكشن contracts مع الموظفين
+  // جلب البيانات المباشرة من Neon DB
+  useEffect(() => {
+    async function fetchDashboardData() {
+      setLoading(true);
+      try {
+        const res = await fetch('/api/dashboard/data');
+        const json = await res.json();
+        if (json.success) {
+          setRawEmployees(json.employees || []);
+          setAllRenewals(json.renewals || []);
+        }
+      } catch (err) {
+        console.error('Error loading Neon dashboard data:', err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchDashboardData();
+  }, []);
+
   const allEmployees = useMemo(() => {
-    const contractsMap = new Map<string, any>();
-    rawContracts.forEach((c: any) => {
-      const code = getEmployeeCode(c);
-      if (code) contractsMap.set(code, c);
-    });
-
     return rawEmployees.map((emp: any) => {
-      const code = getEmployeeCode(emp);
-      const contract = contractsMap.get(code) || {};
+      const activeContract = emp.contracts?.[0] || {};
       return {
         ...emp,
-        contract_start_date: firstValue(emp.contract_start_date, contract.contract_start_date),
-        contract_end_date: firstValue(emp.contract_end_date, contract.contract_end_date),
-        contract_type: firstValue(emp.contract_type, contract.contract_type, 'محدد المدة'),
-        contract_status: firstValue(emp.contract_status, contract.status, emp.status, 'Active'),
+        contract_start_date: firstValue(emp.contract_start_date, activeContract.contract_start_date, emp.hiring_date),
+        contract_end_date: firstValue(emp.contract_end_date, activeContract.contract_end_date),
+        contract_type: firstValue(emp.contract_type, activeContract.contract_type, 'محدد المدة'),
+        contract_status: firstValue(emp.contract_status, activeContract.status, emp.status, 'Active'),
       };
     });
-  }, [rawEmployees, rawContracts]);
+  }, [rawEmployees]);
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
@@ -523,7 +531,7 @@ export default function DashboardPage() {
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeFormatted = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  
+
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth || []).map((m: any) => m.count), 1);
 
   const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.rewardCount + dashboardData.aboveAgeCount + dashboardData.shortTermTotal;
@@ -548,7 +556,7 @@ export default function DashboardPage() {
       <div className="card flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-5 sm:px-6 py-5" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
         <div>
           <h2 className="m-0 text-lg sm:text-xl font-black tracking-tight" style={{ color: '#0f172a' }}>
-            بوابة تجديد العقود لشركة المراسم الدولية والشركات الشقيقة
+            بوابة تجديد العقود لشركة المراسم الدولية والشركات الشقيقة (Neon DB)
           </h2>
           <div className="flex items-center gap-3 mt-2 text-[12px] font-bold" style={{ color: '#64748b' }}>
             <span>📅 {dateFormatted}</span>
@@ -612,7 +620,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 📈 التوزيع الشهري */}
+        {/* التوزيع الشهري */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px' }}>
           <h4 className="m-0 mb-6 text-[13.5px] font-black" style={{ color: '#0f172a' }}>
             📈 التوزيع الشهري لبدايات العقود النشطة والمجددة لعام {new Date().getFullYear()}
@@ -728,7 +736,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Modal نواقص البيانات */}
+      {/* Modals المقترنة بروابط السجلات */}
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -778,7 +786,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Modal الإدارة */}
       {selectedDeptDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', maxWidth: '100%', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -824,7 +831,6 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* باقي الـ Modals */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', maxWidth: '100%', height: '85vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
