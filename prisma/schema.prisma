@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Employee {
+  employee_code      String    @id
+  employee_name      String
+  national_id        String?
+  birth_date         DateTime?
+  department         String?
+  company            String?
+  job_title          String?
+  hiring_date        DateTime?
+  contract_type      String    @default("محدد المدة")
+  status             String    @default("Active")
+  termination_reason String?
+  termination_date   DateTime?
+  email              String?
+  mobile             String?
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+}
+
+model Contract {
+  id                  String    @id @default(uuid())
+  employee_code       String
+  contract_type       String
+  contract_start_date DateTime?
+  contract_end_date   DateTime?
+  status              String    @default("Active")
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+}
+
+model RenewalRequest {
+  request_id            String    @id
+  employee_code         String
+  new_contract_end_date DateTime?
+  renewal_months        Int?
+  status                String    @default("Pending")
+  signature_status      String    @default("قيد التوقيع")
+  request_date          DateTime  @default(now())
+}
