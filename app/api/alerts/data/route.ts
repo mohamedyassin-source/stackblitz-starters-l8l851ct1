@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 
+export const dynamic = 'force-dynamic';
+
 const prisma = new PrismaClient();
 
 export async function GET() {
   try {
-    // جلب الموظفين مع عقودهم النشطة
     const employeesData = await prisma.employee.findMany({
       include: {
         contracts: {
@@ -16,16 +17,15 @@ export async function GET() {
       },
     });
 
-    // جلب كافة طلبات التجديد
     const renewalsData = await prisma.renewalRequest.findMany({
       orderBy: { created_at: 'desc' },
     });
 
-    // تنسيق شكل البيانات ليتوافق تماماً مع الواجهة
     const employees = employeesData.map((emp) => {
       const activeContract = emp.contracts[0];
       return {
         ...emp,
+        national_id: emp.national_id ? emp.national_id.toString() : '',
         contract_end_date: activeContract?.contract_end_date
           ? activeContract.contract_end_date.toISOString().split('T')[0]
           : null,
