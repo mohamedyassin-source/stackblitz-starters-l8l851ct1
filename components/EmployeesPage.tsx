@@ -12,7 +12,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
   for (const key of keys) {
-    if (obj[key] !== undefined && obj[key] !== null) {
+    if (obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') {
       return obj[key];
     }
   }
@@ -111,7 +111,7 @@ export default function EmployeesPage() {
     employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '',
   });
 
-  // 🌟 جلب البيانات من Supabase
+  // 🌟 الربط المحسن والأنسب مع جدول العقود contracts
   const fetchEmployees = async () => {
     setLoading(true);
     try {
@@ -122,18 +122,31 @@ export default function EmployeesPage() {
 
       if (empRes.error) throw empRes.error;
 
-      // دمج بيانات العقد الأخير مع بيانات الموظف
+      // إنشاء خريطة (Map) لجدول العقود برقم الموظف لسرعة وتأكيد المطابقة
+      const contractsMap = new Map<string, any[]>();
+      (contRes.data || []).forEach(c => {
+        const code = String(c.employee_code).trim();
+        if (!contractsMap.has(code)) contractsMap.set(code, []);
+        contractsMap.get(code)?.push(c);
+      });
+
+      // دمج بيانات العقد الأحدث لكل موظف
       const mergedEmployees = (empRes.data || []).map(emp => {
-        const empContracts = (contRes.data || []).filter(c => String(c.employee_code) === String(emp.employee_code));
-        empContracts.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        const empCode = String(emp.employee_code).trim();
+        const empContracts = contractsMap.get(empCode) || [];
+
+        // ترتيب العقود من الأحدث للأقدم
+        empContracts.sort((a, b) => new Date(b.created_at || b.contract_start_date || 0).getTime() - new Date(a.created_at || a.contract_start_date || 0).getTime());
+        
         const activeContract = empContracts[0] || {};
         
         return {
           ...emp,
-          contract_type: activeContract.contract_type || emp.contract_type,
-          contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date,
-          contract_end_date: activeContract.contract_end_date || emp.contract_end_date,
-          contract_status: activeContract.status || emp.status,
+          contract_type: activeContract.contract_type || emp.contract_type || 'محدد المدة',
+          contract_start_date: activeContract.contract_start_date || emp.hiring_date,
+          contract_end_date: activeContract.contract_end_date || null,
+          contract_status: activeContract.status || emp.status || 'Active',
+          contract_id: activeContract.contract_id || null,
         };
       });
 
@@ -220,18 +233,6 @@ export default function EmployeesPage() {
     });
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
-  const termSearchResults = useMemo(() => {
-    const search = normalizeSearch(termSearch);
-    if (!search) return [];
-    return employees.filter(isActiveEmployee).filter((emp: any) => {
-      const code = normalizeSearch(getEmployeeCode(emp));
-      const name = normalizeSearch(getEmployeeName(emp));
-      const nationalId = normalizeSearch(getNationalId(emp));
-      const dept = normalizeSearch(getField(emp, 'department', 'Department'));
-      return code.includes(search) || name.includes(search) || nationalId.includes(search) || dept.includes(search);
-    }).slice(0, 8);
-  }, [employees, termSearch]);
-
   const handleSort = (column: string) => {
     if (sortColumn === column) setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     else { setSortColumn(column); setSortDirection('asc'); }
@@ -244,7 +245,7 @@ export default function EmployeesPage() {
 
   const handleOpenEdit = (emp: any) => setEditData({ emp: { ...emp }, loading: false, saving: false });
 
-  // 🌟 حفظ التعديلات المباشرة في Supabase
+  // 🌟 حفظ التعديلات المباشرة في جدولين الموظفين والعقود
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -253,8 +254,10 @@ export default function EmployeesPage() {
     try {
       const empData = editData.emp;
       const code = parseInt(getEmployeeCode(empData));
+      const contractType = getField(empData, 'contract_type', 'ContractType');
+      const contractEndDate = getField(empData, 'contract_end_date', 'ContractEndDate') || null;
 
-      // تحديث بيانات الموظف
+      // 1. تحديث بيانات الموظف
       const { error: empError } = await supabase.from('employees').update({
         employee_name: getEmployeeName(empData),
         national_id: getNationalId(empData),
@@ -265,19 +268,26 @@ export default function EmployeesPage() {
         hiring_date: getField(empData, 'hiring_date', 'HiringDate') || null,
         email: getField(empData, 'email', 'Email'),
         mobile: getField(empData, 'mobile', 'Mobile'),
-        contract_type: getField(empData, 'contract_type', 'ContractType'),
-        contract_end_date: getField(empData, 'contract_end_date', 'ContractEndDate') || null,
         status: getField(empData, 'status', 'Status'),
       }).eq('employee_code', code);
 
       if (empError) throw empError;
 
-      // تحديث العقد النشط الخاص به ليتوافق مع التعديل
-      await supabase.from('contracts').update({
-        contract_type: getField(empData, 'contract_type', 'ContractType'),
-        contract_end_date: getField(empData, 'contract_end_date', 'ContractEndDate') || null,
-        status: getField(empData, 'status', 'Status'),
-      }).eq('employee_code', code).eq('status', 'Active');
+      // 2. تحديث أو إدخال العقد في جدول contracts
+      if (empData.contract_id) {
+        await supabase.from('contracts').update({
+          contract_type: contractType,
+          contract_end_date: contractEndDate,
+          status: getField(empData, 'status', 'Status'),
+        }).eq('contract_id', empData.contract_id);
+      } else {
+        await supabase.from('contracts').insert([{
+          employee_code: code,
+          contract_type: contractType,
+          contract_end_date: contractEndDate,
+          status: 'Active'
+        }]);
+      }
 
       alert('تم حفظ التعديلات بنجاح ✅');
       setEditData(null);
@@ -287,153 +297,6 @@ export default function EmployeesPage() {
     } finally {
       setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
     }
-  };
-
-  // 🌟 إنهاء الخدمة في Supabase
-  const handleConfirmTermination = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTermEmp) return;
-    setTermSaving(true);
-    try {
-      const code = parseInt(getEmployeeCode(selectedTermEmp));
-
-      const { error: empError } = await supabase.from('employees')
-        .update({ status: 'Inactive', department: 'تحويلات/تحت الاعتماد' })
-        .eq('employee_code', code);
-      if (empError) throw empError;
-
-      const { error: contError } = await supabase.from('contracts')
-        .update({ status: 'Terminated', contract_type: 'إنهاء تعاقد' })
-        .eq('employee_code', code)
-        .eq('status', 'Active');
-      if (contError) throw contError;
-
-      alert('تم إنهاء التعاقد بنجاح ✅');
-      setShowTermModal(false);
-      setSelectedTermEmp(null);
-      setTermSearch('');
-      fetchEmployees();
-    } catch (error: any) {
-      alert('خطأ: ' + error.message);
-    } finally {
-      setTermSaving(false);
-    }
-  };
-
-  // 🌟 نقل مجمع في Supabase
-  const handleConfirmBulkTransfer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedEmpIds.length === 0 || (!bulkDept && !bulkCompany)) return;
-    setBulkSaving(true);
-    try {
-      const codes = selectedEmpIds.map(Number);
-      
-      const { error } = await supabase.from('employees')
-        .update({ department: bulkDept, company: bulkCompany })
-        .in('employee_code', codes);
-        
-      if (error) throw error;
-
-      alert('تم النقل المجمع بنجاح ✅');
-      setShowBulkTransferModal(false);
-      setSelectedEmpIds([]);
-      setBulkDept('');
-      setBulkCompany('');
-      fetchEmployees();
-    } catch (error: any) {
-      alert('خطأ: ' + error.message);
-    } finally {
-      setBulkSaving(false);
-    }
-  };
-
-  // 🌟 حذف مجمع من Supabase
-  const handleDeleteSelected = async () => {
-    if (selectedEmpIds.length === 0) return;
-    if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف نهائيًا؟`)) return;
-    setIsDeleting(true);
-    try {
-      const codes = selectedEmpIds.map(Number);
-      
-      // نقوم بحذف العقود والطلبات أولاً (أو نعتمد على الـ Cascade في قاعدة البيانات)
-      await supabase.from('renewals').delete().in('employee_code', codes);
-      await supabase.from('contracts').delete().in('employee_code', codes);
-      
-      const { error } = await supabase.from('employees').delete().in('employee_code', codes);
-      if (error) throw error;
-
-      alert('تم الحذف بنجاح ✅');
-      setSelectedEmpIds([]);
-      fetchEmployees();
-    } catch (error: any) {
-      alert('خطأ: ' + error.message);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  // 🌟 إضافة موظف جديد لـ Supabase
-  const handleAddEmployee = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const code = parseInt(newEmp.employee_code);
-
-      const { error: empError } = await supabase.from('employees').insert([{
-        employee_code: code,
-        employee_name: newEmp.employee_name,
-        national_id: newEmp.national_id,
-        birth_date: newEmp.birth_date || null,
-        department: newEmp.department,
-        company: newEmp.company,
-        job_title: newEmp.job_title,
-        hiring_date: newEmp.hiring_date || null,
-        contract_type: newEmp.contract_type,
-        contract_end_date: newEmp.contract_end_date || null,
-        status: newEmp.status,
-        email: newEmp.email,
-        mobile: newEmp.mobile
-      }]);
-
-      if (empError) throw empError;
-
-      // إضافة عقد
-      await supabase.from('contracts').insert([{
-        employee_code: code,
-        contract_type: newEmp.contract_type,
-        contract_start_date: newEmp.hiring_date || null,
-        contract_end_date: newEmp.contract_end_date || null,
-        status: newEmp.status
-      }]);
-
-      alert('تم إضافة الموظف بنجاح ✅');
-      setShowAddModal(false);
-      setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
-      fetchEmployees();
-    } catch (error: any) {
-      alert('خطأ: ' + error.message);
-    }
-  };
-
-  const handleExportToExcel = (onlySelected = false) => {
-    const rows = onlySelected ? finalTableEmployees.filter((emp: any) => selectedEmpIds.includes(getEmployeeCode(emp))) : finalTableEmployees;
-    const data = rows.map((emp: any) => ({
-      EmployeeCode: getEmployeeCode(emp),
-      EmployeeName: getEmployeeName(emp),
-      NationalID: getNationalId(emp),
-      Department: getField(emp, 'department', 'Department'),
-      Company: getField(emp, 'company', 'Company'),
-      JobTitle: getField(emp, 'job_title', 'JobTitle'),
-      Age: getEmployeeAge(emp),
-      RetirementDate: getRetirementDate(emp),
-      HiringDate: getField(emp, 'hiring_date', 'HiringDate'),
-      ContractType: getField(emp, 'contract_type', 'ContractType'),
-      ContractEndDate: getField(emp, 'contract_end_date', 'ContractEndDate'),
-      Mobile: getField(emp, 'mobile', 'Mobile'),
-    }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
-    XLSX.writeFile(wb, `Employees_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const getContractStatusBadge = (type: string, endDate: string) => {
@@ -451,7 +314,7 @@ export default function EmployeesPage() {
     const age = getEmployeeAge(emp);
     if (age === null) return <span style={{ color: '#94a3b8' }}>—</span>;
     if (age >= 60) return <span style={{ background: '#fffbe1', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
-    if (age === 59) return <span style={{ background: '#ffedd5', color: '#ea580c', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>⏳ {age} سنة (قرب المعاش)</span>;
+    if (age === 59) return <span style={{ background: '#ffedd5', color: '#ea580c', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>⏳ {age} سنة</span>;
     return <span style={{ background: '#f8fafc', color: '#0f172a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{age} سنة</span>;
   };
 
@@ -462,63 +325,11 @@ export default function EmployeesPage() {
           <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900', letterSpacing: '-0.3px' }}>👥 بيانات القوة البشرية (HR - Supabase)</h3>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي للموظفين عبر قاعدة بيانات Supabase</p>
         </div>
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button onClick={() => handleExportToExcel(false)} style={{ background: '#10b981', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>📥 تصدير Excel</button>
-          <button onClick={() => { setShowTermModal(true); setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: '#ef4444', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>🚫 إنهاء وتجميد</button>
-          <button onClick={() => setShowAddModal(true)} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>+ إضافة موظف</button>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        <div onClick={() => setActiveCardFilter('ALL_ACTIVE')} style={{ background: activeCardFilter === 'ALL_ACTIVE' ? 'linear-gradient(135deg, #ffffff, #f0fdf4)' : '#ffffff', border: activeCardFilter === 'ALL_ACTIVE' ? '2px solid #22c55e' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>إجمالي الموظفين (النشطين)</span><span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>100%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', marginTop: '10px' }}>{kpiStats.total.toLocaleString()}</div>
-        </div>
-        <div onClick={() => setActiveCardFilter('PERM')} style={{ background: activeCardFilter === 'PERM' ? 'linear-gradient(135deg, #ffffff, #f0fdf4)' : '#ffffff', border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>عقود دائمة</span><span style={{ background: '#dcfce7', color: '#15803d', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>{kpiStats.permPct}%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#16a34a', marginTop: '10px' }}>{kpiStats.perm.toLocaleString()}</div>
-        </div>
-        <div onClick={() => setActiveCardFilter('FIXED')} style={{ background: activeCardFilter === 'FIXED' ? 'linear-gradient(135deg, #ffffff, #eff6ff)' : '#ffffff', border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>عقود محددة المدة</span><span style={{ background: '#dbeafe', color: '#1e40af', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>{kpiStats.fixedPct}%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#2563eb', marginTop: '10px' }}>{kpiStats.fixed.toLocaleString()}</div>
-        </div>
-        <div onClick={() => setActiveCardFilter('ABOVE_AGE')} style={{ background: activeCardFilter === 'ABOVE_AGE' ? 'linear-gradient(135deg, #ffffff, #fffbe1)' : '#ffffff', border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', borderRadius: '16px', padding: '18px 20px', cursor: 'pointer' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span style={{ fontSize: '12px', fontWeight: '800', color: '#475569' }}>فوق السن (60+)</span><span style={{ background: '#fef3c7', color: '#92400e', fontSize: '10px', fontWeight: '900', padding: '3px 8px', borderRadius: '20px' }}>{kpiStats.aboveAgePct}%</span></div>
-          <div style={{ fontSize: '26px', fontWeight: '900', color: '#d97706', marginTop: '10px' }}>{kpiStats.aboveAge.toLocaleString()}</div>
-        </div>
-      </div>
-
-      {selectedEmpIds.length > 0 && (
-        <div style={{ background: '#0f172a', color: '#fff', padding: '12px 18px', borderRadius: '12px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ fontSize: '12px', fontWeight: 'bold' }}>تم تحديد <span style={{ color: '#38bdf8', fontSize: '14px' }}>{selectedEmpIds.length}</span> موظف</div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setShowBulkTransferModal(true)} style={{ padding: '7px 14px', background: '#2563eb', color: '#fff', border: 0, borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>نقل مجمع 🔄</button>
-            <button onClick={() => handleExportToExcel(true)} style={{ padding: '7px 14px', background: '#10b981', color: '#fff', border: 0, borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>تصدير المحدد 📥</button>
-            <button onClick={handleDeleteSelected} disabled={isDeleting} style={{ padding: '7px 14px', background: '#ef4444', color: '#fff', border: 0, borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>حذف نهائي 🗑️</button>
-            <button onClick={() => setSelectedEmpIds([])} style={{ padding: '7px 14px', background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', borderRadius: '8px', cursor: 'pointer', fontSize: '11px' }}>إلغاء ✕</button>
-          </div>
-        </div>
-      )}
-
-      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px 18px', borderRadius: '14px', marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <input type="text" placeholder="بحث بالاسم، الكود، الرقم القومي، الإدارة..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '9px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', minWidth: '260px', outline: 'none' }} />
-        <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', width: '130px' }} />
-        <datalist id="deptList">{deptsList.map((d: any, i: number) => (<option key={i} value={d} />))}</datalist>
-        <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={(e) => setSelectedCompany(e.target.value)} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', width: '130px' }} />
-        <datalist id="compList">{compsList.map((c: any, i: number) => (<option key={i} value={c} />))}</datalist>
-        <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '9px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }}>
-          <option value="">كل أنواع العقود</option>
-          <option value="filter_permanent">دائم / غير محدد المدة</option>
-          <option value="filter_fixed">محدد المدة</option>
-          <option value="filter_overage">فوق السن</option>
-          <option value="filter_reward">مكافأة شاملة</option>
-        </select>
-        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setSelectedAgeRange(''); setActiveCardFilter(null); }} style={{ background: '#f1f5f9', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إعادة ضبط</button>
       </div>
 
       <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل البيانات من Supabase... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل وربط بيانات العقود والموظفين من Supabase... ⏳</div>
         ) : (
           <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', whiteSpace: 'nowrap', fontSize: '12px' }}>
@@ -551,13 +362,10 @@ export default function EmployeesPage() {
                       </td>
                       <td style={{ padding: '10px' }}>{renderAgeBadge(emp)}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: isInactive ? '#dc2626' : 'inherit' }}>{getField(emp, 'contract_type', 'ContractType') || '—'}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{getField(emp, 'contract_type', 'ContractType') || '—'}</td>
                       <td style={{ padding: '10px' }}>{getContractStatusBadge(getField(emp, 'contract_type', 'ContractType'), getField(emp, 'contract_end_date', 'ContractEndDate'))}</td>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                          <button onClick={() => setProfileEmp(emp)} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>👁️ الملف</button>
-                          <button onClick={() => handleOpenEdit(emp)} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>تعديل ✏️</button>
-                        </div>
+                        <button onClick={() => handleOpenEdit(emp)} style={{ padding: '5px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>تعديل ✏️</button>
                       </td>
                     </tr>
                   );
@@ -567,154 +375,6 @@ export default function EmployeesPage() {
           </div>
         )}
       </div>
-
-      {/* Profile Modal */}
-      {profileEmp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '650px', maxWidth: '100%', background: '#fff', borderRadius: '16px', padding: '24px', maxHeight: '90vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px' }}>
-              <h3 style={{ margin: 0, fontSize: '17px', fontWeight: '800' }}>👤 الملف الوظيفي</h3>
-              <button onClick={() => setProfileEmp(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>إغلاق ✕</button>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '12px' }}>
-              <div><strong>الكود:</strong> {getEmployeeCode(profileEmp) || '—'}</div>
-              <div><strong>الاسم:</strong> {getEmployeeName(profileEmp) || '—'}</div>
-              <div><strong>السن:</strong> {getEmployeeAge(profileEmp) ?? '—'}</div>
-              <div><strong>تاريخ بلوغ المعاش:</strong> <span style={{color: '#ea580c', fontWeight: 'bold'}}>{getRetirementDate(profileEmp) || '—'}</span></div>
-              <div><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department') || '—'}</div>
-              <div><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company') || '—'}</div>
-              <div><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate') || '—'}</div>
-              <div><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType') || '—'}</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Employee Modal */}
-      {editData && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '850px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>✏️ تعديل بيانات الموظف (Supabase)</h3>
-                <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>الكود: <strong>{getEmployeeCode(editData.emp)}</strong></div>
-              </div>
-              <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            <form onSubmit={handleSaveEdit}>
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 14px', color: '#0d9488', fontSize: '14px' }}>بيانات الموظف</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                  {[
-                    { label: 'الكود', key: 'employee_code', alt: 'EmployeeCode', disabled: true },
-                    { label: 'الاسم', key: 'employee_name', alt: 'EmployeeName' },
-                    { label: 'الرقم القومي', key: 'national_id', alt: 'NationalID' },
-                    { label: 'تاريخ الميلاد', key: 'birth_date', alt: 'BirthDate' },
-                    { label: 'السن', key: 'age', alt: 'Age' },
-                    { label: 'الإدارة', key: 'department', alt: 'Department' },
-                    { label: 'الشركة', key: 'company', alt: 'Company' },
-                    { label: 'الوظيفة', key: 'job_title', alt: 'JobTitle' },
-                    { label: 'الموبايل', key: 'mobile', alt: 'Mobile' },
-                    { label: 'البريد الإلكتروني', key: 'email', alt: 'Email' },
-                  ].map((field) => (
-                    <div key={field.label}>
-                      <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>{field.label}</label>
-                      <input type={field.key === 'birth_date' ? 'date' : 'text'} disabled={field.disabled} value={getField(editData.emp, field.key, field.alt) ?? ''} onChange={(e) => setEditData({ ...editData, emp: { ...editData.emp, [field.key]: e.target.value, [field.alt]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', boxSizing: 'border-box', background: field.disabled ? '#f1f5f9' : '#fff' }} />
-                    </div>
-                  ))}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ التعيين</label>
-                    <input type="date" value={getField(editData.emp, 'hiring_date', 'HiringDate') || ''} onChange={(e) => setEditData({ ...editData, emp: { ...editData.emp, hiring_date: e.target.value, HiringDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0', boxSizing: 'border-box' }} />
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
-                <h4 style={{ margin: '0 0 14px', color: '#2563eb', fontSize: '14px' }}>بيانات العقد</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>نوع العقد</label>
-                    <select value={getField(editData.emp, 'contract_type', 'ContractType') || 'محدد المدة'} onChange={(e) => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <option value="دائم">دائم (غير محدد المدة)</option>
-                      <option value="محدد المدة">محدد المدة</option>
-                      <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                      <option value="مكافأة شاملة">مكافأة شاملة</option>
-                      <option value="إنهاء تعاقد">إنهاء تعاقد</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>نهاية العقد</label>
-                    <input type="date" value={getField(editData.emp, 'contract_end_date', 'ContractEndDate') || ''} onChange={(e) => setEditData({ ...editData, emp: { ...editData.emp, contract_end_date: e.target.value, ContractEndDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 'bold', marginBottom: '6px' }}>الحالة</label>
-                    <select value={getField(editData.emp, 'status', 'Status') || 'Active'} onChange={(e) => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
-                      <option value="Active">Active</option>
-                      <option value="Inactive">Inactive</option>
-                      <option value="Terminated">Terminated</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
-                <button type="button" onClick={() => setEditData(null)} style={{ padding: '9px 18px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 'bold' }}>إلغاء</button>
-                <button type="submit" disabled={editData.saving} style={{ background: editData.saving ? '#64748b' : '#0d9488', color: '#fff', border: 0, padding: '9px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: editData.saving ? 'not-allowed' : 'pointer' }}>{editData.saving ? 'جاري الحفظ...' : 'حفظ كافة التعديلات'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Termination Modal */}
-      {showTermModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '550px', maxWidth: '100%', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '18px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, color: '#dc2626', fontWeight: '800' }}>🚫 إنهاء خدمة وتجميد موظف</h3>
-              <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: '#fef2f2', color: '#dc2626', border: 0, padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <input placeholder="🔍 ابحث بكود الموظف، الاسم، أو الرقم القومي..." value={termSearch} onChange={(e) => { setTermSearch(e.target.value); setSelectedTermEmp(null); }} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} />
-              
-              {termSearchResults.length > 0 && !selectedTermEmp && (
-                <div style={{ border: '1px solid #cbd5e1', borderRadius: '8px', maxHeight: '180px', overflowY: 'auto' }}>
-                  {termSearchResults.map((emp: any, index: number) => (
-                    <div key={index} onClick={() => { setSelectedTermEmp(emp); setTermSearch(`${getEmployeeCode(emp)} - ${getEmployeeName(emp)}`); }} style={{ padding: '12px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', background: '#fff' }}>
-                      <strong>[{getEmployeeCode(emp)}]</strong> {getEmployeeName(emp)}
-                      <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>الإدارة: {getField(emp, 'department', 'Department') || '—'}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {selectedTermEmp && (
-                <div style={{ background: '#fef2f2', padding: '12px', borderRadius: '8px', color: '#dc2626', fontWeight: 'bold', border: '1px solid #fecaca' }}>
-                  تم تحديد: {getEmployeeName(selectedTermEmp)} {' — '} ({getEmployeeCode(selectedTermEmp)})
-                </div>
-              )}
-
-              <select value={termReason} onChange={(e) => setTermReason(e.target.value)} style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontWeight: 'bold' }}>
-                <option value="استقالة">استقالة</option>
-                <option value="إنهاء عقد">إنهاء عقد</option>
-                <option value="إنهاء خدمات">إنهاء خدمات</option>
-                <option value="بلوغ سن">بلوغ سن</option>
-                <option value="انقطاع عن العمل">انقطاع عن العمل</option>
-                <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
-              </select>
-
-              <input type="date" value={termDate} onChange={(e) => setTermDate(e.target.value)} required style={{ padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none' }} />
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowTermModal(false)} style={{ padding: '10px 18px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer' }}>
-                  {termSaving ? 'جاري الحفظ...' : 'تأكيد الإنهاء 🚫'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
