@@ -19,11 +19,13 @@ export default function DashboardPage() {
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  const [showAgeModal, setShowAgeModal] = useState(false);
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
+
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
 
-  // دالة لجلب كافة السجلات متجاوزة حد الـ 1000
+  // 🌟 جلب كافة البيانات متجاوزة حد الـ 1000 من Supabase
   const fetchAllRows = async (tableName: string) => {
     let allRows: any[] = [];
     let from = 0;
@@ -33,7 +35,10 @@ export default function DashboardPage() {
         .from(tableName)
         .select('*')
         .range(from, from + step - 1);
-      if (error) throw error;
+      if (error) {
+        console.error(`Error fetching from ${tableName}:`, error);
+        break;
+      }
       if (data && data.length > 0) {
         allRows = allRows.concat(data);
         if (data.length < step) break;
@@ -65,15 +70,15 @@ export default function DashboardPage() {
         const empCode = String(emp.employee_code).trim();
         const empContracts = contractsMap.get(empCode) || [];
 
+        // ترتيب العقود من الأحدث للأقدم
         empContracts.sort((a, b) => new Date(b.created_at || b.contract_start_date || 0).getTime() - new Date(a.created_at || a.contract_start_date || 0).getTime());
         const activeContract = empContracts[0] || {};
 
         return {
           ...emp,
-          // الربط المباشر مع بيانات العقد النشط
-          contract_type: activeContract.contract_type || 'محدد المدة',
+          contract_type: activeContract.contract_type || emp.contract_type || 'محدد المدة',
           contract_start_date: activeContract.contract_start_date || emp.hiring_date,
-          contract_end_date: activeContract.contract_end_date || null,
+          contract_end_date: activeContract.contract_end_date || emp.contract_end_date,
           contract_status: activeContract.status || emp.status || 'Active',
         };
       });
@@ -102,6 +107,26 @@ export default function DashboardPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
+  const getAge60Info = (nationalId: string) => {
+    if (!nationalId || String(nationalId).trim().length !== 14) return null;
+    const idStr = String(nationalId).trim();
+    const centuryDigit = idStr.charAt(0);
+    const yearDigits = idStr.substring(1, 3);
+    const monthDigits = idStr.substring(3, 5);
+    const dayDigits = idStr.substring(5, 7);
+    const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+    const birthDate = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+    if (isNaN(birthDate.getTime())) return null;
+
+    const age60Date = new Date(birthDate);
+    age60Date.setFullYear(age60Date.getFullYear() + 60);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const daysUntil60 = Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
+
+    return { birthDate: birthDate.toISOString().split('T')[0], age60Date: age60Date.toISOString().split('T')[0], daysUntil60 };
+  };
+
   const companiesList = Array.from(new Set(allEmployees.map((e) => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
@@ -127,6 +152,7 @@ export default function DashboardPage() {
     let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
+    const turning60List: any[] = [];
     const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
     
@@ -157,6 +183,10 @@ export default function DashboardPage() {
       // تصنيف هيكل العقود
       if (type.includes('دائم') || type.includes('غير محدد')) {
         perm++;
+        const ageInfo = getAge60Info(emp.national_id);
+        if (ageInfo && ageInfo.daysUntil60 <= 60) {
+          turning60List.push({ ...emp, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date, daysLeft: ageInfo.daysUntil60 });
+        }
       } else if (type.includes('فوق السن')) {
         aboveAge++;
       } else {
@@ -180,7 +210,7 @@ export default function DashboardPage() {
       // العقود المؤقتة (تجديدات أقل من سنة)
       if (type.includes('محدد') && !type.includes('فوق السن')) {
         const empRens = filteredRens
-          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && r.status === 'Approved')
+          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && (r.status === 'Approved' || r.status === 'معتمد'))
           .sort((a, b) => new Date(a.request_date).getTime() - new Date(b.request_date).getTime());
 
         let isShort = false;
@@ -213,6 +243,7 @@ export default function DashboardPage() {
     });
 
     alerts.sort((a, b) => a.days - b.days);
+    turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
 
     const shortTermList = Object.entries(shortTermByDept)
       .map(([deptName, emps]) => ({ 
@@ -227,8 +258,8 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    const pendingRequests = filteredRens.filter(r => r.status === 'Pending');
-    const waitingSign = filteredRens.filter(r => r.status === 'Approved' && r.signature_status !== 'تم التوقيع');
+    const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
+    const waitingSign = filteredRens.filter(r => (r.status === 'Approved' || r.status === 'معتمد') && r.signature_status !== 'تم التوقيع');
 
     return {
       totalEmps: filteredEmps.length,
@@ -240,6 +271,7 @@ export default function DashboardPage() {
       pendingCount: pendingRequests.length,
       waitingSignCount: waitingSign.length,
       missingDataList,
+      turning60List,
       topDepts,
       urgentAlerts,
       contractsByMonth,
@@ -401,7 +433,7 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-      
+
       {/* Modals */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
@@ -526,6 +558,54 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {showAgeModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-amber)', fontWeight: '800' }}>🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60</h3>
+              <button onClick={() => setShowAgeModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            {dashboardData.turning60List.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا يوجد موظفون (بعقود دائمة) يبلغون الـ 60 حالياً. 🎉</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>تاريخ بلوغ الـ 60</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>الحالة</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.turning60List.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)', background: emp.daysLeft < 0 ? 'var(--stamp-red-bg)' : 'transparent' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--brass-500)' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: emp.daysLeft < 0 ? 'var(--stamp-red)' : 'inherit' }}>{emp.age60Date}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {emp.daysLeft < 0 ? (
+                            <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid var(--stamp-red-bg)' }}>🚨 تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
+                          ) : (
+                            <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>⏳ متبقي {emp.daysLeft} يوم</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل العقد ✏️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
