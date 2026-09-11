@@ -1,6 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال المباشر بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export interface LoginPageProps {
   onLoginSuccess: (user: any) => void;
@@ -17,6 +23,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tempUserData, setTempUserData] = useState<any>(null);
 
+  // 1. تسجيل الدخول المباشر من Supabase
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = employeeCode.trim();
@@ -30,39 +37,57 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setErrorMsg('');
 
     try {
-     const res = await fetch('/api/auth/login', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    action: 'login',
-    employee_code: cleanCode,
-    password,
-  }),
-});
+      const codeNumber = parseInt(cleanCode, 10);
 
-      const contentType = res.headers.get('content-type');
-if (!contentType || !contentType.includes('application/json')) {
-  throw new Error('تعذر الاتصال بالخادم، يُرجى التأكد من مسارات API ومصادقة قاعدة البيانات.');
-}
+      // البحث عن المستخدم في جدول app_users أو users
+      let { data: users, error } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
 
-const data = await res.json();
+      // تجربة البحث في جدول users لو لم يجد في app_users
+      if ((!users || users.length === 0) && !error) {
+        const res = await supabase
+          .from('users')
+          .select('*')
+          .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
+        users = res.data;
+        error = res.error;
+      }
 
-      if (data.success) {
-        if (data.requirePasswordChange) {
-          setTempUserData(data.user);
-          setRequirePasswordChange(true);
-        } else {
-          proceedToLogin(data.user);
-        }
+      if (error) throw error;
+
+      if (!users || users.length === 0) {
+        setErrorMsg('كود الموظف غير موجود في حسابات النظام.');
+        setLoading(false);
+        return;
+      }
+
+      const user = users[0];
+
+      // التحقق من كلمة السر
+      if (String(user.password).trim() !== String(password).trim()) {
+        setErrorMsg('كلمة السر غير صحيحة.');
+        setLoading(false);
+        return;
+      }
+
+      // الإجبار على تغيير كلمة السر لو كانت "123" أو "123456"
+      if (password === '123' || password === '123456') {
+        setTempUserData(user);
+        setRequirePasswordChange(true);
       } else {
-        setErrorMsg(data.error);
+        proceedToLogin(user);
       }
     } catch (err: any) {
-      setLoading(false);
+      console.error(err);
       setErrorMsg(`خطأ في الاتصال بقاعدة البيانات: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
+  // 2. طلب تغيير كلمة السر المباشر
   const handleOpenPasswordChange = async () => {
     const cleanCode = employeeCode.trim();
     if (!cleanCode) {
@@ -74,31 +99,38 @@ const data = await res.json();
     setErrorMsg('');
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'login',
-          employee_code: cleanCode,
-          password: '123', // افتراضي للبحث
-        }),
-      });
+      const codeNumber = parseInt(cleanCode, 10);
 
-      const data = await res.json();
-      setLoading(false);
+      let { data: users, error } = await supabase
+        .from('app_users')
+        .select('*')
+        .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
 
-      if (data.user) {
-        setTempUserData(data.user);
+      if (!users || users.length === 0) {
+        const res = await supabase
+          .from('users')
+          .select('*')
+          .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
+        users = res.data;
+        error = res.error;
+      }
+
+      if (error) throw error;
+
+      if (users && users.length > 0) {
+        setTempUserData(users[0]);
         setRequirePasswordChange(true);
       } else {
-        setErrorMsg(data.error || 'كود الموظف غير موجود.');
+        setErrorMsg('كود الموظف غير موجود.');
       }
     } catch (err: any) {
-      setLoading(false);
       setErrorMsg(`خطأ: ${err.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
+  // 3. حفظ كلمة السر الجديدة في Supabase
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -115,28 +147,22 @@ const data = await res.json();
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'change_password',
-          employee_code: tempUserData.employee_code,
-          new_password: newPassword,
-        }),
-      });
+      const idKey = tempUserData.user_id ? 'user_id' : 'id';
+      const table = tempUserData.user_id ? 'app_users' : 'users';
 
-      const data = await res.json();
-      setLoading(false);
+      const { error } = await supabase
+        .from(table)
+        .update({ password: newPassword })
+        .eq(idKey, tempUserData[idKey]);
 
-      if (data.success) {
-        alert(data.message);
-        proceedToLogin({ ...tempUserData, password: newPassword });
-      } else {
-        setErrorMsg(data.error);
-      }
+      if (error) throw error;
+
+      alert('تم تحديث كلمة المرور بنجاح ✅');
+      proceedToLogin({ ...tempUserData, password: newPassword });
     } catch (err: any) {
-      setLoading(false);
       setErrorMsg('حدث خطأ أثناء تحديث كلمة المرور: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -151,10 +177,10 @@ const data = await res.json();
   const proceedToLogin = (data: any) => {
     const userData = {
       code: data.employee_code,
-      name: data.employee_name || data.username,
-      department: data.department,
-      role: data.role || 'HR',
-      company: data.company,
+      name: data.employee_name || data.username || data.name,
+      department: data.department || 'الموارد البشرية',
+      role: data.role || 'Admin',
+      company: data.company || 'المراسم الدولية',
     };
 
     localStorage.setItem('session_user', JSON.stringify(userData));
@@ -163,16 +189,16 @@ const data = await res.json();
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #0a0f1c 0%, #1e293b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', direction: 'rtl', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
-      <div style={{ width: '100%', maxWidth: '420px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '36px 28px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
+      <div style={{ width: '100%', maxWidth: '420px', background: '#ffffff', borderRadius: '16px', padding: '36px 28px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)', border: '1px solid rgba(255, 255, 255, 0.1)' }}>
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'linear-gradient(135deg, #0d9488, #0f172a)', color: '#fff', display: 'grid', placeItems: 'center', fontSize: '24px', margin: '0 auto 12px' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'linear-gradient(135deg, #0d9488, #0f172a)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', margin: '0 auto 12px' }}>
             {requirePasswordChange ? '🛡️' : '🏢'}
           </div>
           <h2 style={{ margin: '0 0 6px', fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>
             {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
+            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || tempUserData?.username || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود (Supabase Direct)'}
           </p>
         </div>
 
@@ -232,7 +258,7 @@ const data = await res.json();
               <input
                 type="text"
                 required
-                placeholder="مثال: 3577"
+                placeholder="مثال: 10001"
                 value={employeeCode}
                 onChange={e => setEmployeeCode(e.target.value)}
                 style={{ width: '100%', padding: '12px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', fontFamily: 'monospace', outline: 'none' }}
