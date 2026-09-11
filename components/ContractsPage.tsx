@@ -55,7 +55,7 @@ export default function ContractsPage() {
   const [empSearchTerm, setEmpSearchTerm] = useState(''); 
   const [showEmpDropdown, setShowEmpDropdown] = useState(false); 
 
-  // حالات نافذة إنهاء التعاقد המحدثة
+  // حالات نافذة إنهاء التعاقد
   const [isTerminateModalOpen, setIsTerminateModalOpen] = useState(false);
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
   const [termSearchTerm, setTermSearchTerm] = useState(''); 
@@ -193,7 +193,8 @@ export default function ContractsPage() {
 
   const deptsList = Array.from(new Set(employees.map((e) => e.department).filter(Boolean)));
 
-  const baseFilteredContracts = useMemo(() => {
+  // 🌟 تصحيح اسم المتغيرة لتفادي الـ ReferenceError
+  const baseFilteredEmployees = useMemo(() => {
     return employees.filter((emp) => {
       const term = searchTerm.toLowerCase();
       
