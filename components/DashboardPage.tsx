@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
-  // فلاتر نافذة بلوغ سن الـ 60
+  // فلاتر نافذة بلوغ سن الـ 60 المستقبلي
   const [ageFilterYear, setAgeFilterYear] = useState<string>('');
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
@@ -46,17 +46,15 @@ export default function DashboardPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // 🎂 دالة مرنة وشاملة لحساب سن الـ 60 من (تاريخ الميلاد - الرقم القومي - حقل السن)
+  // 🎂 حساب تاريخ بلوغ الـ 60 المستقبلي بدقة لكل أنواع العقود
   const getAge60Info = (nationalId: any, birthDateRaw?: any, ageRaw?: any) => {
     let birthDate: Date | null = null;
 
-    // 1. الاستخراج من تاريخ الميلاد المباشر
     if (birthDateRaw) {
       const b = new Date(birthDateRaw);
       if (!isNaN(b.getTime())) birthDate = b;
     }
 
-    // 2. الاستخراج من الرقم القومي
     if (!birthDate && nationalId) {
       const idStr = String(nationalId).replace(/\D/g, '');
       if (idStr.length === 14) {
@@ -70,10 +68,9 @@ export default function DashboardPage() {
       }
     }
 
-    // 3. الاستخراج من حقل السن المباشر (Age)
     if (!birthDate && ageRaw && !isNaN(Number(ageRaw))) {
       const ageNum = Number(ageRaw);
-      if (ageNum >= 50 && ageNum <= 75) {
+      if (ageNum >= 18 && ageNum < 60) {
         const today = new Date();
         birthDate = new Date(today.getFullYear() - ageNum, today.getMonth(), today.getDate());
       }
@@ -128,7 +125,7 @@ export default function DashboardPage() {
     let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
-    const allTurning60List: any[] = [];
+    const futureTurning60List: any[] = [];
     const turning60SoonList: any[] = [];
     const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
@@ -154,24 +151,26 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🎂 حسابات بلوغ الـ 60 المحدثة
+      // 🎂 حصر كل من سيبلوغ سن الـ 60 مستقبلاً (daysUntil60 >= 0) لكل العقود
       const ageInfo = getAge60Info(nationalId, birthDateRaw, empAge);
-      if (ageInfo) {
+      if (ageInfo && ageInfo.daysUntil60 >= 0) {
         const item = {
           ...emp,
           employee_code: empCode,
           employee_name: empName,
           department: dept,
+          contract_type: type,
           birthDate: ageInfo.birthDate,
           age60Date: ageInfo.age60Date,
           daysLeft: ageInfo.daysUntil60,
           year60: ageInfo.year60,
           month60: ageInfo.month60
         };
-        allTurning60List.push(item);
+
+        futureTurning60List.push(item);
         
-        // حصر الموظفين القريبين من الـ 60 أو الذين بلغوها مؤخراً
-        if (ageInfo.daysUntil60 <= 90) {
+        // القادمون لسن الـ 60 خلال الـ 60 يوماً القادمة
+        if (ageInfo.daysUntil60 <= 60) {
           turning60SoonList.push(item);
         }
       }
@@ -248,7 +247,7 @@ export default function DashboardPage() {
     });
 
     alerts.sort((a, b) => a.days - b.days);
-    allTurning60List.sort((a, b) => a.daysLeft - b.daysLeft);
+    futureTurning60List.sort((a, b) => a.daysLeft - b.daysLeft);
     turning60SoonList.sort((a, b) => a.daysLeft - b.daysLeft); 
 
     const shortTermList = Object.entries(shortTermByDept)
@@ -289,18 +288,19 @@ export default function DashboardPage() {
       contractsByMonth,
       shortTermTotal,
       shortTermList,
-      allTurning60List,
+      futureTurning60List,
       turning60SoonList
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
+  // تصفية المتقاعدين مستقبلاً بحسب الشهر والسنة المختارين
   const filteredAge60ModalList = useMemo(() => {
-    return dashboardData.allTurning60List.filter((emp) => {
+    return dashboardData.futureTurning60List.filter((emp) => {
       const matchesYear = !ageFilterYear || String(emp.year60) === ageFilterYear;
       const matchesMonth = !ageFilterMonth || String(emp.month60) === ageFilterMonth;
       return matchesYear && matchesMonth;
     });
-  }, [dashboardData.allTurning60List, ageFilterYear, ageFilterMonth]);
+  }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
@@ -395,9 +395,9 @@ export default function DashboardPage() {
         <KpiCard 
           loading={loading} 
           tone="red" 
-          title="سن الـ 60 (مترقب)" 
+          title="سيبلغون الـ 60 (60 يوم)" 
           value={dashboardData.turning60SoonCount} 
-          sub="اضغط للفرز والجدولة 🎂" 
+          sub="جدولة التقاعد القادم 🎂" 
           icon="🎂" 
           onClick={() => { setShowAgeModal(true); setAgeFilterYear(''); setAgeFilterMonth(''); }} 
         />
@@ -518,27 +518,27 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🎂 نافذة بلوغ سن الـ 60 المحدثة مع فلاتر الشهر والسنة حتي 2030 */}
+      {/* 🎂 نافذة بلوغ سن الـ 60 القادم مستقبلاً */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '800px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '900' }}>
-                🎂 سجل الموظفين الواصلين لسن الـ 60 (تقاعد)
+                🎂 جدولة الموظفين القادمين لسن الـ 60 (المتقاعدون مستقبلاً)
               </h3>
               <button onClick={() => setShowAgeModal(false)} style={{ background: '#fef3c7', border: 0, color: '#b45309', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             {/* فلاتر الشهر والسنة */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>تصفية وحصر المتقاعدين:</span>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>فلترة موعد التقاعد القادم:</span>
               
               <select 
                 value={ageFilterYear} 
                 onChange={(e) => setAgeFilterYear(e.target.value)} 
                 style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}
               >
-                <option value="">كل السنوات (حتى 2030)</option>
+                <option value="">كل السنوات (القادمة حتى 2030)</option>
                 <option value="2026">سنة 2026</option>
                 <option value="2027">سنة 2027</option>
                 <option value="2028">سنة 2028</option>
@@ -578,7 +578,7 @@ export default function DashboardPage() {
             </div>
 
             {filteredAge60ModalList.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا يوجد موظفون مطابقون لخيارات الفلترة المحددة. 🎉</div>
+              <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا يوجد موظفون سيبلغون الـ 60 في التاريخ المحدد. 🎉</div>
             ) : (
               <div className="table-responsive">
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
@@ -587,27 +587,27 @@ export default function DashboardPage() {
                       <th style={{ padding: '10px' }}>الكود</th>
                       <th style={{ padding: '10px' }}>الموظف</th>
                       <th style={{ padding: '10px' }}>الإدارة</th>
+                      <th style={{ padding: '10px' }}>نوع العقد</th>
                       <th style={{ padding: '10px' }}>تاريخ الميلاد</th>
                       <th style={{ padding: '10px' }}>تاريخ بلوغ الـ 60</th>
-                      <th style={{ padding: '10px', textAlign: 'center' }}>المتبقي</th>
+                      <th style={{ padding: '10px', textAlign: 'center' }}>المتبقي لبلوغ الـ 60</th>
                       <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredAge60ModalList.map((emp: any, idx: number) => (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: emp.daysLeft <= 60 && emp.daysLeft >= 0 ? '#fffbe1' : emp.daysLeft < 0 ? '#fef2f2' : 'transparent' }}>
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: emp.daysLeft <= 60 ? '#fffbe1' : 'transparent' }}>
                         <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{emp.employee_code}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{emp.contract_type}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#b45309' }}>{emp.age60Date}</td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
-                          {emp.daysLeft < 0 ? (
-                            <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
-                          ) : emp.daysLeft <= 60 ? (
+                          {emp.daysLeft <= 60 ? (
                             <span style={{ background: '#fffbe1', color: '#b45309', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>⏳ متبقي {emp.daysLeft} يوم</span>
                           ) : (
-                            <span style={{ color: '#64748b', fontWeight: 'bold' }}>متبقي {emp.daysLeft} يوم</span>
+                            <span style={{ color: '#0d9488', fontWeight: 'bold' }}>📅 متبقي {emp.daysLeft} يوم</span>
                           )}
                         </td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
