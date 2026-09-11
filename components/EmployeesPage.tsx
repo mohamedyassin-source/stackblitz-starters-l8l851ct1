@@ -2,6 +2,12 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
@@ -105,17 +111,35 @@ export default function EmployeesPage() {
     employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '',
   });
 
-  // جلب البيانات من Neon PostgreSQL
+  // 🌟 جلب البيانات من Supabase
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/employees');
-      const json = await res.json();
-      if (json.success) {
-        setEmployees(json.employees || []);
-      }
+      const [empRes, contRes] = await Promise.all([
+        supabase.from('employees').select('*'),
+        supabase.from('contracts').select('*')
+      ]);
+
+      if (empRes.error) throw empRes.error;
+
+      // دمج بيانات العقد الأخير مع بيانات الموظف
+      const mergedEmployees = (empRes.data || []).map(emp => {
+        const empContracts = (contRes.data || []).filter(c => String(c.employee_code) === String(emp.employee_code));
+        empContracts.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        const activeContract = empContracts[0] || {};
+        
+        return {
+          ...emp,
+          contract_type: activeContract.contract_type || emp.contract_type,
+          contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date,
+          contract_end_date: activeContract.contract_end_date || emp.contract_end_date,
+          contract_status: activeContract.status || emp.status,
+        };
+      });
+
+      setEmployees(mergedEmployees);
     } catch (e) {
-      console.error('Failed to fetch employees from Neon', e);
+      console.error('Failed to fetch employees from Supabase', e);
     } finally {
       setLoading(false);
     }
@@ -220,27 +244,44 @@ export default function EmployeesPage() {
 
   const handleOpenEdit = (emp: any) => setEditData({ emp: { ...emp }, loading: false, saving: false });
 
-  // حفظ التعديلات المباشرة
+  // 🌟 حفظ التعديلات المباشرة في Supabase
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
     setEditData({ ...editData, saving: true });
 
     try {
-      const emp = editData.emp;
-      const res = await fetch('/api/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save', ...emp }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setEditData(null);
-        fetchEmployees();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      const empData = editData.emp;
+      const code = parseInt(getEmployeeCode(empData));
+
+      // تحديث بيانات الموظف
+      const { error: empError } = await supabase.from('employees').update({
+        employee_name: getEmployeeName(empData),
+        national_id: getNationalId(empData),
+        birth_date: getField(empData, 'birth_date', 'BirthDate') || null,
+        department: getField(empData, 'department', 'Department'),
+        company: getField(empData, 'company', 'Company'),
+        job_title: getField(empData, 'job_title', 'JobTitle'),
+        hiring_date: getField(empData, 'hiring_date', 'HiringDate') || null,
+        email: getField(empData, 'email', 'Email'),
+        mobile: getField(empData, 'mobile', 'Mobile'),
+        contract_type: getField(empData, 'contract_type', 'ContractType'),
+        contract_end_date: getField(empData, 'contract_end_date', 'ContractEndDate') || null,
+        status: getField(empData, 'status', 'Status'),
+      }).eq('employee_code', code);
+
+      if (empError) throw empError;
+
+      // تحديث العقد النشط الخاص به ليتوافق مع التعديل
+      await supabase.from('contracts').update({
+        contract_type: getField(empData, 'contract_type', 'ContractType'),
+        contract_end_date: getField(empData, 'contract_end_date', 'ContractEndDate') || null,
+        status: getField(empData, 'status', 'Status'),
+      }).eq('employee_code', code).eq('status', 'Active');
+
+      alert('تم حفظ التعديلات بنجاح ✅');
+      setEditData(null);
+      fetchEmployees();
     } catch (error: any) {
       alert('حدث خطأ أثناء الحفظ: ' + error.message);
     } finally {
@@ -248,32 +289,30 @@ export default function EmployeesPage() {
     }
   };
 
-  // إنهاء الخدمة
+  // 🌟 إنهاء الخدمة في Supabase
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return;
     setTermSaving(true);
     try {
-      const res = await fetch('/api/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'terminate',
-          employee_code: getEmployeeCode(selectedTermEmp),
-          termination_reason: termReason,
-          termination_date: termDate,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setShowTermModal(false);
-        setSelectedTermEmp(null);
-        setTermSearch('');
-        fetchEmployees();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      const code = parseInt(getEmployeeCode(selectedTermEmp));
+
+      const { error: empError } = await supabase.from('employees')
+        .update({ status: 'Inactive', department: 'تحويلات/تحت الاعتماد' })
+        .eq('employee_code', code);
+      if (empError) throw empError;
+
+      const { error: contError } = await supabase.from('contracts')
+        .update({ status: 'Terminated', contract_type: 'إنهاء تعاقد' })
+        .eq('employee_code', code)
+        .eq('status', 'Active');
+      if (contError) throw contError;
+
+      alert('تم إنهاء التعاقد بنجاح ✅');
+      setShowTermModal(false);
+      setSelectedTermEmp(null);
+      setTermSearch('');
+      fetchEmployees();
     } catch (error: any) {
       alert('خطأ: ' + error.message);
     } finally {
@@ -281,33 +320,26 @@ export default function EmployeesPage() {
     }
   };
 
-  // نقل مجمع
+  // 🌟 نقل مجمع في Supabase
   const handleConfirmBulkTransfer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedEmpIds.length === 0 || (!bulkDept && !bulkCompany)) return;
     setBulkSaving(true);
     try {
-      const res = await fetch('/api/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'bulk_transfer',
-          employee_codes: selectedEmpIds,
-          department: bulkDept,
-          company: bulkCompany,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setShowBulkTransferModal(false);
-        setSelectedEmpIds([]);
-        setBulkDept('');
-        setBulkCompany('');
-        fetchEmployees();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      const codes = selectedEmpIds.map(Number);
+      
+      const { error } = await supabase.from('employees')
+        .update({ department: bulkDept, company: bulkCompany })
+        .in('employee_code', codes);
+        
+      if (error) throw error;
+
+      alert('تم النقل المجمع بنجاح ✅');
+      setShowBulkTransferModal(false);
+      setSelectedEmpIds([]);
+      setBulkDept('');
+      setBulkCompany('');
+      fetchEmployees();
     } catch (error: any) {
       alert('خطأ: ' + error.message);
     } finally {
@@ -315,28 +347,24 @@ export default function EmployeesPage() {
     }
   };
 
-  // حذف مجمع
+  // 🌟 حذف مجمع من Supabase
   const handleDeleteSelected = async () => {
     if (selectedEmpIds.length === 0) return;
     if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف نهائيًا؟`)) return;
     setIsDeleting(true);
     try {
-      const res = await fetch('/api/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'bulk_delete',
-          employee_codes: selectedEmpIds,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setSelectedEmpIds([]);
-        fetchEmployees();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      const codes = selectedEmpIds.map(Number);
+      
+      // نقوم بحذف العقود والطلبات أولاً (أو نعتمد على الـ Cascade في قاعدة البيانات)
+      await supabase.from('renewals').delete().in('employee_code', codes);
+      await supabase.from('contracts').delete().in('employee_code', codes);
+      
+      const { error } = await supabase.from('employees').delete().in('employee_code', codes);
+      if (error) throw error;
+
+      alert('تم الحذف بنجاح ✅');
+      setSelectedEmpIds([]);
+      fetchEmployees();
     } catch (error: any) {
       alert('خطأ: ' + error.message);
     } finally {
@@ -344,24 +372,43 @@ export default function EmployeesPage() {
     }
   };
 
-  // إضافة موظف جديد
+  // 🌟 إضافة موظف جديد لـ Supabase
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const res = await fetch('/api/employees', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add', ...newEmp }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setShowAddModal(false);
-        setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
-        fetchEmployees();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      const code = parseInt(newEmp.employee_code);
+
+      const { error: empError } = await supabase.from('employees').insert([{
+        employee_code: code,
+        employee_name: newEmp.employee_name,
+        national_id: newEmp.national_id,
+        birth_date: newEmp.birth_date || null,
+        department: newEmp.department,
+        company: newEmp.company,
+        job_title: newEmp.job_title,
+        hiring_date: newEmp.hiring_date || null,
+        contract_type: newEmp.contract_type,
+        contract_end_date: newEmp.contract_end_date || null,
+        status: newEmp.status,
+        email: newEmp.email,
+        mobile: newEmp.mobile
+      }]);
+
+      if (empError) throw empError;
+
+      // إضافة عقد
+      await supabase.from('contracts').insert([{
+        employee_code: code,
+        contract_type: newEmp.contract_type,
+        contract_start_date: newEmp.hiring_date || null,
+        contract_end_date: newEmp.contract_end_date || null,
+        status: newEmp.status
+      }]);
+
+      alert('تم إضافة الموظف بنجاح ✅');
+      setShowAddModal(false);
+      setNewEmp({ employee_code: '', employee_name: '', national_id: '', birth_date: '', department: '', company: '', job_title: '', hiring_date: '', contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: '' });
+      fetchEmployees();
     } catch (error: any) {
       alert('خطأ: ' + error.message);
     }
@@ -412,8 +459,8 @@ export default function EmployeesPage() {
     <div style={{ direction: 'rtl' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900', letterSpacing: '-0.3px' }}>👥 بيانات القوة البشرية (HR - Neon DB)</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي للموظفين عبر Neon PostgreSQL</p>
+          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900', letterSpacing: '-0.3px' }}>👥 بيانات القوة البشرية (HR - Supabase)</h3>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي للموظفين عبر قاعدة بيانات Supabase</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button onClick={() => handleExportToExcel(false)} style={{ background: '#10b981', color: '#fff', border: 0, padding: '9px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>📥 تصدير Excel</button>
@@ -471,7 +518,7 @@ export default function EmployeesPage() {
 
       <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل البيانات من Neon PostgreSQL... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل البيانات من Supabase... ⏳</div>
         ) : (
           <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', whiteSpace: 'nowrap', fontSize: '12px' }}>
@@ -549,7 +596,7 @@ export default function EmployeesPage() {
           <div style={{ width: '850px', maxWidth: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>✏️ تعديل بيانات الموظف (Neon DB)</h3>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>✏️ تعديل بيانات الموظف (Supabase)</h3>
                 <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>الكود: <strong>{getEmployeeCode(editData.emp)}</strong></div>
               </div>
               <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
