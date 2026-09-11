@@ -757,7 +757,7 @@ export default function DashboardPage() {
       {showMissingDataModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxWidth: '100%', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justify-content: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
               <button onClick={() => setShowMissingDataModal(false)} style={{ background: '#f8fafc', border: 0, color: '#64748b', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -806,7 +806,7 @@ export default function DashboardPage() {
       {selectedDeptDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', maxWidth: '100%', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>🏢 موظفو إدارة: {selectedDeptDetails.name}</h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي القوة الإدارية: {selectedDeptDetails.emps.length} موظف</p>
@@ -851,7 +851,7 @@ export default function DashboardPage() {
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '820px', maxWidth: '100%', height: '85vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '18px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '18px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '800' }}>🎂 سجل بلوغ سن الـ 60 </h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي الموظفين: {displayTurning60List.length}</p>
@@ -921,7 +921,7 @@ export default function DashboardPage() {
       {selectedMonthDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', maxWidth: '100%', height: '80vh', background: '#fff', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800' }}>📈 عقود بدأ العمل عليها لشهر ({selectedMonthDetails.name})</h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي الموظفين: {selectedMonthDetails.emps.length}</p>
@@ -959,7 +959,7 @@ export default function DashboardPage() {
       {selectedDonutDetails && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', maxWidth: '100%', height: '80vh', background: '#fff', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between' }}>
+            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800' }}>📑 كشف الموظفين: {selectedDonutDetails.title}</h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي الموظفين: {selectedDonutDetails.emps.length} موظف</p>
@@ -1008,7 +1008,7 @@ export default function DashboardPage() {
       {showTotalEmpsModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', maxWidth: '100%', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>👥 كشف إجمالي القوة البشرية النشطة</h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي: {dashboardData.totalEmps} موظف</p>
@@ -1053,7 +1053,7 @@ export default function DashboardPage() {
       {showExpiringSoonModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', maxWidth: '100%', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '800' }}>📆 عقود تنتهي خلال الـ 60 يوم القادمة (من 0 حتى 60 يوم)</h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي المستحقين: {dashboardData.expiringSoonList.length} موظف</p>
@@ -1108,7 +1108,7 @@ export default function DashboardPage() {
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: '#ffffff', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justify-content: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '800' }}>⏱️ العقود المؤقتة وفترات الاختبار (بالأشهر)</h3>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي: {dashboardData.shortTermTotal} موظف</p>
