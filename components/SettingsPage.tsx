@@ -1,6 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface SettingsProps {
   currentUser?: any;
@@ -25,12 +31,12 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [companyName, setCompanyName] = useState('مجموعة شركات المراسم الدولية والشركات الشقيقة');
   const [fiscalYearStart, setFiscalYearStart] = useState('01-01');
 
-  // إدارة جدول app_users المباشرة
+  // إدارة جدول المستخدمين المباشرة
   const [appUsers, setAppUsers] = useState<any[]>([]);
   const [loadingAppUsers, setLoadingAppUsers] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
-  // نموذج إضافة مستخدم جديد في app_users
+  // نموذج إضافة مستخدم جديد
   const [showAddUserModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
@@ -47,19 +53,23 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
 
   const isAdmin = currentUser?.role === 'Admin' || true;
 
-  // جلب كافة المستخدمين والإعدادات من Neon PostgreSQL
+  // 🌟 جلب كافة المستخدمين والموظفين من Supabase مباشرة
   const fetchSettingsData = async () => {
     setLoadingAppUsers(true);
     setLoadingRoles(true);
     try {
-      const res = await fetch('/api/settings');
-      const json = await res.json();
-      if (json.success) {
-        setAppUsers(json.appUsers || []);
-        setEmployees(json.employees || []);
-      }
+      const [usersRes, empRes] = await Promise.all([
+        supabase.from('users').select('*'), // أو اسم الجدول لديك app_users
+        supabase.from('employees').select('*')
+      ]);
+
+      if (usersRes.error) console.error('Error fetching users:', usersRes.error);
+      if (empRes.error) console.error('Error fetching employees:', empRes.error);
+
+      setAppUsers(usersRes.data || []);
+      setEmployees(empRes.data || []);
     } catch (err) {
-      console.error('Error fetching settings from Neon:', err);
+      console.error('Error fetching settings from Supabase:', err);
     } finally {
       setLoadingAppUsers(false);
       setLoadingRoles(false);
@@ -72,31 +82,27 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   }, [activeTab]);
 
-  // إضافة مستخدم جديد في نيون
+  // 🌟 إضافة مستخدم جديد في Supabase
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
 
     setAddingUser(true);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'add_user',
-          ...newUser,
-        }),
-      });
+      const { error } = await supabase.from('users').insert([{
+        username: newUser.username,
+        password: newUser.password,
+        employee_code: newUser.employee_code ? parseInt(newUser.employee_code, 10) : null,
+        role: newUser.role,
+        created_at: new Date().toISOString()
+      }]);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setShowAddModal(false);
-        setNewUser({ username: '', password: '123456', employee_code: '', role: 'Admin' });
-        fetchSettingsData();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم إضافة المستخدم بنجاح ✅');
+      setShowAddModal(false);
+      setNewUser({ username: '', password: '123456', employee_code: '', role: 'Admin' });
+      fetchSettingsData();
     } catch (err: any) {
       alert('حدث خطأ أثناء إضافة المستخدم: ' + err.message);
     } finally {
@@ -104,80 +110,61 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // حذف مستخدم
+  // 🌟 حذف مستخدم من Supabase
   const handleDeleteAppUser = async (user: any) => {
     if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username}) نهائياً؟`)) return;
 
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete_user',
-          user_id: user.user_id,
-        }),
-      });
+      const idKey = user.user_id ? 'user_id' : 'id';
+      const { error } = await supabase
+        .from('users')
+        .delete()
+        .eq(idKey, user[idKey]);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        fetchSettingsData();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم حذف المستخدم بنجاح ✅');
+      fetchSettingsData();
     } catch (err: any) {
       alert('خطأ أثناء الحذف: ' + err.message);
     }
   };
 
-  // تعديل صلاحية مستخدم
+  // 🌟 تعديل صلاحية مستخدم في Supabase
   const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'update_user_role',
-          user_id: user.user_id,
-          role: newRole,
-        }),
-      });
+      const idKey = user.user_id ? 'user_id' : 'id';
+      const { error } = await supabase
+        .from('users')
+        .update({ role: newRole })
+        .eq(idKey, user[idKey]);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        fetchSettingsData();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم تحديث الصلاحية بنجاح ✅');
+      fetchSettingsData();
     } catch (err: any) {
       alert('خطأ أثناء تحديث الصلاحية: ' + err.message);
     }
   };
 
-  // حفظ الإعدادات العامة
-  const handleSaveSettings = async () => {
+  // حفظ الإعدادات العامة في LocalStorage أو جدول الإعدادات
+  const handleSaveSettings = () => {
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'save_general_settings',
-          settings: {
-            recipientEmail,
-            criticalDays,
-            warningDays,
-            defaultRenewalMonths,
-            companyName,
-          },
-        }),
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 3000);
-      }
+      const settingsObj = {
+        recipientEmail,
+        criticalDays,
+        warningDays,
+        defaultRenewalMonths,
+        companyName,
+        fiscalYearStart,
+        enableDailyEmail,
+        autoApproveSameDept,
+        requireEmpSignature
+      };
+      localStorage.setItem('hr_system_settings', JSON.stringify(settingsObj));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
     } catch (e) {
       alert('خطأ أثناء حفظ الإعدادات');
     }
@@ -186,7 +173,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const filteredAppUsers = appUsers.filter((u: any) => {
     if (!userSearch) return true;
     const term = userSearch.toLowerCase().trim();
-    const name = String(u.username || '').toLowerCase();
+    const name = String(u.username || u.name || '').toLowerCase();
     const code = String(u.employee_code || '').toLowerCase();
     return name.includes(term) || code.includes(term);
   });
@@ -212,8 +199,8 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>إعدادات وتفضيلات النظام 👑 (Neon DB)</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>التحكم في الثوابت، التنبيهات، وحسابات أدمن النظام (app_users)</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>إعدادات وتفضيلات النظام 👑 (Supabase)</h3>
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>التحكم في الثوابت، التنبيهات، وحسابات أدمن النظام (users)</p>
         </div>
         <button onClick={handleSaveSettings} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>
           💾 حفظ الإعدادات العامة
@@ -229,7 +216,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
       {/* التبويبات */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', flexWrap: 'wrap' }}>
         {[
-          { id: 'security', title: '🛡️ الأمان ومديري النظام (app_users)' },
+          { id: 'security', title: '🛡️ الأمان ومديري النظام (users)' },
           { id: 'notifications', title: '🔔 التنبيهات والإيميل' },
           { id: 'business', title: '⚙️ قواعد العمل' },
           { id: 'system', title: '🏢 بيانات المنشأة' },
@@ -255,7 +242,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '15px', color: '#0f172a', fontWeight: '900' }}>
-                  👑 قائمة مديري ومستخدمي النظام (جدول app_users)
+                  👑 قائمة مديري ومستخدمي النظام (جدول users)
                 </h4>
                 <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
                   إجمالي الحسابات المسجلة: <strong style={{ color: '#0d9488' }}>{appUsers.length}</strong> مستخدم
@@ -265,7 +252,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <input 
                   type="text" 
-                  placeholder="بحث في app_users..." 
+                  placeholder="بحث في المستخدمين..." 
                   value={userSearch} 
                   onChange={e => setUserSearch(e.target.value)}
                   style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '200px' }} 
@@ -291,13 +278,13 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                 </thead>
                 <tbody>
                   {loadingAppUsers ? (
-                    <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>جاري سحب حسابات app_users من Neon... ⏳</td></tr>
+                    <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>جاري سحب الحسابات من Supabase... ⏳</td></tr>
                   ) : filteredAppUsers.length === 0 ? (
                     <tr><td colSpan={4} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>لا توجد حسابات مسجلة 🚫</td></tr>
                   ) : (
                     filteredAppUsers.map((user: any, idx: number) => (
-                      <tr key={user.user_id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{user.username}</td>
+                      <tr key={user.user_id || user.id || idx} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{user.username || user.name}</td>
                         <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0d9488' }}>{user.employee_code || '—'}</td>
                         <td style={{ padding: '12px' }}>
                           <select 
@@ -330,7 +317,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div>
                 <h4 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: '800' }}>
-                  👥 صلاحيات الموظفين في السجل العام (employees)
+                  👥 سجل الموظفين النشطين (employees)
                 </h4>
                 <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي القوة: <strong>{employees.length}</strong> موظف</span>
               </div>
@@ -354,7 +341,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                 </thead>
                 <tbody>
                   {loadingRoles ? (
-                    <tr><td colSpan={3} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>جاري سحب الموظفين من Neon... ⏳</td></tr>
+                    <tr><td colSpan={3} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold' }}>جاري سحب الموظفين من Supabase... ⏳</td></tr>
                   ) : filteredEmployees.length === 0 ? (
                     <tr><td colSpan={3} style={{ padding: '20px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>لا توجد نتائج 🚫</td></tr>
                   ) : (
@@ -449,7 +436,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '480px', background: '#fff', borderRadius: '16px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.4)', direction: 'rtl' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '900' }}>👑 إضافة مستخدم جديد في app_users</h3>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '900' }}>👑 إضافة مستخدم جديد في users</h3>
               <button onClick={() => setShowAddModal(false)} style={{ background: '#f8fafc', border: 0, color: '#64748b', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
