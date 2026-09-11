@@ -1,0 +1,26 @@
+name: Export Firebase Data
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install firebase-admin
+
+      - name: Run Export Script
+        run: node export.js
+
+      - name: Upload CSV Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: firebase-csv-data
+          path: '*.csv'
