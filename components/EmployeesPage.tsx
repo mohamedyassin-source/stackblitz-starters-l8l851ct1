@@ -8,7 +8,7 @@ import * as XLSX from 'xlsx';
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
-  // 🌟 حالات الفلاتر والكروت الإحصائية الـ 6
+  // حالات الفلاتر والكروت الإحصائية الـ 6
   const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'NEW_JOINERS' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | 'MISSING_DATA' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
@@ -27,6 +27,12 @@ export default function EmployeesPage() {
   const [showBulkTransferModal, setShowBulkTransferModal] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [profileEmp, setProfileEmp] = useState<any>(null);
+
+  // 🌟 حالة نافذة إعادة التفعيل
+  const [reactivateEmp, setReactivateEmp] = useState<any>(null);
+  const [reactivateDept, setReactivateDept] = useState('');
+  const [reactivateCompany, setReactivateCompany] = useState('');
+  const [reactivateSaving, setReactivateSaving] = useState(false);
 
   // حالات النقل والحذف وإنهاء الخدمة
   const [bulkDept, setBulkDept] = useState('');
@@ -65,7 +71,7 @@ export default function EmployeesPage() {
     return '';
   };
 
-  // 🎂 دالة ذكية لحساب العمر من حقل السن، تاريخ الميلاد، أو الرقم القومي تلقائياً
+  // 🎂 دالة حساب العمر
   const getEmployeeAge = (emp: any) => {
     const rawAge = getField(emp, 'age', 'Age');
     if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
@@ -107,16 +113,14 @@ export default function EmployeesPage() {
     return null;
   };
 
-  const activeEmployeesOnly = useMemo(() => {
-    return employees.filter(e => (getField(e, 'status', 'Status') || 'Active') === 'Active');
-  }, [employees]);
+  // قائمة جميع الإدارات والشركات للفلترة
+  const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
+  const compsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
+  const typesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
 
-  const deptsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [activeEmployeesOnly]);
-  const compsList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployeesOnly]);
-  const typesList = useMemo(() => Array.from(new Set(activeEmployeesOnly.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployeesOnly]);
-
+  // التصفية الأولية بناءً على خيارات البحث والشروط
   const baseFilteredEmployees = useMemo(() => {
-    return activeEmployeesOnly.filter(emp => {
+    return employees.filter(emp => {
       const term = searchTerm.toLowerCase();
       const empCode = String(getField(emp, 'employee_code', 'EmployeeCode')).toLowerCase();
       const empName = String(getField(emp, 'employee_name', 'ArabicName')).toLowerCase();
@@ -138,12 +142,20 @@ export default function EmployeesPage() {
 
       return matchesSearch && matchesDept && matchesComp && matchesType && matchesAge;
     });
-  }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
+  }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
-  // 📊 حسابات كروت الـ KPI الـ 6
+  // 📊 حسابات كروت الـ KPI الـ 6 (مع استبعاد "تحويلات تحت الاعتماد" وغير النشطين تماماً)
   const kpiStats = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    const total = baseFilteredEmployees.length;
+
+    // تصفية صارمة لحسابات الكروت العلوية فقط
+    const activeOnlyForKpi = baseFilteredEmployees.filter(e => {
+      const dept = String(getField(e, 'department', 'Department') || '');
+      const status = String(getField(e, 'status', 'Status') || 'Active');
+      return !dept.includes('تحويلات') && status.toLowerCase() === 'active';
+    });
+
+    const total = activeOnlyForKpi.length;
 
     let newJoiners = 0;
     let perm = 0;
@@ -151,14 +163,13 @@ export default function EmployeesPage() {
     let aboveAge = 0;
     let missingData = 0;
 
-    baseFilteredEmployees.forEach(e => {
+    activeOnlyForKpi.forEach(e => {
       const cType = String(getField(e, 'contract_type', 'ContractType') || '');
       const age = getEmployeeAge(e);
       const hiringDateStr = getField(e, 'hiring_date', 'HiringDate');
       const natId = getField(e, 'national_id', 'NationalID');
       const mobile = getField(e, 'mobile', 'Mobile');
 
-      // 1. التعيينات الجديدة (عام 2026)
       if (hiringDateStr) {
         const hDate = new Date(hiringDateStr);
         if (!isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear) {
@@ -166,16 +177,13 @@ export default function EmployeesPage() {
         }
       }
 
-      // 2. نوع العقد
       if (cType === 'دائم') perm++;
       else if (cType.includes('محدد')) fixed++;
 
-      // 3. فوق السن
       if (cType.includes('فوق السن') || (age !== null && age >= 60)) {
         aboveAge++;
       }
 
-      // 4. نواقص البيانات
       if (!natId || !mobile) {
         missingData++;
       }
@@ -199,16 +207,26 @@ export default function EmployeesPage() {
     };
   }, [baseFilteredEmployees]);
 
-  // 🌟 فلترة الجدول بناءً على الكارت النشط المختار
+  // 🌟 فلترة الجدول النهائي (إخفاء التحويلات افتراضياً وإظهارها فور البحث الصريح)
   const finalTableEmployees = useMemo(() => {
     const currentYear = new Date().getFullYear();
 
     const filtered = baseFilteredEmployees.filter(emp => {
+      const dept = String(getField(emp, 'department', 'Department') || '');
+      const status = String(getField(emp, 'status', 'Status') || 'Active');
       const cType = String(getField(emp, 'contract_type', 'ContractType') || '');
       const age = getEmployeeAge(emp);
       const hiringDateStr = getField(emp, 'hiring_date', 'HiringDate');
       const natId = getField(emp, 'national_id', 'NationalID');
       const mobile = getField(emp, 'mobile', 'Mobile');
+
+      const isTransfer = dept.includes('تحويلات') || status !== 'Active';
+      const isExplicitSearch = searchTerm.trim() !== '' || selectedDept.includes('تحويلات');
+
+      // إخفاء موظفي تحويلات تحت الاعتماد من القائمة الافتراضية، وإظهارهم فقط عند البحث عنهم
+      if (isTransfer && !isExplicitSearch) {
+        return false;
+      }
 
       if (activeCardFilter === 'NEW_JOINERS') {
         if (!hiringDateStr) return false;
@@ -236,18 +254,18 @@ export default function EmployeesPage() {
       const res = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
       return sortDirection === 'asc' ? res : -res;
     });
-  }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
+  }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection, searchTerm, selectedDept]);
 
   const termSearchResults = useMemo(() => {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
-    return activeEmployeesOnly.filter(e => {
+    return employees.filter(e => {
       const code = String(getField(e, 'employee_code', 'EmployeeCode')).toLowerCase();
       const name = String(getField(e, 'employee_name', 'ArabicName')).toLowerCase();
       const dept = String(getField(e, 'department', 'Department')).toLowerCase();
       return code.includes(term) || name.includes(term) || dept.includes(term);
     }).slice(0, 8);
-  }, [activeEmployeesOnly, termSearch]);
+  }, [employees, termSearch]);
 
   const handleSort = (columnKey: string) => {
     if (sortColumn === columnKey) {
@@ -265,6 +283,46 @@ export default function EmployeesPage() {
 
   const handleOpenEdit = async (emp: any) => {
     setEditData({ emp: { ...emp }, loading: false });
+  };
+
+  // 🌟 إجراء إعادة تفعيل الموظف وترجيعه نشطاً (Active)
+  const handleConfirmReactivate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reactivateEmp) return;
+    if (!reactivateDept) return alert('يرجى تحديد الإدارة التي سيعود إليها الموظف.');
+
+    setReactivateSaving(true);
+    try {
+      const empCode = getField(reactivateEmp, 'employee_code', 'EmployeeCode');
+
+      const { error: empError } = await supabase
+        .from('employees')
+        .update({
+          department: reactivateDept,
+          company: reactivateCompany || getField(reactivateEmp, 'company', 'Company'),
+          status: 'Active',
+          termination_reason: null,
+          termination_date: null
+        })
+        .eq('employee_code', empCode);
+
+      if (empError) throw empError;
+
+      await supabase
+        .from('contracts')
+        .update({ status: 'Active' })
+        .eq('employee_code', empCode);
+
+      alert(`✅ تم إعادة تفعيل الموظف (${getField(reactivateEmp, 'employee_name', 'ArabicName')}) ونقله إلى إدارة (${reactivateDept}) بنجاح.`);
+      setReactivateEmp(null);
+      setReactivateDept('');
+      setReactivateCompany('');
+      await fetchEmployees();
+    } catch (err: any) {
+      alert('خطأ أثناء إعادة التفعيل: ' + err.message);
+    } finally {
+      setReactivateSaving(false);
+    }
   };
 
   const handleSaveEdit = async (e: React.FormEvent) => {
@@ -548,10 +606,8 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت الإحصائية الـ 6 التفاعلية */}
+      {/* الكروت الإحصائية الـ 6 التفاعلية (بدون تحويلات تحت الاعتماد) */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" style={{ marginBottom: '20px' }}>
-        
-        {/* كارت 1: إجمالي القوة */}
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ALL_ACTIVE' ? null : 'ALL_ACTIVE')}
           style={{ 
@@ -568,7 +624,6 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#0d9488', marginTop: '2px' }}>القوة الفعالة (100%)</div>
         </div>
 
-        {/* كارت 2: تعيينات جديدة (2026) */}
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'NEW_JOINERS' ? null : 'NEW_JOINERS')}
           style={{ 
@@ -585,7 +640,6 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>نسبة {kpiStats.newJoinersPct}% من القوة</div>
         </div>
 
-        {/* كارت 3: عقود محددة */}
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')}
           style={{ 
@@ -602,7 +656,6 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>نسبة {kpiStats.fixedPct}% من القوة</div>
         </div>
 
-        {/* كارت 4: عقود دائمة */}
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')}
           style={{ 
@@ -619,7 +672,6 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#16a34a', marginTop: '2px' }}>نسبة {kpiStats.permPct}% من القوة</div>
         </div>
 
-        {/* كارت 5: فوق السن */}
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')}
           style={{ 
@@ -636,7 +688,6 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#d97706', marginTop: '2px' }}>نسبة {kpiStats.aboveAgePct}% من القوة</div>
         </div>
 
-        {/* كارت 6: نواقص البيانات (⚠️) */}
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'MISSING_DATA' ? null : 'MISSING_DATA')}
           style={{ 
@@ -652,7 +703,6 @@ export default function EmployeesPage() {
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '4px' }}>{kpiStats.missingData.toLocaleString('en-US')}</div>
           <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#dc2626', marginTop: '2px' }}>اضغط للاستكمال ✏️</div>
         </div>
-
       </div>
 
       {/* إجراءات المحددين المجمعة */}
@@ -739,14 +789,18 @@ export default function EmployeesPage() {
               <tbody>
                 {finalTableEmployees.map((emp, i) => {
                   const empCode = getField(emp, 'employee_code', 'EmployeeCode');
+                  const dept = String(getField(emp, 'department', 'Department') || '');
+                  const status = String(getField(emp, 'status', 'Status') || 'Active');
                   const nationalId = getField(emp, 'national_id', 'NationalID');
                   const mobile = getField(emp, 'mobile', 'Mobile');
                   const isMissingData = !nationalId || !mobile;
                   const cType = getField(emp, 'contract_type', 'ContractType');
                   const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
 
+                  const isTransferredOrInactive = dept.includes('تحويلات') || status.toLowerCase() !== 'active';
+
                   return (
-                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: selectedEmpIds.includes(empCode) ? '#f0fdf4' : 'transparent' }}>
+                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: isTransferredOrInactive ? '#fff5f5' : selectedEmpIds.includes(empCode) ? '#f0fdf4' : 'transparent' }}>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
                         <input 
                           type="checkbox" 
@@ -755,7 +809,7 @@ export default function EmployeesPage() {
                           style={{ accentColor: '#0d9488' }} 
                         />
                       </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: isTransferredOrInactive ? '#dc2626' : '#0d9488' }}>
                         {empCode}
                       </td>
                       <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>
@@ -763,9 +817,12 @@ export default function EmployeesPage() {
                         {isMissingData && (
                           <span title="بيانات غير مكتملة (ناقص الرقم القومي أو الموبايل)" style={{ marginRight: '6px', fontSize: '11px', cursor: 'help' }}>⚠️</span>
                         )}
+                        {isTransferredOrInactive && (
+                          <span style={{ marginRight: '6px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', border: '1px solid #fecaca' }}>تحويلات</span>
+                        )}
                       </td>
                       <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
-                      <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
+                      <td style={{ padding: '10px', color: isTransferredOrInactive ? '#dc2626' : '#64748b', fontWeight: isTransferredOrInactive ? 'bold' : '500' }}>{dept || '—'}</td>
                       <td style={{ padding: '10px' }}>{renderAgeBadge(emp)}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', color: '#0f172a' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{cType || '—'}</td>
@@ -773,8 +830,22 @@ export default function EmployeesPage() {
                         {getContractStatusBadge(cType, endDate)}
                       </td>
                       <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        <button onClick={() => setProfileEmp(emp)} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
-                        <button onClick={() => handleOpenEdit(emp)} style={{ background: '#ffffff', color: '#0d9488', border: '1px solid #99f6e4', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
+                        <button onClick={() => setProfileEmp(emp)} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
+                        <button onClick={() => handleOpenEdit(emp)} style={{ background: '#ffffff', color: '#0d9488', border: '1px solid #99f6e4', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
+                        
+                        {/* 🌟 زر إعادة التفعيل للموظفين المحولين */}
+                        {isTransferredOrInactive && (
+                          <button 
+                            onClick={() => {
+                              setReactivateEmp(emp);
+                              setReactivateDept('');
+                              setReactivateCompany(getField(emp, 'company', 'Company'));
+                            }} 
+                            style={{ background: '#10b981', color: '#ffffff', border: 0, padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
+                          >
+                            🔄 إعادة تفعيل
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -784,6 +855,43 @@ export default function EmployeesPage() {
           </div>
         )}
       </div>
+
+      {/* 🌟 نافذة إعادة التفعيل المنبثقة */}
+      {reactivateEmp && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '500px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#10b981', fontWeight: '900' }}>🔄 إعادة تفعيل الموظف</h3>
+              <button onClick={() => setReactivateEmp(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+
+            <form onSubmit={handleConfirmReactivate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', fontSize: '12px', color: '#16a34a' }}>
+                سيتم إلغاء تحويل الموظف <strong>{getField(reactivateEmp, 'employee_name', 'ArabicName')}</strong> (كود: {getField(reactivateEmp, 'employee_code', 'EmployeeCode')}) وإعادته للقوة الفعالة (Active).
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>حدد الإدارة التي سيعود إليها *</label>
+                <input required list="reactDeptList" placeholder="اختر أو اكتب اسم الإدارة..." value={reactivateDept} onChange={e => setReactivateDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <datalist id="reactDeptList">{deptsList.filter(d => !d.includes('تحويلات')).map((d: any, i) => <option key={i} value={d} />)}</datalist>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الشركة</label>
+                <input list="reactCompList" placeholder="الشركة التابع لها..." value={reactivateCompany} onChange={e => setReactivateCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <datalist id="reactCompList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button type="button" onClick={() => setReactivateEmp(null)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إلغاء</button>
+                <button type="submit" disabled={reactivateSaving} style={{ background: '#10b981', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: reactivateSaving ? 'not-allowed' : 'pointer' }}>
+                  {reactivateSaving ? 'جاري التحديث...' : 'تأكيد إعادة التفعيل 🟢'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 👤 نافذة عرض الملف الشامل */}
       {profileEmp && (
@@ -1036,7 +1144,7 @@ export default function EmployeesPage() {
                   </select>
                 </div>
 
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (للعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? '#f8fafc' : '#ffffff', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (لالعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? '#f8fafc' : '#ffffff', color:'#0f172a' }} /></div>
 
                 <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
               </div>
