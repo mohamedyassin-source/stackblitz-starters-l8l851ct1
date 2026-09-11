@@ -1,5 +1,11 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بقاعدة بيانات Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function AlertsPage() {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -15,18 +21,23 @@ export default function AlertsPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
 
-  // جلب البيانات مباشرة من Neon
+  // 🌟 جلب البيانات مباشرة من Supabase
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/dashboard/stats'); // يستدعي بيانات الموظفين والعقود من نيون
-      const json = await res.json();
-      if (json.success) {
-        setEmployees(json.employees || []);
-        setRenewals(json.renewals || []);
-      }
+      // جلب الموظفين والعقود بالتوازي لسرعة أكبر
+      const [empResponse, renResponse] = await Promise.all([
+        supabase.from('employees').select('*'),
+        supabase.from('renewals').select('*')
+      ]);
+
+      if (empResponse.error) throw empResponse.error;
+      if (renResponse.error) throw renResponse.error;
+
+      setEmployees(empResponse.data || []);
+      setRenewals(renResponse.data || []);
     } catch (err) {
-      console.error('Error fetching data from Neon:', err);
+      console.error('Error fetching data from Supabase:', err);
     } finally {
       setLoading(false);
     }
@@ -104,7 +115,7 @@ export default function AlertsPage() {
     };
   }, [alertItems]);
 
-  // 🌟 إنشاء طلب سريع على Neon PostgreSQL
+  // 🌟 إنشاء طلب سريع 
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     try {
@@ -140,7 +151,7 @@ export default function AlertsPage() {
       {/* العنوان الرئيسي والأزرار */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>مركزي تنبيهات وإشعارات العقود (Neon DB)</h3>
+          <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>مركزي تنبيهات وإشعارات العقود (Supabase)</h3>
           <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>رصد وتتبع العقود المستحقة للإنهاء أو التجديد لتجنب المخاطر القانونية</p>
         </div>
         
@@ -217,7 +228,7 @@ export default function AlertsPage() {
       {/* جدول التنبيهات الإجرائي */}
       <div className="table-responsive" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', overflowX: 'auto' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري معالجة وتصنيف التنبيهات من قاعدة بيانات Neon...</div>
+          <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري جلب وتصنيف التنبيهات من قاعدة بيانات Supabase...</div>
         ) : (
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '10.5px', whiteSpace: 'nowrap' }}>
             <thead>
