@@ -65,7 +65,7 @@ export default function AlertsPage() {
       .map(emp => {
         const days = getDaysRemaining(emp.contract_end_date);
         const empRens = renewals
-          .filter(r => r.employee_code === emp.employee_code)
+          .filter(r => String(r.employee_code) === String(emp.employee_code))
           .sort((a, b) => (b.request_id || '').localeCompare(a.request_id || ''));
         const latestRenewal = empRens[0];
 
@@ -115,31 +115,34 @@ export default function AlertsPage() {
     };
   }, [alertItems]);
 
-  // 🌟 إنشاء طلب سريع 
+  // 🌟 إنشاء طلب سريع مباشرة على Supabase بدون API
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     try {
-      const res = await fetch('/api/renewals/quick', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          employee_code: emp.employee_code,
+      const currentYear = new Date().getFullYear();
+      const reqId = `RR-${currentYear}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      const { error } = await supabase
+        .from('renewals')
+        .insert([{
+          request_id: reqId,
+          employee_code: parseInt(emp.employee_code, 10),
           employee_name: emp.employee_name,
           department: emp.department,
           job_title: emp.job_title,
           company: emp.company,
-          contract_end_date: emp.contract_end_date,
-        }),
-      });
+          contract_end_date: emp.contract_end_date ? new Date(emp.contract_end_date).toISOString() : null,
+          status: 'Pending',
+          signature_status: 'قيد التوقيع',
+          request_date: new Date().toISOString(),
+        }]);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        fetchAllData();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert(`تم إنشاء الطلب ${reqId} بنجاح ✅`);
+      fetchAllData(); // تحديث الواجهة
     } catch (error: any) {
+      console.error(error);
       alert('خطأ أثناء إنشاء الطلب: ' + error.message);
     } finally {
       setActionLoading(false);
@@ -156,6 +159,7 @@ export default function AlertsPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
+          {/* إرسال الإيميل يجب أن يظل API لسرية بيانات الـ SMTP */}
           <button onClick={async () => {
               setActionLoading(true);
               try {
