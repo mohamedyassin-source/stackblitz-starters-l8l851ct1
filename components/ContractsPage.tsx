@@ -1,5 +1,11 @@
 'use client';
 import { useState, useMemo, useEffect, useRef } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function ContractsPage() {
   const [employeesRaw, setEmployeesRaw] = useState<any[]>([]);
@@ -40,18 +46,30 @@ export default function ContractsPage() {
   const [reactivateSearchTerm, setReactivateSearchTerm] = useState('');
   const [reactivateDept, setReactivateDept] = useState('');
 
-  // جلب البيانات من Neon
+  // 🌟 جلب البيانات مباشرة من Supabase ودمجها بذكاء
   const refreshGlobalData = async () => {
     setGlobalLoading(true);
     try {
-      const res = await fetch('/api/contracts');
-      const json = await res.json();
-      if (json.success) {
-        setEmployeesRaw(json.employees || []);
-        setRenewalsRaw(json.renewals || []);
-      }
+      const [empRes, contRes, renRes] = await Promise.all([
+        supabase.from('employees').select('*'),
+        supabase.from('contracts').select('*'),
+        supabase.from('renewals').select('*')
+      ]);
+
+      if (empRes.error) throw empRes.error;
+
+      // دمج العقود مع الموظفين أوتوماتيكياً في الواجهة
+      const mergedEmployees = (empRes.data || []).map(emp => {
+        const empContracts = (contRes.data || []).filter(c => String(c.employee_code) === String(emp.employee_code));
+        // ترتيب العقود لنجلب الأحدث أولاً
+        empContracts.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        return { ...emp, contracts: empContracts };
+      });
+
+      setEmployeesRaw(mergedEmployees);
+      setRenewalsRaw(renRes.data || []);
     } catch (e) {
-      console.error('Failed to fetch contracts', e);
+      console.error('Failed to fetch contracts from Supabase', e);
     } finally {
       setGlobalLoading(false);
     }
@@ -116,24 +134,86 @@ export default function ContractsPage() {
     return filteredContracts.slice(start, start + pageSize);
   }, [filteredContracts, currentPage]);
 
-  // إرسال الإجراءات لـ Neon
+  // 🌟 إرسال الإجراءات لـ Supabase مباشرة
   const sendAction = async (payload: any) => {
     setActionLoading(true);
     try {
-      const res = await fetch('/api/contracts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message || 'تمت العملية بنجاح ✅');
-        refreshGlobalData();
-      } else {
-        alert('خطأ: ' + data.error);
+      const { action } = payload;
+
+      // 1. إنهاء تعاقد
+      if (action === 'terminate') {
+        const code = parseInt(payload.employee_code, 10);
+        
+        const { error: empError } = await supabase
+          .from('employees')
+          .update({ status: 'Inactive', department: 'تحويلات/تحت الاعتماد' })
+          .eq('employee_code', code);
+        if (empError) throw empError;
+
+        const { error: contError } = await supabase
+          .from('contracts')
+          .update({ status: 'Terminated', contract_type: 'إنهاء تعاقد' })
+          .eq('employee_code', code)
+          .eq('status', 'Active');
+        if (contError) throw contError;
+
+        alert('تم إنهاء التعاقد بنجاح ✅');
       }
+
+      // 2. إعادة تفعيل موظف
+      else if (action === 'reactivate') {
+        const code = parseInt(payload.employee_code, 10);
+        
+        const { error: empError } = await supabase
+          .from('employees')
+          .update({ status: 'Active', department: payload.department })
+          .eq('employee_code', code);
+        if (empError) throw empError;
+
+        const { error: contError } = await supabase
+          .from('contracts')
+          .update({ status: 'Active' })
+          .eq('employee_code', code);
+        if (contError) throw contError;
+
+        alert('تم إعادة تفعيل الموظف بنجاح ✅');
+      }
+
+      // 3. تعديل أو إضافة عقد
+      else if (action === 'edit_contract') {
+        const code = parseInt(payload.employee_code, 10);
+        
+        if (payload.contract_id) {
+          const { error } = await supabase
+            .from('contracts')
+            .update({
+              contract_type: payload.contract_type,
+              contract_start_date: payload.contract_start_date || null,
+              contract_end_date: payload.contract_end_date || null,
+            })
+            .eq('contract_id', payload.contract_id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase
+            .from('contracts')
+            .insert([{
+              employee_code: code,
+              contract_type: payload.contract_type,
+              contract_start_date: payload.contract_start_date || null,
+              contract_end_date: payload.contract_end_date || null,
+              status: 'Active',
+            }]);
+          if (error) throw error;
+        }
+        alert('تم حفظ بيانات العقد بنجاح ✅');
+      }
+
+      // تحديث البيانات في الواجهة بعد نجاح العملية
+      refreshGlobalData();
+
     } catch (e: any) {
-      alert('خطأ في الاتصال: ' + e.message);
+      console.error(e);
+      alert('خطأ في التنفيذ: ' + e.message);
     } finally {
       setActionLoading(false);
     }
@@ -143,8 +223,8 @@ export default function ContractsPage() {
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)' }}>العقود الحالية السارية (Neon DB)</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>سجل شامل للعقود والموظفين مباشرة من قاعدة بيانات نيون السريعة</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)' }}>العقود الحالية السارية (Supabase)</h3>
+          <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>سجل شامل للعقود والموظفين مباشرة من قاعدة بيانات Supabase</p>
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
@@ -164,7 +244,7 @@ export default function ContractsPage() {
 
       <div style={{ background: '#fff', border: '1px solid var(--line)', borderRadius: '10px', overflowX: 'auto' }}>
         {globalLoading ? (
-          <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold' }}>جاري تحميل البيانات من Neon PostgreSQL... ⏳</div>
+          <div style={{ padding: '40px', textAlign: 'center', fontSize: '12px', fontWeight: 'bold' }}>جاري تحميل البيانات من Supabase... ⏳</div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px' }}>
             <thead>
@@ -179,21 +259,25 @@ export default function ContractsPage() {
               </tr>
             </thead>
             <tbody>
-              {paginatedContracts.map((emp) => (
-                <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '10px', fontWeight: 'bold', color: '#dc2626' }}>{emp.employee_code}</td>
-                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.employee_name}</td>
-                  <td style={{ padding: '10px' }}>{emp.department || '—'}</td>
-                  <td style={{ padding: '10px', color: '#2563eb', fontWeight: 'bold' }}>{emp.contract_type}</td>
-                  <td style={{ padding: '10px' }}>{emp.contract_start_date || '—'}</td>
-                  <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_end_date || '—'}</td>
-                  <td style={{ padding: '10px', textAlign: 'center' }}>
-                    <button onClick={() => { setEditEmpData(emp); setIsEditModalOpen(true); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
-                      ✏️ تعديل
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {paginatedContracts.length === 0 ? (
+                 <tr><td colSpan={7} style={{ padding: '20px', textAlign: 'center' }}>لا توجد بيانات مطابقة</td></tr>
+              ) : (
+                paginatedContracts.map((emp) => (
+                  <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <td style={{ padding: '10px', fontWeight: 'bold', color: '#dc2626' }}>{emp.employee_code}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.employee_name}</td>
+                    <td style={{ padding: '10px' }}>{emp.department || '—'}</td>
+                    <td style={{ padding: '10px', color: '#2563eb', fontWeight: 'bold' }}>{emp.contract_type}</td>
+                    <td style={{ padding: '10px' }}>{emp.contract_start_date || '—'}</td>
+                    <td style={{ padding: '10px', fontWeight: 'bold' }}>{emp.contract_end_date || '—'}</td>
+                    <td style={{ padding: '10px', textAlign: 'center' }}>
+                      <button onClick={() => { setEditEmpData(emp); setIsEditModalOpen(true); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>
+                        ✏️ تعديل
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         )}
