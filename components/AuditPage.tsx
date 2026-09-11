@@ -1,5 +1,11 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function AuditPage() {
   const [renewals, setRenewals] = useState<any[]>([]);
@@ -9,17 +15,18 @@ export default function AuditPage() {
   const [dateFilter, setDateFilter] = useState('');
   const [activeSessionUser, setActiveSessionUser] = useState<any>(null);
 
-  // جلب البيانات مباشرة من Neon DB
+  // 🌟 جلب البيانات مباشرة من Supabase
   const fetchAuditData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/audit/data');
-      const json = await res.json();
-      if (json.success) {
-        setRenewals(json.renewals || []);
-      }
+      const { data, error } = await supabase
+        .from('renewals')
+        .select('*');
+
+      if (error) throw error;
+      setRenewals(data || []);
     } catch (e) {
-      console.error('Error fetching audit data', e);
+      console.error('Error fetching audit data from Supabase', e);
     } finally {
       setLoading(false);
     }
@@ -156,7 +163,7 @@ export default function AuditPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>سجل العمليات والرقابة (Audit Trail - Neon DB)</h3>
+          <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>سجل العمليات والرقابة (Audit Trail - Supabase)</h3>
           <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>مراقبة وتتبع كافة الحركات والتعديلات التي تمت على المنظومة</p>
         </div>
         <button onClick={fetchAuditData} style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -215,7 +222,7 @@ export default function AuditPage() {
       {/* جدول السجل */}
       <div className="table-responsive" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '8px', overflowX: 'auto' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري استخراج السجل التاريخي للعمليات من قاعدة بيانات Neon... 🕵️‍♂️</div>
+          <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري استخراج السجل التاريخي للعمليات من قاعدة بيانات Supabase... 🕵️‍♂️</div>
         ) : (
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px' }}>
             <thead>
