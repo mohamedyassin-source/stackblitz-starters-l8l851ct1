@@ -2,6 +2,12 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const MONTHS_LIST = [
   { value: '1', label: 'يناير (01)' },
@@ -66,18 +72,36 @@ export default function ReportsPage() {
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
 
-  // جلب البيانات المباشرة من Neon DB
+  // 🌟 جلب البيانات المباشرة من Supabase
   useEffect(() => {
     async function fetchReportsData() {
       setLoading(true);
       try {
-        const res = await fetch('/api/reports/data');
-        const json = await res.json();
-        if (json.success) {
-          setEmployees(json.employees || []);
-        }
+        const [empRes, contRes] = await Promise.all([
+          supabase.from('employees').select('*'),
+          supabase.from('contracts').select('*')
+        ]);
+
+        if (empRes.error) throw empRes.error;
+
+        // دمج العقد النشط مع بيانات الموظف
+        const mergedEmployees = (empRes.data || []).map(emp => {
+          const empContracts = (contRes.data || []).filter(c => String(c.employee_code) === String(emp.employee_code));
+          empContracts.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+          const activeContract = empContracts[0] || {};
+          
+          return {
+            ...emp,
+            contract_type: activeContract.contract_type || emp.contract_type,
+            contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date,
+            contract_end_date: activeContract.contract_end_date || emp.contract_end_date,
+            contract_status: activeContract.status || emp.status,
+          };
+        });
+
+        setEmployees(mergedEmployees);
       } catch (err) {
-        console.error('Error fetching reports data:', err);
+        console.error('Error fetching reports data from Supabase:', err);
       } finally {
         setLoading(false);
       }
@@ -248,8 +272,8 @@ export default function ReportsPage() {
       {/* الهيدر العلوي */}
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات (Neon DB)</h3>
-          <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تقارير منظمة ومباشرة عبر قاعدة بيانات Neon PostgreSQL</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات (Supabase)</h3>
+          <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تقارير منظمة ومباشرة عبر قاعدة بيانات Supabase</p>
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -472,7 +496,7 @@ export default function ReportsPage() {
 
         {/* عرض البيانات */}
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري استخراج التقرير من قاعدة البيانات Neon PostgreSQL... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري استخراج التقرير من قاعدة البيانات Supabase... ⏳</div>
         ) : activeReport === 'dept_summary' ? (
           
           /* جدول إحصائيات الإدارات */
