@@ -1,6 +1,12 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const ARABIC_WEEKDAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 
@@ -38,17 +44,20 @@ export default function SignaturesPage() {
   const [sortColumn, setSortColumn] = useState<string>('request_id');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
-  // جلب الطلبات المعتمدة من Neon DB
+  // 🌟 جلب الطلبات المعتمدة المخصصة للتوقيع مباشرة من Supabase
   const fetchApprovedData = async () => {
     setDataLoading(true);
     try {
-      const res = await fetch('/api/signatures');
-      const json = await res.json();
-      if (json.success) {
-        setDirectRequests(json.requests || []);
-      }
+      const { data, error } = await supabase
+        .from('renewals')
+        .select('*')
+        .eq('status', 'Approved')
+        .order('request_date', { ascending: false });
+
+      if (error) throw error;
+      setDirectRequests(data || []);
     } catch (err: any) {
-      console.error('Error fetching approved requests from Neon:', err.message);
+      console.error('Error fetching approved requests from Supabase:', err.message);
     } finally {
       setDataLoading(false);
     }
@@ -115,7 +124,7 @@ export default function SignaturesPage() {
     return sortDirection === 'asc' ? <span style={{ color: '#0d9488', marginRight: '4px' }}>▲</span> : <span style={{ color: '#0d9488', marginRight: '4px' }}>▼</span>;
   };
 
-  // التوقيع المجمع بـ Neon API
+  // 🌟 التوقيع المباشر (الفردي والمجمع) على Supabase
   const handleSign = async (reqId?: string) => {
     const idsToSign = reqId ? [reqId] : selectedIds;
     if (idsToSign.length === 0) return alert('يرجى تحديد عقد واحد على الأقل للتوقيع.');
@@ -125,23 +134,16 @@ export default function SignaturesPage() {
 
     setActionLoading(true);
     try {
-      const res = await fetch('/api/signatures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'sign',
-          request_ids: idsToSign,
-        }),
-      });
+      const { error } = await supabase
+        .from('renewals')
+        .update({ signature_status: 'تم التوقيع' })
+        .in('request_id', idsToSign);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setSelectedIds([]);
-        fetchApprovedData();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم تسجيل التوقيع بنجاح ✅');
+      setSelectedIds([]);
+      fetchApprovedData();
     } catch (err: any) {
       alert('حدث خطأ أثناء التوقيع: ' + err.message);
     } finally {
@@ -149,7 +151,7 @@ export default function SignaturesPage() {
     }
   };
 
-  // الحذف المجمع بـ Neon API
+  // 🌟 الحذف المباشر (الفردي والمجمع) من Supabase
   const handleDelete = async (reqId?: string) => {
     const idsToDelete = reqId ? [reqId] : selectedIds;
     if (idsToDelete.length === 0) return alert('يرجى تحديد طلب واحد على الأقل للحذف.');
@@ -159,23 +161,16 @@ export default function SignaturesPage() {
 
     setActionLoading(true);
     try {
-      const res = await fetch('/api/signatures', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete',
-          request_ids: idsToDelete,
-        }),
-      });
+      const { error } = await supabase
+        .from('renewals')
+        .delete()
+        .in('request_id', idsToDelete);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setSelectedIds([]);
-        fetchApprovedData();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم حذف الطلبات بنجاح ✅');
+      setSelectedIds([]);
+      fetchApprovedData();
     } catch (err: any) {
       alert('حدث خطأ أثناء الحذف: ' + err.message);
     } finally {
@@ -237,7 +232,7 @@ export default function SignaturesPage() {
       {/* الهيدر الرئيسي */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>✍️ توقيعات العقود المعتمدة (Neon DB)</h3>
+          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>✍️ توقيعات العقود المعتمدة (Supabase)</h3>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>سجل متابعة وإغلاق توقيعات العقود التي تم اعتمادها رسمياً</p>
         </div>
         
@@ -334,7 +329,7 @@ export default function SignaturesPage() {
       {/* الجدول الرئيسي */}
       <div className="table-responsive" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto' }}>
         {dataLoading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل عقود التوقيعات من Neon PostgreSQL... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل عقود التوقيعات من Supabase... ⏳</div>
         ) : (
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
             <thead>
@@ -384,7 +379,7 @@ export default function SignaturesPage() {
                       {req.renewal_months ? `${req.renewal_months} شهور` : 'تاريخ مخصص'}
                     </td>
                     <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>
-                      {req.new_contract_end_date || '—'}
+                      {req.new_contract_end_date ? formatDate(req.new_contract_end_date) : '—'}
                     </td>
                     <td style={{ padding: '10px' }}>
                       {isSigned ? 
