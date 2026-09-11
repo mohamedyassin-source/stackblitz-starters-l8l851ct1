@@ -108,7 +108,7 @@ export default function Home() {
   if (!currentUser) {
     return (
       <LoginPage
-        onLoginSuccess={(user: any) => {
+        onLoginSuccess={(user) => {
           setCurrentUser(user);
           setActiveTab('dashboard');
         }}
