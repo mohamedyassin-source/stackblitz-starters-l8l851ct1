@@ -2,6 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const parseDateParts = (dateStr: string | null | undefined) => {
   if (!dateStr) return null;
@@ -63,17 +69,19 @@ export default function RenewalsPage() {
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
 
-  // جلب الطلبات من Neon PostgreSQL
+  // 🌟 جلب الطلبات مباشرة من Supabase
   const fetchRequests = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/renewals');
-      const json = await res.json();
-      if (json.success) {
-        setRequests(json.requests || []);
-      }
+      const { data, error } = await supabase
+        .from('renewals')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setRequests(data || []);
     } catch (error: any) {
-      console.error('Error fetching requests from Neon:', error.message);
+      console.error('Error fetching requests from Supabase:', error.message);
     } finally {
       setLoading(false);
     }
@@ -138,7 +146,7 @@ export default function RenewalsPage() {
   const countRejected = requests.filter((r: any) => r.status === 'Rejected').length;
   const countAll = requests.length;
 
-  // اعتماد الطلبات عبر Neon API
+  // 🌟 اعتماد الطلبات وتحديث العقود مباشرة في Supabase
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
@@ -146,27 +154,45 @@ export default function RenewalsPage() {
         ? [approvalModal.req.request_id] 
         : selectedIds;
 
-      const res = await fetch('/api/renewals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'approve',
-          request_ids: reqsToApprove,
-          confirmed_months: confirmedMonths,
-          custom_start_date: customStartDate,
-          custom_end_date: customEndDate,
-        }),
-      });
+      for (const reqId of reqsToApprove) {
+        const req = requests.find(r => r.request_id === reqId);
+        if (!req) continue;
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setSelectedIds([]);
-        setApprovalModal({ isOpen: false, type: 'single' });
-        fetchRequests();
-      } else {
-        alert('خطأ: ' + data.error);
+        let finalStart = customStartDate;
+        let finalEnd = customEndDate;
+
+        // حساب التواريخ تلقائياً لو كان الاعتماد مجمع
+        if (approvalModal.type === 'bulk') {
+          finalStart = calculateNewStartDate(req.contract_end_date) || '';
+          finalEnd = calculateNewEndDateFromStart(finalStart, confirmedMonths) || '';
+        }
+
+        // 1. تحديث حالة الطلب
+        const { error: renError } = await supabase
+          .from('renewals')
+          .update({
+            status: 'Approved',
+            renewal_months: confirmedMonths,
+            new_contract_end_date: finalEnd ? new Date(finalEnd).toISOString() : null,
+          })
+          .eq('request_id', reqId);
+          
+        if (renError) throw renError;
+
+        // 2. تحديث تاريخ نهاية العقد النشط للموظف
+        if (finalEnd) {
+          await supabase
+            .from('contracts')
+            .update({ contract_end_date: new Date(finalEnd).toISOString() })
+            .eq('employee_code', req.employee_code)
+            .eq('status', 'Active');
+        }
       }
+
+      alert('تم الاعتماد بنجاح وتحديث تواريخ العقود ✅');
+      setSelectedIds([]);
+      setApprovalModal({ isOpen: false, type: 'single' });
+      fetchRequests();
     } catch (err: any) {
       alert('حدث خطأ أثناء الاعتماد: ' + err.message);
     } finally {
@@ -174,27 +200,23 @@ export default function RenewalsPage() {
     }
   };
 
-  // حذف الطلب
+  // 🌟 حذف الطلب من Supabase
   const handleDeleteRequest = async (requestId: string) => {
     const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟');
     if (!confirmDelete) return;
 
     setActionLoading(true);
     try {
-      const res = await fetch('/api/renewals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'delete', request_id: requestId }),
-      });
+      const { error } = await supabase
+        .from('renewals')
+        .delete()
+        .eq('request_id', requestId);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        setApprovalModal({ isOpen: false, type: 'single' });
-        fetchRequests();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم حذف الطلب بنجاح ✅');
+      setApprovalModal({ isOpen: false, type: 'single' });
+      fetchRequests();
     } catch (err: any) {
       alert('حدث خطأ أثناء الحذف: ' + err.message);
     } finally {
@@ -202,26 +224,22 @@ export default function RenewalsPage() {
     }
   };
 
-  // رفض الطلب
+  // 🌟 رفض الطلب في Supabase
   const handleReject = async (requestId: string) => {
     const confirmReject = window.confirm('هل أنت متأكد من رفض هذا الطلب نهائياً؟');
     if (!confirmReject) return;
 
     setActionLoading(true);
     try {
-      const res = await fetch('/api/renewals', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reject', request_id: requestId }),
-      });
+      const { error } = await supabase
+        .from('renewals')
+        .update({ status: 'Rejected' })
+        .eq('request_id', requestId);
 
-      const data = await res.json();
-      if (data.success) {
-        alert(data.message);
-        fetchRequests();
-      } else {
-        alert('خطأ: ' + data.error);
-      }
+      if (error) throw error;
+
+      alert('تم رفض الطلب بنجاح ✅');
+      fetchRequests();
     } catch (err: any) {
       alert('حدث خطأ أثناء رفض الطلب: ' + err.message);
     } finally {
@@ -276,8 +294,8 @@ export default function RenewalsPage() {
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950, #0f172a)' }}>طلبات التجديد (Neon DB)</h3>
-            <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted, #64748b)' }}>دورة الاعتماد وإدارة العقود قيد المعالجة عبر Neon PostgreSQL</p>
+            <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950, #0f172a)' }}>طلبات التجديد (Supabase)</h3>
+            <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted, #64748b)' }}>دورة الاعتماد وإدارة العقود قيد المعالجة عبر Supabase</p>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
             {activeTab === 'Pending' && (
@@ -342,7 +360,7 @@ export default function RenewalsPage() {
 
         <div className="table-responsive" style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', overflowX: 'auto' }}>
           {loading ? (
-            <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل الطلبات وترتيبها من Neon PostgreSQL...</div>
+            <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل الطلبات وترتيبها من Supabase...</div>
           ) : (
             <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '10.5px', whiteSpace: 'nowrap' }}>
               <thead>
