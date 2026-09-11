@@ -25,7 +25,7 @@ export default function DashboardPage() {
 
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
 
-  // 🌟 جلب كافة البيانات متجاوزة حد الـ 1000 من Supabase
+  // 🌟 دالة جلب كافة السجلات متجاوزة حد الـ 1000
   const fetchAllRows = async (tableName: string) => {
     let allRows: any[] = [];
     let from = 0;
@@ -35,10 +35,7 @@ export default function DashboardPage() {
         .from(tableName)
         .select('*')
         .range(from, from + step - 1);
-      if (error) {
-        console.error(`Error fetching from ${tableName}:`, error);
-        break;
-      }
+      if (error) throw error;
       if (data && data.length > 0) {
         allRows = allRows.concat(data);
         if (data.length < step) break;
@@ -70,7 +67,6 @@ export default function DashboardPage() {
         const empCode = String(emp.employee_code).trim();
         const empContracts = contractsMap.get(empCode) || [];
 
-        // ترتيب العقود من الأحدث للأقدم
         empContracts.sort((a, b) => new Date(b.created_at || b.contract_start_date || 0).getTime() - new Date(a.created_at || a.contract_start_date || 0).getTime());
         const activeContract = empContracts[0] || {};
 
@@ -131,7 +127,8 @@ export default function DashboardPage() {
   const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    // تصفية الموظفين النشطين واستبعاد إدارة التحويلات
+    const currentYear = new Date().getFullYear(); // 2026
+
     const activeEmployeesOnly = allEmployees.filter(emp => 
       String(emp.status || 'Active').toLowerCase() === 'active' && 
       !String(emp.department || '').includes('تحويلات')
@@ -169,18 +166,27 @@ export default function DashboardPage() {
         missingDataList.push(emp);
       }
 
-      // حساب الشهر لتوزيع العقود
+      // 🌟 حساب الشهر الفعلي للعمليات (بدايات 2026 أو تجديدات تنتهي في 2027)
+      let targetMonthIdx = -1;
       if (emp.contract_start_date) {
         const startDate = new Date(emp.contract_start_date);
-        if (!isNaN(startDate.getTime())) {
-          const monthIdx = startDate.getMonth();
-          if (monthIdx >= 0 && monthIdx < 12) {
-            contractsByMonth[monthIdx].count++;
-          }
+        if (!isNaN(startDate.getTime()) && startDate.getFullYear() === currentYear) {
+          targetMonthIdx = startDate.getMonth();
+        }
+      }
+      
+      if (targetMonthIdx === -1 && emp.contract_end_date) {
+        const endDate = new Date(emp.contract_end_date);
+        // إذا كان تاريخ الانتهاء السنة القادمة، نعتبر الشهر الذي بدأ فيه التجديد هو نفس شهر النهاية
+        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === currentYear + 1) {
+          targetMonthIdx = endDate.getMonth();
         }
       }
 
-      // تصنيف هيكل العقود
+      if (targetMonthIdx >= 0 && targetMonthIdx < 12) {
+        contractsByMonth[targetMonthIdx].count++;
+      }
+
       if (type.includes('دائم') || type.includes('غير محدد')) {
         perm++;
         const ageInfo = getAge60Info(emp.national_id);
@@ -193,7 +199,6 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      // تنبيهات العقود المحددة
       if (!type.includes('دائم') && !type.includes('غير محدد')) {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
@@ -207,10 +212,9 @@ export default function DashboardPage() {
         }
       }
 
-      // العقود المؤقتة (تجديدات أقل من سنة)
       if (type.includes('محدد') && !type.includes('فوق السن')) {
         const empRens = filteredRens
-          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && (r.status === 'Approved' || r.status === 'معتمد'))
+          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && r.status === 'Approved')
           .sort((a, b) => new Date(a.request_date).getTime() - new Date(b.request_date).getTime());
 
         let isShort = false;
@@ -243,7 +247,6 @@ export default function DashboardPage() {
     });
 
     alerts.sort((a, b) => a.days - b.days);
-    turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
 
     const shortTermList = Object.entries(shortTermByDept)
       .map(([deptName, emps]) => ({ 
@@ -258,8 +261,8 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
-    const waitingSign = filteredRens.filter(r => (r.status === 'Approved' || r.status === 'معتمد') && r.signature_status !== 'تم التوقيع');
+    const pendingRequests = filteredRens.filter(r => r.status === 'Pending');
+    const waitingSign = filteredRens.filter(r => r.status === 'Approved' && r.signature_status !== 'تم التوقيع');
 
     return {
       totalEmps: filteredEmps.length,
@@ -271,7 +274,6 @@ export default function DashboardPage() {
       pendingCount: pendingRequests.length,
       waitingSignCount: waitingSign.length,
       missingDataList,
-      turning60List,
       topDepts,
       urgentAlerts,
       contractsByMonth,
@@ -358,7 +360,7 @@ export default function DashboardPage() {
 
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التوزيع الشهري لبدايات العقود النشطة
+            📈 التوزيع الشهري لعقود العام الحالي ({new Date().getFullYear()})
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
