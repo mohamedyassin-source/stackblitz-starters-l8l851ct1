@@ -26,7 +26,7 @@ export default function DashboardPage() {
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
-  // 🌟 ضبط العام الافتراضي ديناميكياً ليكون العام الحالي (2026)
+  // فلاتر نافذة بلوغ سن الـ 60 (السنة والشهر)
   const currentYearStr = new Date().getFullYear().toString();
   const [ageFilterYear, setAgeFilterYear] = useState<string>(currentYearStr);
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
@@ -94,8 +94,10 @@ export default function DashboardPage() {
   const deptsList = Array.from(new Set(allEmployees.map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    // 🌟 يتغير تلقائياً مع بداية كل عام جديد (2026 -> 2027 -> إلخ)
+    // 🌟 سنة العمل الحالية (2026)
     const currentYear = new Date().getFullYear();
+    // 🌟 سنة انتهاء العقود المستهدفة للتجديد (2027)
+    const targetExpiryYear = currentYear + 1;
 
     const activeEmployeesOnly = allEmployees.filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
@@ -148,7 +150,7 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🎂 حصر الموظفين الذين سيبلوغون سن الـ 60 مستقبلاً (daysUntil60 >= 0)
+      // 🎂 حصر الموظفين الذين سيبلوغون سن الـ 60 مستقبلاً
       const ageInfo = getAge60Info(nationalId, birthDateRaw);
       if (ageInfo && ageInfo.daysUntil60 >= 0) {
         const item = {
@@ -171,10 +173,10 @@ export default function DashboardPage() {
         }
       }
 
-      // 🌟 التوزيع الشهري الديناميكي للعام الحالي أوتوماتيكياً
+      // 🌟 تجميع العقود التي تنتهي في العام القادم (2027) لجدولة تجديدها في عام الشغل الحالي (2026)
       if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
-        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === currentYear) {
+        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === targetExpiryYear) {
           const monthIdx = endDate.getMonth();
           if (monthIdx >= 0 && monthIdx < 12) {
             contractsByMonth[monthIdx].count++;
@@ -286,7 +288,8 @@ export default function DashboardPage() {
       shortTermList,
       futureTurning60List,
       turning60SoonList,
-      currentYear
+      currentYear,
+      targetExpiryYear
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -423,14 +426,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 🌟 الرسم البياني التفاعلي المتغير تلقائياً بحسب العام الحالي */}
+        {/* 🌟 الرسم البياني: العنوان يظهر العام الحالي (2026) والحسابات تطابق عقود الانتهاء لـ (2027) */}
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>
               📈 توزيع تجديد العقود الشهري لعام {dashboardData.currentYear}
             </h4>
             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#2563eb', background: '#eff6ff', padding: '4px 12px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
-              عام {dashboardData.currentYear} 📅
+              خطة عقود {dashboardData.targetExpiryYear} 📅
             </span>
           </div>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: '#e2e8f0' }}>
@@ -516,7 +519,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🎂 نافذة بلوغ سن الـ 60 القادم مستقبلاً مع العام الافتراضي المحدد */}
+      {/* 🎂 نافذة بلوغ سن الـ 60 القادم مستقبلاً */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -627,7 +630,7 @@ export default function DashboardPage() {
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>
-                🗓️ عقود تنتهي في {selectedChartMonth.name} {dashboardData.currentYear}
+                🗓️ عقود تنتهي في {selectedChartMonth.name} {dashboardData.targetExpiryYear}
               </h3>
               <button onClick={() => setSelectedChartMonth(null)} style={{ background: '#f1f5f9', border: 0, color: '#64748b', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
