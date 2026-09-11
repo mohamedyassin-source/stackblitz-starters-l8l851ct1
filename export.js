@@ -8,15 +8,21 @@ admin.initializeApp({
 
 const db = admin.firestore();
 
-// الكولكشنز المتوقعة بناءً على مشروع الموارد البشرية والعقود
-const collections = ['users', 'contracts', 'employees', 'renewals'];
+async function exportAllCollections() {
+  // جلب كل أسماء الكولكشنز الموجودة في القاعدة تلقائياً
+  const collections = await db.listCollections();
+  
+  if (collections.length === 0) {
+    console.log('لم يتم العثور على أي Collections في قاعدة البيانات!');
+    return;
+  }
 
-async function exportData() {
-  for (const col of collections) {
+  for (const colRef of collections) {
+    const colName = colRef.id;
     try {
-      const snapshot = await db.collection(col).get();
+      const snapshot = await colRef.get();
       if (snapshot.empty) {
-        console.log(`لا توجد بيانات في: ${col}`);
+        console.log(`الكولكشن فارغة: ${colName}`);
         continue;
       }
 
@@ -32,12 +38,12 @@ async function exportData() {
       );
 
       const csvContent = [headers, ...rows].join('\n');
-      fs.writeFileSync(`${col}.csv`, csvContent);
-      console.log(`تم تصدير: ${col}.csv بنجاح`);
+      fs.writeFileSync(`${colName}.csv`, csvContent);
+      console.log(`تم تصدير: ${colName}.csv بنجاح`);
     } catch (err) {
-      console.log(`خطأ في الكولكشن ${col}:`, err.message);
+      console.log(`خطأ في تصدير ${colName}:`, err.message);
     }
   }
 }
 
-exportData().catch(console.error);
+exportAllCollections().catch(console.error);
