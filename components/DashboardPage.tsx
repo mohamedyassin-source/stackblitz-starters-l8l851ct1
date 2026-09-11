@@ -68,8 +68,9 @@ export default function DashboardPage() {
   const deptsList = Array.from(new Set(allEmployees.map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    const currentYear = new Date().getFullYear(); // 2026
+    const targetYear = 2027; // تثبيت العرض لسنة 2027
 
+    // الموظفون النشطون (استبعاد التحويلات للإحصائيات العامة)
     const activeEmployeesOnly = allEmployees.filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
       !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
@@ -93,7 +94,29 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
+    // 🌟 1. حصر العقود المنتهية (تحويلات تحت الاعتماد + إيقاف راتب / إنهاء تعاقد)
+    const expiredEmployeesList = allEmployees.filter((emp) => {
+      const dept = String(getField(emp, 'department', 'Department') || '').trim();
+      const job = String(getField(emp, 'job_title', 'JobTitle') || '').trim();
+      const cType = String(getField(emp, 'contract_type', 'ContractType') || '').trim();
+      const status = String(getField(emp, 'status', 'Status') || '').toLowerCase();
+
+      const matchesComp = !filterCompany || String(getField(emp, 'company', 'Company') || '').toLowerCase().includes(filterCompany.toLowerCase());
+
+      const isTransferDept = dept.includes('تحويلات تحت الاعتماد') || dept.includes('تحويلات');
+      const isTerminatedJobOrType = job.includes('ايقاف راتب - انتهاء عقد') || 
+                                    job.includes('إيقاف راتب') || 
+                                    cType.includes('انهاء تعاقد') || 
+                                    cType.includes('إنهاء تعاقد') || 
+                                    status === 'inactive' || 
+                                    status === 'terminated';
+
+      return matchesComp && isTransferDept && isTerminatedJobOrType;
+    });
+
+    const expired = expiredEmployeesList.length;
+
+    let expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
     const turning60List: any[] = [];
@@ -119,10 +142,10 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // التوزيع الشهري تلقائي للعام الحالي
+      // 🌟 2. التوزيع الشهري حصرياً للعقود التي تنتهي في عام 2027
       if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
-        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === currentYear) {
+        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === targetYear) {
           const monthIdx = endDate.getMonth();
           if (monthIdx >= 0 && monthIdx < 12) {
             contractsByMonth[monthIdx].count++;
@@ -149,17 +172,12 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      // التنبيهات والعقود المنتهية لم تجدد (إنهاء تعاقد)
+      // تنبيهات العقود المتبقية (خلال 60 يوم)
       if (!type.includes('دائم') && !type.includes('غير محدد')) {
         const days = getDaysRemaining(endDateStr);
-        if (days !== null) {
-          if (days < 0) {
-            expired++; // عقد انتهى ولم يجدد
-            alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expired' });
-          } else if (days <= 60) {
-            expiring++;
-            alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
-          }
+        if (days !== null && days >= 0 && days <= 60) {
+          expiring++;
+          alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
         }
       }
 
@@ -230,7 +248,7 @@ export default function DashboardPage() {
       aboveAgeCount: aboveAge,
       aboveAgePct: calcPct(aboveAge),
       expiredCount: expired,
-      expiredPct: calcPct(expired),
+      expiredEmployeesList,
       expiringSoonCount: expiring,
       expiringSoonPct: calcPct(expiring),
       pendingCount: pendingRequests.length,
@@ -335,14 +353,15 @@ export default function DashboardPage() {
           icon="⏳" 
           onClick={() => navigateTo('contracts')} 
         />
+        {/* 🌟 كارت العقود المنتهية المعدل */}
         <KpiCard 
           loading={loading} 
           tone="red" 
-          title="عقود منتهية (لم تجدد)" 
+          title="تحويلات / إنهاء تعاقد" 
           value={dashboardData.expiredCount} 
-          sub={`إنهاء تعاقد (${dashboardData.expiredPct}%)`} 
+          sub="إيقاف راتب / انتهاء عقد" 
           icon="🚨" 
-          onClick={() => navigateTo('contracts')} 
+          onClick={() => navigateTo('contracts', { jumpSearch: 'تحويلات تحت الاعتماد' })} 
         />
       </div>
 
@@ -369,11 +388,15 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* 🌟 الرسم البياني المظبوط حصرياً لعام 2027 بدون فلتر */}
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-              📈 التوزيع الشهري لعقود العام الحالي (حسب نهايات العقود)
+              📈 التوزيع الشهري للعقود التي تنتهي في عام 2027
             </h4>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--stamp-blue)', background: 'var(--stamp-blue-bg)', padding: '4px 10px', borderRadius: '6px' }}>
+              عام 2027 📅
+            </span>
           </div>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
@@ -441,11 +464,7 @@ export default function DashboardPage() {
                       <td style={{ color: 'var(--muted)', fontSize: '11px' }}>{alert.department || '—'}</td>
                       <td className="font-mono font-bold">{alert.contract_end_date}</td>
                       <td>
-                        {alert.status === 'expired' ? (
-                          <Stamp color="red">منتهي ({Math.abs(alert.days)})</Stamp>
-                        ) : (
-                          <Stamp color="amber">متبقي {alert.days}</Stamp>
-                        )}
+                        <Stamp color="amber">متبقي {alert.days} يوم</Stamp>
                       </td>
                     </tr>
                   ))}
@@ -462,7 +481,7 @@ export default function DashboardPage() {
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
-                🗓️ عقود تنتهي في {selectedChartMonth.name} {new Date().getFullYear()}
+                🗓️ عقود تنتهي في {selectedChartMonth.name} 2027
               </h3>
               <button onClick={() => setSelectedChartMonth(null)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -497,7 +516,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Modals باقي النوافذ */}
       {showShortTermModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
@@ -611,53 +630,6 @@ export default function DashboardPage() {
                         </td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
                           <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} style={{ background: 'var(--ink)', color: 'var(--paper-card)', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showAgeModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-amber)', fontWeight: '800' }}>🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60</h3>
-              <button onClick={() => setShowAgeModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            {dashboardData.turning60List.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا يوجد موظفون (بعقود دائمة) يبلغون الـ 60 حالياً. 🎉</div>
-            ) : (
-              <div className="table-responsive">
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>تاريخ بلوغ الـ 60</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>الحالة</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboardData.turning60List.map((emp) => (
-                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)', background: emp.daysLeft < 0 ? 'var(--stamp-red-bg)' : 'transparent' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--brass-500)' }}>{emp.employee_code}</td>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: emp.daysLeft < 0 ? 'var(--stamp-red)' : 'inherit' }}>{emp.age60Date}</td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          {emp.daysLeft < 0 ? (
-                            <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid var(--stamp-red-bg)' }}>🚨 تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
-                          ) : (
-                            <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>⏳ متبقي {emp.daysLeft} يوم</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل العقد ✏️</button>
                         </td>
                       </tr>
                     ))}
