@@ -1,8 +1,12 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface DataContextType {
   employees: any[];
@@ -32,28 +36,25 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const refreshData = async () => {
     setLoading(true);
     try {
-      // 1. الموظفين
-      const empSnap = await getDocs(collection(db, 'employees'));
-      const empData = empSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      // جلب البيانات من Supabase بالتوازي لسرعة الأداء
+      const [empRes, contRes, renRes, userRes] = await Promise.all([
+        supabase.from('employees').select('*'),
+        supabase.from('contracts').select('*'),
+        supabase.from('renewals').select('*'), 
+        supabase.from('users').select('*') // تم تغييرها لـ users أو حسب اسم الجدول لديك
+      ]);
 
-      // 2. العقود
-      const contSnap = await getDocs(collection(db, 'contracts'));
-      const contData = contSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
+      if (empRes.error) console.error('Error fetching employees:', empRes.error);
+      if (contRes.error) console.error('Error fetching contracts:', contRes.error);
+      if (renRes.error) console.error('Error fetching renewals:', renRes.error);
+      if (userRes.error) console.error('Error fetching users:', userRes.error);
 
-      // 3. طلبات التجديد
-      const renSnap = await getDocs(collection(db, 'renewal_requests'));
-      const renData = renSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-
-      // 4. مستخدمي النظام
-      const userSnap = await getDocs(collection(db, 'app_users'));
-      const userData = userSnap.docs.map((doc: any) => ({ id: doc.id, ...doc.data() }));
-
-      setEmployees(empData);
-      setContracts(contData);
-      setRenewals(renData);
-      setAppUsers(userData);
+      setEmployees(empRes.data || []);
+      setContracts(contRes.data || []);
+      setRenewals(renRes.data || []);
+      setAppUsers(userRes.data || []);
     } catch (error) {
-      console.error('Error fetching global context data from Firebase:', error);
+      console.error('Error fetching global context data from Supabase:', error);
     } finally {
       setLoading(false);
     }
