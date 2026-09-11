@@ -21,11 +21,12 @@ export default function DashboardPage() {
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  // حالات النوافذ المنبثقة
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
-  // فلاتر نافذة بلوغ سن الـ 60 المستقبلي
+  // فلاتر نافذة بلوغ سن الـ 60 (السنة والشهر)
   const [ageFilterYear, setAgeFilterYear] = useState<string>('');
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
@@ -46,15 +47,17 @@ export default function DashboardPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // 🎂 حساب تاريخ بلوغ الـ 60 المستقبلي بدقة لكل أنواع العقود
-  const getAge60Info = (nationalId: any, birthDateRaw?: any, ageRaw?: any) => {
+  // 🎂 دالة دقيقة لحساب تاريخ بلوغ الـ 60 باليوم والشهر والسنة
+  const getAge60Info = (nationalId: any, birthDateRaw?: any) => {
     let birthDate: Date | null = null;
 
+    // 1. القراءة المباشرة من حقل تاريخ الميلاد
     if (birthDateRaw) {
       const b = new Date(birthDateRaw);
       if (!isNaN(b.getTime())) birthDate = b;
     }
 
+    // 2. الاستخراج الدقيق لليوم والشهر والسنة من الرقم القومي المصري (14 رقم)
     if (!birthDate && nationalId) {
       const idStr = String(nationalId).replace(/\D/g, '');
       if (idStr.length === 14) {
@@ -68,20 +71,15 @@ export default function DashboardPage() {
       }
     }
 
-    if (!birthDate && ageRaw && !isNaN(Number(ageRaw))) {
-      const ageNum = Number(ageRaw);
-      if (ageNum >= 18 && ageNum < 60) {
-        const today = new Date();
-        birthDate = new Date(today.getFullYear() - ageNum, today.getMonth(), today.getDate());
-      }
-    }
-
     if (!birthDate) return null;
 
+    // تاريخ بلوغ الـ 60 المحدد باليوم والشهر والسنة المقابلين
     const age60Date = new Date(birthDate);
     age60Date.setFullYear(age60Date.getFullYear() + 60);
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
     const daysUntil60 = Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
     return { 
@@ -89,7 +87,8 @@ export default function DashboardPage() {
       age60Date: age60Date.toISOString().split('T')[0], 
       daysUntil60,
       year60: age60Date.getFullYear(),
-      month60: age60Date.getMonth() + 1
+      month60: age60Date.getMonth() + 1,
+      day60: age60Date.getDate()
     };
   };
 
@@ -138,7 +137,6 @@ export default function DashboardPage() {
       const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
       const nationalId = getField(emp, 'national_id', 'NationalID');
       const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
-      const empAge = getField(emp, 'age', 'Age');
       const mobile = getField(emp, 'mobile', 'Mobile');
       const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
@@ -151,8 +149,8 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🎂 حصر كل من سيبلوغ سن الـ 60 مستقبلاً (daysUntil60 >= 0) لكل العقود
-      const ageInfo = getAge60Info(nationalId, birthDateRaw, empAge);
+      // 🎂 حصر الموظفين الذين سيبغون سن الـ 60 مستقبلاً (daysUntil60 >= 0)
+      const ageInfo = getAge60Info(nationalId, birthDateRaw);
       if (ageInfo && ageInfo.daysUntil60 >= 0) {
         const item = {
           ...emp,
