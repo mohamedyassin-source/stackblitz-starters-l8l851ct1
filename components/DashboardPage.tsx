@@ -32,6 +32,9 @@ export default function DashboardPage() {
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
+  
+  // حالة تفاعلية لتحديد سنة عرض الرسم البياني
+  const [chartYear, setChartYear] = useState<number>(new Date().getFullYear());
 
   // جلب السجلات على دفعات لتجاوز حد الـ 1000 صف
   const fetchAllRows = async (tableName: string) => {
@@ -139,6 +142,7 @@ export default function DashboardPage() {
 
   const companiesList = Array.from(new Set(allEmployees.map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
   const deptsList = Array.from(new Set(allEmployees.map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
+  const availableYearsList = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1, new Date().getFullYear() + 2];
 
   const dashboardData = useMemo(() => {
     const activeEmployeesOnly = allEmployees.filter(emp => 
@@ -190,20 +194,20 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // التوزيع الشهري بناءً على بداية أو نهاية العقد (العام الحالي والعام القادم)
+      // 🌟 التوزيع الشهري التفاعلي بناءً على السنة المختارة (chartYear)
       let targetMonthIdx = -1;
-      const currentYear = new Date().getFullYear();
 
       if (startDateStr) {
         const startDate = new Date(startDateStr);
-        if (!isNaN(startDate.getTime()) && startDate.getFullYear() === currentYear) {
+        if (!isNaN(startDate.getTime()) && startDate.getFullYear() === chartYear) {
           targetMonthIdx = startDate.getMonth();
         }
       }
       
+      // إذا كان العقد ينتهي السنة القادمة للسنة المختارة نعتبر أنه اتجدد في السنة المختارة
       if (targetMonthIdx === -1 && endDateStr) {
         const endDate = new Date(endDateStr);
-        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === currentYear + 1) {
+        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === chartYear + 1) {
           targetMonthIdx = endDate.getMonth();
         }
       }
@@ -311,7 +315,7 @@ export default function DashboardPage() {
       shortTermList,
       turning60List
     };
-  }, [allEmployees, allRenewals, filterCompany, filterDept]);
+  }, [allEmployees, allRenewals, filterCompany, filterDept, chartYear]); // إضافة chartYear ليتحدث الرسم عند التغيير
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
@@ -390,9 +394,20 @@ export default function DashboardPage() {
         </div>
 
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
-          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التوزيع الشهري لعقود العام الحالي (بدأت أو تجددت في {new Date().getFullYear()})
-          </h4>
+          <div className="flex items-center justify-between mb-5">
+            <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
+              📈 التوزيع الشهري لبدايات وتجديد العقود
+            </h4>
+            <select 
+              value={chartYear} 
+              onChange={(e) => setChartYear(Number(e.target.value))} 
+              style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
+            >
+              {availableYearsList.map(y => (
+                <option key={y} value={y}>لسنة {y}</option>
+              ))}
+            </select>
+          </div>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
