@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
@@ -7,8 +8,8 @@ import * as XLSX from 'xlsx';
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
-  // حالات الفلاتر والبحث
-  const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | null>('ALL_ACTIVE');
+  // 🌟 حالات الفلاتر والكروت الإحصائية الـ 6
+  const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'NEW_JOINERS' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | 'MISSING_DATA' | null>('ALL_ACTIVE');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
@@ -39,18 +40,18 @@ export default function EmployeesPage() {
   const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
   const [termSaving, setTermSaving] = useState(false);
 
-  // 🌟 الموظف الجديد مع إضافة تاريخ الميلاد وتاريخ نهاية العقد
+  // الموظف الجديد
   const [newEmp, setNewEmp] = useState({
     employee_code: '', 
     employee_name: '', 
     national_id: '',
-    birth_date: '', // 🎂 جديد
+    birth_date: '',
     department: '', 
     company: '', 
     job_title: '', 
     hiring_date: '',
     contract_type: 'محدد المدة', 
-    contract_end_date: '', // 📄 جديد برمي في جدول العقود
+    contract_end_date: '', 
     status: 'Active', 
     email: '', 
     mobile: ''
@@ -64,11 +65,45 @@ export default function EmployeesPage() {
     return '';
   };
 
+  // 🎂 دالة ذكية لحساب العمر من حقل السن، تاريخ الميلاد، أو الرقم القومي تلقائياً
   const getEmployeeAge = (emp: any) => {
     const rawAge = getField(emp, 'age', 'Age');
     if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
       return Number(rawAge);
     }
+
+    const bDateStr = getField(emp, 'birth_date', 'BirthDate');
+    const natId = getField(emp, 'national_id', 'NationalID');
+
+    let birthDate: Date | null = null;
+    if (bDateStr) {
+      const b = new Date(bDateStr);
+      if (!isNaN(b.getTime())) birthDate = b;
+    }
+
+    if (!birthDate && natId) {
+      const idStr = String(natId).replace(/\D/g, '');
+      if (idStr.length === 14) {
+        const centuryDigit = idStr.charAt(0);
+        const yearDigits = idStr.substring(1, 3);
+        const monthDigits = idStr.substring(3, 5);
+        const dayDigits = idStr.substring(5, 7);
+        const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+        const b = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+        if (!isNaN(b.getTime())) birthDate = b;
+      }
+    }
+
+    if (birthDate) {
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    }
+
     return null;
   };
 
@@ -103,32 +138,88 @@ export default function EmployeesPage() {
 
       return matchesSearch && matchesDept && matchesComp && matchesType && matchesAge;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEmployeesOnly, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
+  // 📊 حسابات كروت الـ KPI الـ 6
   const kpiStats = useMemo(() => {
+    const currentYear = new Date().getFullYear();
     const total = baseFilteredEmployees.length;
-    const perm = baseFilteredEmployees.filter(e => getField(e, 'contract_type', 'ContractType') === 'دائم').length;
-    const fixed = baseFilteredEmployees.filter(e => String(getField(e, 'contract_type', 'ContractType')).includes('محدد')).length;
-    const aboveAge = baseFilteredEmployees.filter(e => {
-      const cType = getField(e, 'contract_type', 'ContractType');
+
+    let newJoiners = 0;
+    let perm = 0;
+    let fixed = 0;
+    let aboveAge = 0;
+    let missingData = 0;
+
+    baseFilteredEmployees.forEach(e => {
+      const cType = String(getField(e, 'contract_type', 'ContractType') || '');
       const age = getEmployeeAge(e);
-      return String(cType).includes('فوق السن') || (age !== null && age >= 60);
-    }).length;
+      const hiringDateStr = getField(e, 'hiring_date', 'HiringDate');
+      const natId = getField(e, 'national_id', 'NationalID');
+      const mobile = getField(e, 'mobile', 'Mobile');
+
+      // 1. التعيينات الجديدة (عام 2026)
+      if (hiringDateStr) {
+        const hDate = new Date(hiringDateStr);
+        if (!isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear) {
+          newJoiners++;
+        }
+      }
+
+      // 2. نوع العقد
+      if (cType === 'دائم') perm++;
+      else if (cType.includes('محدد')) fixed++;
+
+      // 3. فوق السن
+      if (cType.includes('فوق السن') || (age !== null && age >= 60)) {
+        aboveAge++;
+      }
+
+      // 4. نواقص البيانات
+      if (!natId || !mobile) {
+        missingData++;
+      }
+    });
 
     const calcPct = (val: number) => (total > 0 ? ((val / total) * 100).toFixed(1) : '0');
 
-    return { total, perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), aboveAge, aboveAgePct: calcPct(aboveAge) };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return { 
+      total, 
+      newJoiners, 
+      newJoinersPct: calcPct(newJoiners),
+      perm, 
+      permPct: calcPct(perm), 
+      fixed, 
+      fixedPct: calcPct(fixed), 
+      aboveAge, 
+      aboveAgePct: calcPct(aboveAge),
+      missingData,
+      missingDataPct: calcPct(missingData),
+      currentYear
+    };
   }, [baseFilteredEmployees]);
 
+  // 🌟 فلترة الجدول بناءً على الكارت النشط المختار
   const finalTableEmployees = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+
     const filtered = baseFilteredEmployees.filter(emp => {
-      const cType = getField(emp, 'contract_type', 'ContractType');
+      const cType = String(getField(emp, 'contract_type', 'ContractType') || '');
       const age = getEmployeeAge(emp);
+      const hiringDateStr = getField(emp, 'hiring_date', 'HiringDate');
+      const natId = getField(emp, 'national_id', 'NationalID');
+      const mobile = getField(emp, 'mobile', 'Mobile');
+
+      if (activeCardFilter === 'NEW_JOINERS') {
+        if (!hiringDateStr) return false;
+        const hDate = new Date(hiringDateStr);
+        return !isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear;
+      }
       if (activeCardFilter === 'PERM') return cType === 'دائم';
-      if (activeCardFilter === 'FIXED') return String(cType).includes('محدد');
-      if (activeCardFilter === 'ABOVE_AGE') return String(cType).includes('فوق السن') || (age !== null && age >= 60);
+      if (activeCardFilter === 'FIXED') return cType.includes('محدد');
+      if (activeCardFilter === 'ABOVE_AGE') return cType.includes('فوق السن') || (age !== null && age >= 60);
+      if (activeCardFilter === 'MISSING_DATA') return !natId || !mobile;
+
       return true;
     });
 
@@ -145,7 +236,6 @@ export default function EmployeesPage() {
       const res = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
       return sortDirection === 'asc' ? res : -res;
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection]);
 
   const termSearchResults = useMemo(() => {
@@ -170,7 +260,7 @@ export default function EmployeesPage() {
 
   const renderSortArrow = (colKey: string) => {
     if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
-    return sortDirection === 'asc' ? <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▲</span> : <span style={{ color: 'var(--brass-600, #0d9488)', marginRight: '4px' }}>▼</span>;
+    return sortDirection === 'asc' ? <span style={{ color: '#0d9488', marginRight: '4px' }}>▲</span> : <span style={{ color: '#0d9488', marginRight: '4px' }}>▼</span>;
   };
 
   const handleOpenEdit = async (emp: any) => {
@@ -320,11 +410,9 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 دالة الإضافة مع ربط تاريخ الميلاد بجدول الموظفين وتاريخ نهاية العقد بجدول العقود
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // حساب السن بناءً على تاريخ الميلاد إن وجد
       let calculatedAge = null;
       if (newEmp.birth_date) {
         const birth = new Date(newEmp.birth_date);
@@ -332,12 +420,11 @@ export default function EmployeesPage() {
         calculatedAge = today.getFullYear() - birth.getFullYear();
       }
 
-      // 1. إضافة بيانات الموظف في جدول employees
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: newEmp.employee_code,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
-        birth_date: newEmp.birth_date ? newEmp.birth_date : null, // 🎂 رمي تاريخ الميلاد
+        birth_date: newEmp.birth_date ? newEmp.birth_date : null,
         age: calculatedAge,
         department: newEmp.department,
         company: newEmp.company,
@@ -350,11 +437,10 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // 2. إضافة العقد التابع للموظف في جدول contracts
       const { error: contractError } = await supabase.from('contracts').insert([{
         employee_code: newEmp.employee_code,
         contract_type: newEmp.contract_type,
-        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date, // 📄 رمي نهاية العقد
+        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
         contract_start_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         status: newEmp.status
       }]);
@@ -406,150 +492,186 @@ export default function EmployeesPage() {
       const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
 
       if (days < 0) {
-        return <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr} 🚨</span>;
+        return <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>{endDateStr} 🚨</span>;
       }
       if (days <= 60) {
-        return <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr} ⏳</span>;
+        return <span style={{ background: '#fffbe1', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>{endDateStr} ⏳</span>;
       }
-      return <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{endDateStr}</span>;
+      return <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bfdbfe' }}>{endDateStr}</span>;
     }
 
     if (contractType === 'دائم') {
-      return <span style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم 🛡️</span>;
+      return <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bbf7d0' }}>عقد دائم 🛡️</span>;
     }
 
-    return <span style={{ color: 'var(--muted)' }}>—</span>;
+    return <span style={{ color: '#64748b' }}>—</span>;
   };
 
   const renderAgeBadge = (emp: any) => {
     const age = getEmployeeAge(emp);
-    if (age === null) return <span style={{ color: 'var(--muted)' }}>—</span>;
+    if (age === null) return <span style={{ color: '#64748b' }}>—</span>;
 
     if (age >= 60) {
-      return <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', border: '1px solid var(--stamp-amber-bg)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
+      return <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
     }
-    return <span style={{ background: 'var(--paper)', color: 'var(--ink)', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>{age} سنة</span>;
+    return <span style={{ background: '#f8fafc', color: '#0f172a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #e2e8f0' }}>{age} سنة</span>;
   };
 
   return (
-    <div style={{ animation: 'fadeIn 0.4s ease-in-out' }}>
+    <div style={{ direction: 'rtl', paddingBottom: '40px', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
       
       {/* رأس الصفحة */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+      <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px 20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>بيانات الموظفين Active</h3>
-          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي المباشر للموظفين وقوة العمل</p>
+          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>👥 سجل الموظفين الفعالين (Active)</h3>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي وقوة العمل بالشركة والشركات الشقيقة</p>
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           <button 
             onClick={() => handleExportToExcel(false)}
-            style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}
+            style={{ background: '#10b981', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
           >
             📥 تصدير Excel
           </button>
 
           <button 
             onClick={() => { setShowTermModal(true); setSelectedTermEmp(null); setTermSearch(''); }} 
-            style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
+            style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
           >
-            🚫 Terminated
+            🚫 Terminated (إنهاء)
           </button>
 
-          <button onClick={() => setShowAddModal(true)} style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '7px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' }}>
-            + إضافة موظف
+          <button onClick={() => setShowAddModal(true)} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}>
+            + إضافة موظف جديد
           </button>
         </div>
       </div>
 
-      {/* الكروت الإحصائية الأربعة */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '14px', marginBottom: '20px' }}>
+      {/* 🌟 الكروت الإحصائية الـ 6 التفاعلية */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" style={{ marginBottom: '20px' }}>
+        
+        {/* كارت 1: إجمالي القوة */}
         <div 
-          className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ALL_ACTIVE' ? null : 'ALL_ACTIVE')}
           style={{ 
-            background: activeCardFilter === 'ALL_ACTIVE' ? '#f0fdf4' : 'var(--paper-card)', 
-            border: activeCardFilter === 'ALL_ACTIVE' ? '2px solid #22c55e' : '1px solid var(--line, #e2e8f0)', 
-            padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' 
+            background: '#ffffff', 
+            border: activeCardFilter === 'ALL_ACTIVE' ? '2px solid #0d9488' : '1px solid #e2e8f0', 
+            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>إجمالي الموظفين (Active)</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)' }}>{kpiStats.total.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '2px' }}>100% من القوة المفلترة</div>
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي الموظفين</div>
+            <span style={{ fontSize: '14px' }}>👥</span>
           </div>
-          <div style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🟢</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>{kpiStats.total.toLocaleString('en-US')}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#0d9488', marginTop: '2px' }}>القوة الفعالة (100%)</div>
         </div>
 
+        {/* كارت 2: تعيينات جديدة (2026) */}
         <div 
-          className="db-card" 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')}
+          onClick={() => setActiveCardFilter(activeCardFilter === 'NEW_JOINERS' ? null : 'NEW_JOINERS')}
           style={{ 
-            background: activeCardFilter === 'PERM' ? '#f0fdf4' : 'var(--paper-card)', 
-            border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid var(--line, #e2e8f0)', 
-            padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' 
+            background: activeCardFilter === 'NEW_JOINERS' ? '#f0fdf4' : '#ffffff', 
+            border: activeCardFilter === 'NEW_JOINERS' ? '2px solid #10b981' : '1px solid #e2e8f0', 
+            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود دائمة</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-green)' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-green)', marginTop: '2px' }}>{kpiStats.permPct}% من القوة الحالية</div>
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تعيينات {kpiStats.currentYear}</div>
+            <span style={{ fontSize: '14px' }}>🌱</span>
           </div>
-          <div style={{ background: 'var(--stamp-green-bg)', color: 'var(--stamp-green)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>🛡️</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#10b981', marginTop: '4px' }}>{kpiStats.newJoiners.toLocaleString('en-US')}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>نسبة {kpiStats.newJoinersPct}% من القوة</div>
         </div>
 
+        {/* كارت 3: عقود محددة */}
         <div 
-          className="db-card" 
           onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')}
           style={{ 
-            background: activeCardFilter === 'FIXED' ? '#eff6ff' : 'var(--paper-card)', 
-            border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid var(--line, #e2e8f0)', 
-            padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' 
+            background: activeCardFilter === 'FIXED' ? '#eff6ff' : '#ffffff', 
+            border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', 
+            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>عقود محددة المدة</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-blue)' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-blue)', marginTop: '2px' }}>{kpiStats.fixedPct}% من القوة الحالية</div>
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عقود محددة المدة</div>
+            <span style={{ fontSize: '14px' }}>📂</span>
           </div>
-          <div style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>📂</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', marginTop: '4px' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>نسبة {kpiStats.fixedPct}% من القوة</div>
         </div>
 
+        {/* كارت 4: عقود دائمة */}
         <div 
-          className="db-card" 
+          onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')}
+          style={{ 
+            background: activeCardFilter === 'PERM' ? '#f0fdf4' : '#ffffff', 
+            border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', 
+            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عقود دائمة</div>
+            <span style={{ fontSize: '14px' }}>🛡️</span>
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#16a34a', marginTop: '2px' }}>نسبة {kpiStats.permPct}% من القوة</div>
+        </div>
+
+        {/* كارت 5: فوق السن */}
+        <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')}
           style={{ 
-            background: activeCardFilter === 'ABOVE_AGE' ? '#fef3c7' : 'var(--paper-card)', 
-            border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid var(--line, #e2e8f0)', 
-            padding: '12px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'all 0.2s' 
+            background: activeCardFilter === 'ABOVE_AGE' ? '#fffbe1' : '#ffffff', 
+            border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', 
+            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div>
-            <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold', marginBottom: '2px' }}>موظفين فوق السن (60+)</div>
-            <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
-            <div style={{ fontSize: '10px', fontWeight: 'bold', color: 'var(--stamp-amber)', marginTop: '2px' }}>{kpiStats.aboveAgePct}% من القوة الحالية</div>
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>فوق السن (60+)</div>
+            <span style={{ fontSize: '14px' }}>💼</span>
           </div>
-          <div style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', width: '36px', height: '36px', borderRadius: '10px', display: 'grid', placeItems: 'center', fontSize: '16px' }}>💼</div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706', marginTop: '4px' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#d97706', marginTop: '2px' }}>نسبة {kpiStats.aboveAgePct}% من القوة</div>
         </div>
+
+        {/* كارت 6: نواقص البيانات (⚠️) */}
+        <div 
+          onClick={() => setActiveCardFilter(activeCardFilter === 'MISSING_DATA' ? null : 'MISSING_DATA')}
+          style={{ 
+            background: activeCardFilter === 'MISSING_DATA' ? '#fef2f2' : '#ffffff', 
+            border: activeCardFilter === 'MISSING_DATA' ? '2px solid #dc2626' : '1px solid #e2e8f0', 
+            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+          }}
+        >
+          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>نواقص البيانات</div>
+            <span style={{ fontSize: '14px' }}>⚠️</span>
+          </div>
+          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '4px' }}>{kpiStats.missingData.toLocaleString('en-US')}</div>
+          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#dc2626', marginTop: '2px' }}>اضغط للاستكمال ✏️</div>
+        </div>
+
       </div>
 
-      {/* إجراءات المحددين */}
+      {/* إجراءات المحددين المجمعة */}
       {selectedEmpIds.length > 0 && (
-        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '10px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', animation: 'fadeIn 0.2s' }}>
-          <div style={{ fontSize: '11px', fontWeight: 'bold' }}>
-            تم تحديد <span style={{ color: 'var(--stamp-blue)' }}>{selectedEmpIds.length}</span> موظف
+        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
+            تم تحديد <span style={{ color: '#60a5fa' }}>{selectedEmpIds.length}</span> موظف
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setShowBulkTransferModal(true)} style={{ background: 'var(--stamp-blue)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <button onClick={() => setShowBulkTransferModal(true)} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               نقل مجمع 🔄
             </button>
-            <button onClick={() => handleExportToExcel(true)} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+            <button onClick={() => handleExportToExcel(true)} style={{ background: '#10b981', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
               تصدير المحدد 📥
             </button>
-            <button onClick={handleDeleteSelected} disabled={isDeleting} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.7 : 1 }}>
+            <button onClick={handleDeleteSelected} disabled={isDeleting} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.7 : 1 }}>
               {isDeleting ? 'جاري الحذف...' : 'حذف نهائي 🗑️'}
             </button>
-            <button onClick={() => setSelectedEmpIds([])} style={{ background: 'transparent', border: '1px solid var(--muted)', color: 'var(--muted)', padding: '5px 10px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
+            <button onClick={() => setSelectedEmpIds([])} style={{ background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
               إلغاء التحديد ✕
             </button>
           </div>
@@ -557,21 +679,21 @@ export default function EmployeesPage() {
       )}
 
       {/* الفلاتر والبحث */}
-      <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', padding: '12px 16px', borderRadius: '12px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', minWidth: '200px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px 16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.02)' }}>
+        <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', minWidth: '220px', color: '#0f172a' }} />
         
-        <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '130px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+        <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
         <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
         
-        <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '130px', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+        <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
         <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
+        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }}>
           <option value="">كل أنواع العقود</option>
           {typesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
         </select>
 
-        <select value={selectedAgeRange} onChange={e => setSelectedAgeRange(e.target.value)} className="db-input" style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)', fontWeight: 'bold' }}>
+        <select value={selectedAgeRange} onChange={e => setSelectedAgeRange(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
           <option value="">فئة السن (الكل)</option>
           <option value="60_plus">💼 فوق السن (60 سنة فأكثر)</option>
           <option value="50_59">🎂 من 50 إلى 59 سنة</option>
@@ -579,39 +701,39 @@ export default function EmployeesPage() {
           <option value="under_30">🌱 أقل من 30 سنة</option>
         </select>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setSelectedAgeRange(''); setActiveCardFilter('ALL_ACTIVE'); }} style={{ background: 'var(--line, #e2e8f0)', color: 'var(--ink, #0f172a)', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setSelectedAgeRange(''); setActiveCardFilter('ALL_ACTIVE'); }} style={{ background: '#f1f5f9', color: '#334155', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
         
-        <div style={{ flex: 1, textAlign: 'left', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>
-          النتائج بالجدول: <span style={{ color: 'var(--navy-950, #0f172a)' }}>{finalTableEmployees.length.toLocaleString('en-US')}</span> موظف
+        <div style={{ marginRight: 'auto', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>
+          النتائج بالجدول: <span style={{ color: '#0f172a', fontSize: '13px' }}>{finalTableEmployees.length.toLocaleString('en-US')}</span> موظف
         </div>
       </div>
 
       {/* الجدول الرئيسي */}
-      <div className="db-card" style={{ background: 'var(--paper-card)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '12px', overflow: 'hidden' }}>
+      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }}>
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري سحب بيانات الموظفين... ⏳</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات الموظفين... ⏳</div>
         ) : (
-          <div style={{ maxHeight: '55vh', overflowY: 'auto' }}>
-            <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
-              <thead style={{ position: 'sticky', top: 0, background: 'var(--paper-card)', zIndex: 10 }}>
-                <tr>
-                  <th style={{ padding: '12px', borderBottom: '1px solid var(--line)', textAlign: 'center', width: '40px' }}>
+          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', zIndex: 10 }}>
+                <tr style={{ color: '#64748b' }}>
+                  <th style={{ padding: '12px', textAlign: 'center', width: '40px' }}>
                     <input 
                       type="checkbox" 
                       checked={selectedEmpIds.length === finalTableEmployees.length && finalTableEmployees.length > 0} 
                       onChange={e => setSelectedEmpIds(e.target.checked ? finalTableEmployees.map(emp => getField(emp, 'employee_code', 'EmployeeCode')) : [])} 
-                      style={{ accentColor: 'var(--brass-600)' }} 
+                      style={{ accentColor: '#0d9488' }} 
                     />
                   </th>
-                  <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
-                  <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
-                  <th onClick={() => handleSort('job_title')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
-                  <th onClick={() => handleSort('department')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
-                  <th onClick={() => handleSort('age')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
-                  <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
-                  <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
-                  <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('contract_end_date')}</th>
-                  <th style={{ padding: '12px', color: 'var(--muted)', borderBottom: '1px solid var(--line)', textAlign: 'center' }}>إجراءات</th>
+                  <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
+                  <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
+                  <th onClick={() => handleSort('job_title')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
+                  <th onClick={() => handleSort('department')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
+                  <th onClick={() => handleSort('age')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
+                  <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
+                  <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
+                  <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('contract_end_date')}</th>
+                  <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
                 </tr>
               </thead>
               <tbody>
@@ -624,35 +746,35 @@ export default function EmployeesPage() {
                   const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
 
                   return (
-                    <tr key={i} style={{ borderBottom: '1px solid var(--line, #f1f5f9)' }}>
+                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: selectedEmpIds.includes(empCode) ? '#f0fdf4' : 'transparent' }}>
                       <td style={{ padding: '10px', textAlign: 'center' }}>
                         <input 
                           type="checkbox" 
                           checked={selectedEmpIds.includes(empCode)} 
                           onChange={e => setSelectedEmpIds(e.target.checked ? [...selectedEmpIds, empCode] : selectedEmpIds.filter(id => id !== empCode))} 
-                          style={{ accentColor: 'var(--brass-600)' }} 
+                          style={{ accentColor: '#0d9488' }} 
                         />
                       </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600, #0d9488)' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>
                         {empCode}
                       </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink, #0f172a)' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>
                         {getField(emp, 'employee_name', 'ArabicName')}
                         {isMissingData && (
                           <span title="بيانات غير مكتملة (ناقص الرقم القومي أو الموبايل)" style={{ marginRight: '6px', fontSize: '11px', cursor: 'help' }}>⚠️</span>
                         )}
                       </td>
-                      <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
-                      <td style={{ padding: '10px', color: 'var(--muted, #64748b)', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
+                      <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
+                      <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'department', 'Department') || '—'}</td>
                       <td style={{ padding: '10px' }}>{renderAgeBadge(emp)}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace', color: 'var(--ink, #0f172a)' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
+                      <td style={{ padding: '10px', fontFamily: 'monospace', color: '#0f172a' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{cType || '—'}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
                         {getContractStatusBadge(cType, endDate)}
                       </td>
                       <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        <button onClick={() => setProfileEmp(emp)} style={{ background: 'var(--paper)', color: 'var(--ink)', border: '1px solid var(--line)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
-                        <button onClick={() => handleOpenEdit(emp)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
+                        <button onClick={() => setProfileEmp(emp)} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
+                        <button onClick={() => handleOpenEdit(emp)} style={{ background: '#ffffff', color: '#0d9488', border: '1px solid #99f6e4', padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
                       </td>
                     </tr>
                   );
@@ -665,29 +787,30 @@ export default function EmployeesPage() {
 
       {/* 👤 نافذة عرض الملف الشامل */}
       {profileEmp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '600px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '600px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--ink)', fontWeight: '800' }}>👤 الملف الوظيفي الشامل</h3>
-              <button onClick={() => setProfileEmp(null)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '900' }}>👤 الملف الوظيفي الشامل</h3>
+              <button onClick={() => setProfileEmp(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل'}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>تاريخ الميلاد:</strong> {getField(profileEmp, 'birth_date', 'BirthDate') || 'غير مسجل'}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType')}</div>
-              <div style={{ background: 'var(--paper)', padding: '10px', borderRadius: '8px' }}><strong>نهاية العقد:</strong> {getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل ⚠️'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>تاريخ الميلاد:</strong> {getField(profileEmp, 'birth_date', 'BirthDate') || 'غير مسجل'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الموبايل:</strong> {getField(profileEmp, 'mobile', 'Mobile') || 'غير مسجل ⚠️'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType')}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>نهاية العقد:</strong> {getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</div>
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'left' }}>
-              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
+              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
             </div>
           </div>
         </div>
@@ -695,27 +818,27 @@ export default function EmployeesPage() {
 
       {/* 🚫 نافذة إنهاء الخدمة */}
       {showTermModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '550px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '550px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-red)', fontWeight: '800' }}>🚫 إنهاء خدمة / تحويل للانتظار</h3>
-              <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '900' }}>🚫 إنهاء خدمة / تحويل للانتظار</h3>
+              <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف:</label>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف:</label>
                 <div style={{ position: 'relative' }}>
                   <input 
                     type="text"
                     placeholder="اكتب كود الموظف، اسمه، أو إدارته..."
                     value={termSearch}
                     onChange={e => { setTermSearch(e.target.value); setSelectedTermEmp(null); }}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
+                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
                   />
 
                   {termSearchResults.length > 0 && !selectedTermEmp && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, left: 0, background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+                    <div style={{ position: 'absolute', top: '100%', right: 0, left: 0, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
                       {termSearchResults.map((emp, i) => (
                         <div 
                           key={i} 
@@ -727,8 +850,8 @@ export default function EmployeesPage() {
                           onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                         >
-                          <strong style={{ color: 'var(--brass-500)' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')} 
-                          <span style={{ color: 'var(--muted)', fontSize: '10.5px', marginRight: '6px' }}>({getField(emp, 'department', 'Department') || 'بدون إدارة'})</span>
+                          <strong style={{ color: '#0d9488' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')} 
+                          <span style={{ color: '#64748b', fontSize: '10.5px', marginRight: '6px' }}>({getField(emp, 'department', 'Department') || 'بدون إدارة'})</span>
                         </div>
                       ))}
                     </div>
@@ -737,17 +860,17 @@ export default function EmployeesPage() {
               </div>
 
               {selectedTermEmp && (
-                <div style={{ background: 'var(--stamp-red-bg)', border: '1px solid var(--stamp-red-bg)', padding: '10px 12px', borderRadius: '8px', fontSize: '11.5px', color: 'var(--stamp-red)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 12px', borderRadius: '8px', fontSize: '11.5px', color: '#dc2626', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong>الموظف المحدّد:</strong> {getField(selectedTermEmp, 'employee_name', 'ArabicName')} (كود: {getField(selectedTermEmp, 'employee_code', 'EmployeeCode')})
                   </div>
-                  <button type="button" onClick={() => { setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'transparent', border: 0, color: 'var(--stamp-red)', cursor: 'pointer', fontWeight: 'bold' }}>تغيير ✕</button>
+                  <button type="button" onClick={() => { setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'transparent', border: 0, color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}>تغيير ✕</button>
                 </div>
               )}
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة / التحويل:</label>
-                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none' }}>
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة / التحويل:</label>
+                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
                   <option value="استقالة">استقالة</option>
                   <option value="إنهاء عقد">إنهاء عقد</option>
                   <option value="إنهاء خدمات">إنهاء خدمات</option>
@@ -758,13 +881,13 @@ export default function EmployeesPage() {
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إجراء العمل:</label>
-                <input type="date" required value={termDate} onChange={e => setTermDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إجراء العمل:</label>
+                <input type="date" required value={termDate} onChange={e => setTermDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: 'transparent', border: '1px solid var(--line)', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: 'var(--stamp-red)', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer', opacity: (termSaving || !selectedTermEmp) ? 0.6 : 1 }}>
+                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إلغاء</button>
+                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer', opacity: (termSaving || !selectedTermEmp) ? 0.6 : 1 }}>
                   {termSaving ? 'جاري الحفظ...' : 'تحويل الموظف لـ (تحويلات تحت الاعتماد) 🚫'}
                 </button>
               </div>
@@ -775,33 +898,33 @@ export default function EmployeesPage() {
 
       {/* 🔄 نافذة النقل المجمع */}
       {showBulkTransferModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '500px', background: 'var(--paper-card, #fff)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '500px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>🔄 النقل المجمع للموظفين المحددين</h3>
-              <button onClick={() => setShowBulkTransferModal(false)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>🔄 النقل المجمع للموظفين المحددين</h3>
+              <button onClick={() => setShowBulkTransferModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <form onSubmit={handleConfirmBulkTransfer} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+              <div style={{ fontSize: '12px', color: '#64748b' }}>
                 سيتم تطبيق البيانات المحددة على عدد <strong>{selectedEmpIds.length}</strong> موظف.
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>الإدارة الجديدة:</label>
-                <input list="bulkDeptList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkDept} onChange={e => setBulkDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الإدارة الجديدة:</label>
+                <input list="bulkDeptList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkDept} onChange={e => setBulkDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 <datalist id="bulkDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
               </div>
 
               <div>
-                <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>الشركة الجديدة:</label>
-                <input list="bulkCompList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkCompany} onChange={e => setBulkCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
+                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الشركة الجديدة:</label>
+                <input list="bulkCompList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkCompany} onChange={e => setBulkCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
                 <datalist id="bulkCompList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                <button type="button" onClick={() => setShowBulkTransferModal(false)} style={{ background: 'transparent', border: '1px solid var(--line)', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={bulkSaving} style={{ background: 'var(--stamp-blue)', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: bulkSaving ? 'not-allowed' : 'pointer' }}>
+                <button type="button" onClick={() => setShowBulkTransferModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إلغاء</button>
+                <button type="submit" disabled={bulkSaving} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: bulkSaving ? 'not-allowed' : 'pointer' }}>
                   {bulkSaving ? 'جاري التحديث...' : 'تأكيد النقل المجمع 🔄'}
                 </button>
               </div>
@@ -812,16 +935,16 @@ export default function EmployeesPage() {
 
       {/* ✏️ نافذة التعديل الفردي */}
       {editData && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>تعديل بيانات الموظف (شامل)</h3>
-              <button onClick={() => setEditData(null)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>تعديل بيانات الموظف (شامل)</h3>
+              <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
             <form onSubmit={handleSaveEdit}>
-              <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--brass-600, #0d9488)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات السجل الأساسي (Employees)</h4>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#0d9488', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', fontWeight: 'bold' }}>بيانات السجل الأساسي (Employees)</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                   {[
                     { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
@@ -834,36 +957,36 @@ export default function EmployeesPage() {
                     { label: 'الموبايل', key1: 'mobile', key2: 'Mobile' },
                   ].map(field => (
                     <div key={field.label}>
-                      <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
-                      <input type="text" className="db-input" value={getField(editData.emp, field.key1, field.key2)} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, [field.key1]: e.target.value, [field.key2]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+                      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
+                      <input type="text" value={getField(editData.emp, field.key1, field.key2)} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, [field.key1]: e.target.value, [field.key2]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div style={{ background: 'var(--paper, #f8fafc)', padding: '16px', borderRadius: '12px', border: '1px solid var(--line, #e2e8f0)', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--stamp-blue)', borderBottom: '1px solid var(--line, #e2e8f0)', paddingBottom: '8px' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
+                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#2563eb', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', fontWeight: 'bold' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ التعيين</label>
-                    <input type="date" className="db-input" value={getField(editData.emp, 'hiring_date', 'HiringDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, hiring_date: e.target.value, HiringDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ التعيين</label>
+                    <input type="date" value={getField(editData.emp, 'hiring_date', 'HiringDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, hiring_date: e.target.value, HiringDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
-                    <select className="db-input" value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
+                    <select value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }}>
                       <option value="دائم">دائم</option>
                       <option value="محدد المدة">محدد المدة</option>
                       <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                      <option value=" محدد المدة - مكافأة شاملة"> محدد المدة - مكافأة شاملة</option>
+                      <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
                     </select>
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ نهاية العقد</label>
-                    <input type="date" className="db-input" value={getField(editData.emp, 'contract_end_date', 'ContractEndDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_end_date: e.target.value, ContractEndDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }} />
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ نهاية العقد</label>
+                    <input type="date" value={getField(editData.emp, 'contract_end_date', 'ContractEndDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_end_date: e.target.value, ContractEndDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted, #64748b)', marginBottom: '6px', fontWeight: 'bold' }}>حالة الموظف (Status)</label>
-                    <select className="db-input" value={getField(editData.emp, 'status', 'Status')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '12px', outline: 'none', background: 'transparent', color: 'var(--ink, #0f172a)' }}>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>حالة الموظف (Status)</label>
+                    <select value={getField(editData.emp, 'status', 'Status')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }}>
                       <option value="Active">Active (نشط)</option><option value="Inactive">Inactive (منتهي الخدمة)</option>
                     </select>
                   </div>
@@ -871,8 +994,8 @@ export default function EmployeesPage() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" onClick={() => setEditData(null)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={editData.saving} style={{ background: editData.saving ? 'var(--muted, #64748b)' : 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: editData.saving ? 'not-allowed' : 'pointer', opacity: editData.saving ? 0.7 : 1 }}>
+                <button type="button" onClick={() => setEditData(null)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={editData.saving} style={{ background: editData.saving ? '#64748b' : '#0d9488', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: editData.saving ? 'not-allowed' : 'pointer', opacity: editData.saving ? 0.7 : 1 }}>
                   {editData.saving ? 'جاري الحفظ...' : 'حفظ كافة التعديلات'}
                 </button>
               </div>
@@ -881,47 +1004,45 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ➕ نافذة الإضافة المباشرة مع إضافة حقول الميلاد ونهاية العقد 🎂📄 */}
+      {/* ➕ نافذة الإضافة المباشرة */}
       {showAddModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div className="db-card" style={{ width: '700px', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950, #0f172a)' }}>إضافة موظف جديد</h3>
-              <button onClick={() => setShowAddModal(false)} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>إضافة موظف جديد</h3>
+              <button onClick={() => setShowAddModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
             
             <form onSubmit={handleAddEmployee}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>كود الموظف *</label><input required value={newEmp.employee_code} onChange={e=>setNewEmp({...newEmp, employee_code: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الاسم *</label><input required value={newEmp.employee_name} onChange={e=>setNewEmp({...newEmp, employee_name: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الرقم القومي</label><input value={newEmp.national_id} onChange={e=>setNewEmp({...newEmp, national_id: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>كود الموظف *</label><input required value={newEmp.employee_code} onChange={e=>setNewEmp({...newEmp, employee_code: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الاسم *</label><input required value={newEmp.employee_name} onChange={e=>setNewEmp({...newEmp, employee_name: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الرقم القومي</label><input value={newEmp.national_id} onChange={e=>setNewEmp({...newEmp, national_id: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
                 
-                {/* 🎂 حقل تاريخ الميلاد الجديد */}
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ الميلاد</label><input type="date" value={newEmp.birth_date} onChange={e=>setNewEmp({...newEmp, birth_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ الميلاد</label><input type="date" value={newEmp.birth_date} onChange={e=>setNewEmp({...newEmp, birth_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
 
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الإدارة</label><input value={newEmp.department} onChange={e=>setNewEmp({...newEmp, department: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الشركة</label><input value={newEmp.company} onChange={e=>setNewEmp({...newEmp, company: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الوظيفة</label><input value={newEmp.job_title} onChange={e=>setNewEmp({...newEmp, job_title: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ التعيين</label><input type="date" value={newEmp.hiring_date} onChange={e=>setNewEmp({...newEmp, hiring_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الإدارة</label><input value={newEmp.department} onChange={e=>setNewEmp({...newEmp, department: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الشركة</label><input value={newEmp.company} onChange={e=>setNewEmp({...newEmp, company: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الوظيفة</label><input value={newEmp.job_title} onChange={e=>setNewEmp({...newEmp, job_title: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ التعيين</label><input type="date" value={newEmp.hiring_date} onChange={e=>setNewEmp({...newEmp, hiring_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
                 
                 <div>
-                  <label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
-                  <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }}>
+                  <label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
+                  <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }}>
                     <option value="دائم">دائم</option>
                     <option value="محدد المدة">محدد المدة</option>
                     <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                    <option value="عقد محدد المدة - مكافأة شاملة"> محدد المدة - مكافأة شاملة</option>
+                    <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
                   </select>
                 </div>
 
-                {/* 📄 حقل تاريخ نهاية العقد الجديد المربوط بجدول العقود */}
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (للعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? 'var(--paper)' : 'transparent', color:'var(--ink)' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (للعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? '#f8fafc' : '#ffffff', color:'#0f172a' }} /></div>
 
-                <div><label style={{ display:'block', fontSize:'11px', color:'var(--muted, #64748b)', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} className="db-input" style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid var(--line, #e2e8f0)', fontSize:'12px', outline:'none', background:'transparent', color:'var(--ink)' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                <button type="button" onClick={() => setShowAddModal(false)} style={{ background: 'transparent', color: 'var(--ink, #0f172a)', border: '1px solid var(--line, #e2e8f0)', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" style={{ background: 'var(--brass-600, #0d9488)', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف وعقده</button>
+                <button type="button" onClick={() => setShowAddModal(false)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" style={{ background: '#0d9488', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف وعقده</button>
               </div>
             </form>
           </div>
