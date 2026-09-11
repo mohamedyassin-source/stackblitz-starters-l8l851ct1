@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 import * as XLSX from 'xlsx';
+import { createClient } from '@supabase/supabase-js';
+
+// تهيئة الاتصال بـ Supabase
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
@@ -42,6 +48,7 @@ export default function DataSyncPage() {
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
+  // دالة المزامنة المباشرة مع Supabase
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -62,23 +69,69 @@ export default function DataSyncPage() {
           throw new Error('ملف Excel فارغ أو غير صالح.');
         }
 
-        setStatusMsg(`تم جلب ${rows.length} صف من الملف. جاري المعالجة والتحديث في Neon PostgreSQL... 🔍`);
+        setStatusMsg(`تم جلب ${rows.length} صف من الملف. جاري المعالجة والتحديث في Supabase... 🔍\nيرجى عدم إغلاق الصفحة.`);
 
-        // إرسال الصفوف إلى مسار API في السيرفر
-        const res = await fetch('/api/sync/excel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rows }),
-        });
+        let updatedCount = 0;
+        let newCount = 0;
 
-        const data = await res.json();
+        // استخراج أرقام الموظفين الحالية للمقارنة السريعة
+        const { data: existingEmps, error: fetchError } = await supabase.from('employees').select('employee_code');
+        if (fetchError) throw fetchError;
+        
+        const existingCodes = new Set(existingEmps?.map(e => String(e.employee_code).trim()));
 
-        if (data.success) {
-          setStatusMsg(data.message);
-          alert(`تمت معالجة ملف الإكسيل بنجاح! ✅\n\nتحديث الموظفين الحاليين: ${data.updatedCount}\nإضافة موظفين وعقود جديدة: ${data.newCount}`);
-        } else {
-          throw new Error(data.error || 'حدث خطأ أثناء حفظ البيانات.');
+        // معالجة كل صف (يمكن تحسينها بـ Bulk Insert لاحقاً، ولكن نستخدم هذا للحفاظ على نفس المنطق الحالي)
+        for (const row of rows) {
+          const code = String(row['كود الموظف'] || '').trim();
+          if (!code) continue;
+
+          const employeeData = {
+            employee_name: row['اسم الموظف'] || '',
+            national_id: String(row['الرقم القومي'] || ''),
+            department: row['الإدارة'] || '',
+            job_title: row['الوظيفة'] || '',
+            company: row['الشركة'] || '',
+            hiring_date: row['تاريخ التعيين'] ? new Date(row['تاريخ التعيين']).toISOString() : null,
+            mobile: String(row['الموبايل'] || ''),
+            email: row['البريد الإلكتروني'] || '',
+            status: 'Active'
+          };
+
+          if (existingCodes.has(code)) {
+            // تحديث بيانات موظف حالي
+            const { error: updateError } = await supabase
+              .from('employees')
+              .update({
+                department: employeeData.department,
+                job_title: employeeData.job_title,
+                company: employeeData.company
+              })
+              .eq('employee_code', parseInt(code));
+            
+            if (!updateError) updatedCount++;
+          } else {
+            // إضافة موظف جديد
+            const { error: insertEmpError } = await supabase
+              .from('employees')
+              .insert([{ employee_code: parseInt(code), ...employeeData }]);
+            
+            if (!insertEmpError) {
+              // إنشاء عقد افتراضي للموظف الجديد
+              await supabase.from('contracts').insert([{
+                employee_code: parseInt(code),
+                contract_type: 'محدد المدة',
+                contract_start_date: employeeData.hiring_date,
+                status: 'Active'
+              }]);
+              newCount++;
+            }
+          }
         }
+
+        const successMsg = `تمت المعالجة بنجاح! ✅\n\nتحديث الموظفين الحاليين: ${updatedCount}\nإضافة موظفين وعقود جديدة: ${newCount}`;
+        setStatusMsg(successMsg);
+        alert(successMsg);
+        
       } catch (err: any) {
         console.error(err);
         setStatusMsg('❌ حدث خطأ أثناء معالجة الملف: ' + err.message);
@@ -98,10 +151,10 @@ export default function DataSyncPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <h3 style={{ margin: '0 0 4px', fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>
-              📊 تحديث واستيراد بيانات الموظفين والعقود عبر Excel (Neon DB)
+              📊 تحديث واستيراد بيانات الموظفين والعقود عبر Excel (Supabase)
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-              تحديث الإدارة والوظيفة للموجودين، وإضافة الجدد مع إنشاء عقد محدد تلقائياً في قاعدة البيانات.
+              تحديث الإدارة والوظيفة للموجودين، وإضافة الجدد مع إنشاء عقد محدد تلقائياً في قاعدة البيانات المباشرة.
             </p>
           </div>
 
