@@ -27,8 +27,7 @@ export default function DashboardPage() {
 
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
   
-  // حالة تفاعلية لتحديد سنة عرض الرسم البياني
-  const [chartYear, setChartYear] = useState<number>(new Date().getFullYear());
+  // حالة تفاعلية لعرض تفاصيل الشهر المختار من الرسم البياني
   const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
 
   useEffect(() => {
@@ -67,9 +66,10 @@ export default function DashboardPage() {
 
   const companiesList = Array.from(new Set(allEmployees.map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
   const deptsList = Array.from(new Set(allEmployees.map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
-  const availableYearsList = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1, new Date().getFullYear() + 2];
 
   const dashboardData = useMemo(() => {
+    const currentYear = new Date().getFullYear(); // 2026
+
     const activeEmployeesOnly = allEmployees.filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
       !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
@@ -119,10 +119,10 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // التوزيع الشهري بحسب نهاية العقد للسنة المختارة
+      // التوزيع الشهري تلقائي للعام الحالي
       if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
-        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === chartYear) {
+        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === currentYear) {
           const monthIdx = endDate.getMonth();
           if (monthIdx >= 0 && monthIdx < 12) {
             contractsByMonth[monthIdx].count++;
@@ -149,12 +149,12 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      // التنبيهات
+      // التنبيهات والعقود المنتهية لم تجدد (إنهاء تعاقد)
       if (!type.includes('دائم') && !type.includes('غير محدد')) {
         const days = getDaysRemaining(endDateStr);
         if (days !== null) {
           if (days < 0) {
-            expired++;
+            expired++; // عقد انتهى ولم يجدد
             alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expired' });
           } else if (days <= 60) {
             expiring++;
@@ -218,7 +218,6 @@ export default function DashboardPage() {
     const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
     const waitingSign = filteredRens.filter(r => (r.status === 'Approved' || r.status === 'معتمد') && r.signature_status !== 'تم التوقيع');
 
-    // 📊 حساب النسب المئوية أوتوماتيكياً
     const totalEmpsCount = filteredEmps.length || 1;
     const calcPct = (val: number) => ((val / totalEmpsCount) * 100).toFixed(1);
 
@@ -244,7 +243,7 @@ export default function DashboardPage() {
       shortTermList,
       turning60List
     };
-  }, [allEmployees, allRenewals, filterCompany, filterDept, chartYear]);
+  }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
@@ -289,7 +288,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت السريعة مع إضافة إجمالي الموظفين والنسب المئوية لكل كارت */}
+      {/* الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard 
           loading={loading} 
@@ -339,9 +338,9 @@ export default function DashboardPage() {
         <KpiCard 
           loading={loading} 
           tone="red" 
-          title="عقود منتهية" 
+          title="عقود منتهية (لم تجدد)" 
           value={dashboardData.expiredCount} 
-          sub={`نسبة ${dashboardData.expiredPct}% من القوة`} 
+          sub={`إنهاء تعاقد (${dashboardData.expiredPct}%)`} 
           icon="🚨" 
           onClick={() => navigateTo('contracts')} 
         />
@@ -373,17 +372,8 @@ export default function DashboardPage() {
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-              📈 التوزيع الشهري (حسب نهايات العقود)
+              📈 التوزيع الشهري لعقود العام الحالي (حسب نهايات العقود)
             </h4>
-            <select 
-              value={chartYear} 
-              onChange={(e) => setChartYear(Number(e.target.value))} 
-              style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
-            >
-              {availableYearsList.map(y => (
-                <option key={y} value={y}>سنة {y}</option>
-              ))}
-            </select>
           </div>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
@@ -472,7 +462,7 @@ export default function DashboardPage() {
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
-                🗓️ عقود تنتهي في {selectedChartMonth.name} {chartYear}
+                🗓️ عقود تنتهي في {selectedChartMonth.name} {new Date().getFullYear()}
               </h3>
               <button onClick={() => setSelectedChartMonth(null)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
@@ -503,6 +493,178 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {showShortTermModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
+                  ⏱️ العقود المؤقتة وفترات الاختبار
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>إجمالي: {dashboardData.shortTermTotal} موظف</p>
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {selectedShortTermDept && (
+                  <button onClick={() => setSelectedShortTermDept(null)} style={{ background: 'var(--line)', border: 0, color: 'var(--ink)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+                    🔙 رجوع للإدارات
+                  </button>
+                )}
+                <button onClick={() => { setShowShortTermModal(false); setSelectedShortTermDept(null); }} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+                  إغلاق ✕
+                </button>
+              </div>
+            </div>
+
+            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+              {!selectedShortTermDept ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {dashboardData.shortTermList.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold', fontSize: '13px', marginTop: '40px' }}>لا توجد عقود مؤقتة حالياً.</div>
+                  ) : (
+                    dashboardData.shortTermList.map((group, idx) => (
+                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s', background: 'var(--paper-card)' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: 'var(--ink)' }}>🏢 {group.deptName}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '4px 10px', borderRadius: '100px', fontSize: '11px', fontWeight: 'bold' }}>{group.emps.length} موظف</span>
+                          <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>عرض 👁️</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              ) : (
+                <div className="table-responsive">
+                  <h4 style={{ margin: '0 0 16px', color: 'var(--ink)', fontSize: '14px' }}>إدارة: {selectedShortTermDept}</h4>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                        <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                        <th style={{ padding: '10px', color: 'var(--muted)' }}>سجل التعاقد</th>
+                        <th style={{ padding: '10px', color: 'var(--muted)' }}>الانتهاء</th>
+                        <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dashboardData.shortTermList.find(g => g.deptName === selectedShortTermDept)?.emps.map((emp) => {
+                        const daysLeft = getDaysRemaining(emp.contract_end_date);
+                        return (
+                          <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
+                            <td style={{ padding: '10px' }}>
+                              <div style={{ fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</div>
+                              <div style={{ fontSize: '10px', color: 'var(--brass-500)', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employee_code}</div>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <span style={{ background: 'var(--paper)', color: 'var(--ink)', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px dashed var(--line)' }}>{emp.historyDesc}</span>
+                            </td>
+                            <td style={{ padding: '10px' }}>
+                              <div style={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.contract_end_date}</div>
+                              {daysLeft !== null && <div style={{ fontSize: '9px', color: daysLeft < 0 ? 'var(--stamp-red)' : 'var(--stamp-amber)', fontWeight: 'bold' }}>{daysLeft < 0 ? `منتهي` : `متبقي ${daysLeft} يوم`}</div>}
+                            </td>
+                            <td style={{ padding: '10px', textAlign: 'center' }}>
+                              <button onClick={() => { setShowShortTermModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--paper-card)', color: 'var(--stamp-blue)', border: '1px solid var(--stamp-blue-bg)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>العقد ↗️</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showMissingDataModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-red)', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
+              <button onClick={() => setShowMissingDataModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            {dashboardData.missingDataList.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--stamp-green)', fontWeight: 'bold' }}>بيانات جميع الموظفين مكتملة بنجاح! ✅</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>النواقص</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.missingDataList.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', color: 'var(--stamp-red)', fontWeight: 'bold' }}>
+                          {!emp.national_id && <span>الرقم القومي </span>}
+                          {!emp.mobile && <span>- الموبايل </span>}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} style={{ background: 'var(--ink)', color: 'var(--paper-card)', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showAgeModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-amber)', fontWeight: '800' }}>🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60</h3>
+              <button onClick={() => setShowAgeModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            {dashboardData.turning60List.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا يوجد موظفون (بعقود دائمة) يبلغون الـ 60 حالياً. 🎉</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)' }}>تاريخ بلوغ الـ 60</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>الحالة</th>
+                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboardData.turning60List.map((emp) => (
+                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)', background: emp.daysLeft < 0 ? 'var(--stamp-red-bg)' : 'transparent' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--brass-500)' }}>{emp.employee_code}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: emp.daysLeft < 0 ? 'var(--stamp-red)' : 'inherit' }}>{emp.age60Date}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {emp.daysLeft < 0 ? (
+                            <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid var(--stamp-red-bg)' }}>🚨 تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
+                          ) : (
+                            <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>⏳ متبقي {emp.daysLeft} يوم</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل العقد ✏️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </div>
       )}
