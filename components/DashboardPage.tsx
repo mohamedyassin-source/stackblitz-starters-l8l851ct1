@@ -25,8 +25,8 @@ export default function DashboardPage() {
 
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
 
-  // 🌟 دالة سحب كافة البيانات مع تخطي حد الـ 1000 في Supabase
-  const fetchAllAllData = async (tableName: string) => {
+  // 🌟 دالة جلب كافة السجلات متخطية حد الـ 1000 في Supabase
+  const fetchAllRows = async (tableName: string) => {
     let allRows: any[] = [];
     let from = 0;
     const step = 1000;
@@ -51,11 +51,12 @@ export default function DashboardPage() {
     setLoading(true);
     try {
       const [rawEmps, rawContracts, rawRenewals] = await Promise.all([
-        fetchAllAllData('employees'),
-        fetchAllAllData('contracts'),
-        fetchAllAllData('renewals')
+        fetchAllRows('employees'),
+        fetchAllRows('contracts'),
+        fetchAllRows('renewals')
       ]);
 
+      // دمج بيانات العقود مع الموظفين باستخدام Map
       const contractsMap = new Map<string, any[]>();
       rawContracts.forEach(c => {
         const code = String(c.employee_code).trim();
@@ -67,6 +68,7 @@ export default function DashboardPage() {
         const empCode = String(emp.employee_code).trim();
         const empContracts = contractsMap.get(empCode) || [];
 
+        // ترتيب العقود من الأحدث للأقدم
         empContracts.sort((a, b) => new Date(b.created_at || b.contract_start_date || 0).getTime() - new Date(a.created_at || a.contract_start_date || 0).getTime());
         const activeContract = empContracts[0] || {};
 
@@ -151,47 +153,24 @@ export default function DashboardPage() {
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
-    const monthMap: Record<string, number> = {
-      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
-      jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
-    };
-
     filteredEmps.forEach((emp) => {
-      const type = emp.contract_type || '';
+      const type = String(emp.contract_type || '');
       const dept = emp.department || 'غير محدد';
       
-      const isContractActive = !emp.contract_status || 
-                               emp.contract_status === 'Active' || 
-                               emp.contract_status === 'ساري' || 
-                               emp.contract_status === 'نشط';
-
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
       if (!emp.national_id || !emp.mobile) {
         missingDataList.push(emp);
       }
 
-      if (emp.contract_start_date && isContractActive) {
-        const dateStr = String(emp.contract_start_date).trim();
-        let monthIdx = -1;
-
-        const parts = dateStr.split(/[\/\-\s]/);
-        if (parts.length >= 2) {
-          const monthPart = parts[1].toLowerCase();
-          if (monthMap[monthPart] !== undefined) {
-            monthIdx = monthMap[monthPart];
+      // حساب الشهر
+      if (emp.contract_start_date) {
+        const startDate = new Date(emp.contract_start_date);
+        if (!isNaN(startDate.getTime())) {
+          const monthIdx = startDate.getMonth();
+          if (monthIdx >= 0 && monthIdx < 12) {
+            contractsByMonth[monthIdx].count++;
           }
-        }
-
-        if (monthIdx === -1) {
-          const startDate = new Date(dateStr);
-          if (!isNaN(startDate.getTime())) {
-            monthIdx = startDate.getMonth();
-          }
-        }
-
-        if (monthIdx >= 0 && monthIdx < 12) {
-          contractsByMonth[monthIdx].count++;
         }
       }
 
@@ -207,7 +186,7 @@ export default function DashboardPage() {
         fixed++;
       }
 
-      if (!type.includes('دائم') && isContractActive) {
+      if (!type.includes('دائم')) {
         const days = getDaysRemaining(emp.contract_end_date);
         if (days !== null) {
           if (days < 0) {
@@ -219,52 +198,10 @@ export default function DashboardPage() {
           }
         }
       }
-
-      if (type.includes('محدد') && !type.includes('فوق السن') && isContractActive) {
-        const empRens = filteredRens
-          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && (r.status === 'Approved' || r.status === 'معتمد' || r.renewal_status === 'Approved'))
-          .sort((a, b) => (new Date(a.request_date).getTime() - new Date(b.request_date).getTime()));
-
-        let isShort = false;
-        let historyDesc = '';
-
-        if (empRens.length > 0) {
-          const lastRen = empRens[empRens.length - 1];
-          if (lastRen.renewal_months && Number(lastRen.renewal_months) < 12) {
-            isShort = true;
-            const historyArr = empRens.map(r => `${r.renewal_months} ش`);
-            historyDesc = `سجل التجديدات: (${historyArr.join(' + ')})`;
-          }
-        } else {
-          if (emp.contract_start_date && emp.contract_end_date) {
-            const start = new Date(emp.contract_start_date);
-            const end = new Date(emp.contract_end_date);
-            const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-            if (diffDays > 0 && diffDays <= 360) {
-              isShort = true;
-              const diffMonths = Math.round(diffDays / 30) || 1;
-              historyDesc = `تعيين جديد (${diffMonths} شهور)`;
-            }
-          }
-        }
-
-        if (isShort) {
-          shortTermTotal++;
-          if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
-          shortTermByDept[dept].push({ ...emp, historyDesc });
-        }
-      }
     });
 
     alerts.sort((a, b) => a.days - b.days);
     turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
-
-    const shortTermList = Object.entries(shortTermByDept)
-      .map(([deptName, emps]) => ({ 
-        deptName, 
-        emps: emps.sort((a, b) => (getDaysRemaining(a.contract_end_date) ?? 999) - (getDaysRemaining(b.contract_end_date) ?? 999)) 
-      }))
-      .sort((a, b) => b.emps.length - a.emps.length);
 
     const urgentAlerts = alerts.slice(0, 20);
     const topDepts = Object.entries(deptsCount)
@@ -290,7 +227,6 @@ export default function DashboardPage() {
       urgentAlerts,
       contractsByMonth,
       shortTermTotal,
-      shortTermList
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -398,7 +334,7 @@ export default function DashboardPage() {
           <div style={{ width: '160px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
             <div style={{ width: '110px', height: '110px', background: 'var(--paper-card)', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
               <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>الإجمالي</span>
-              <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts}</span>
+              <span style={{ fontSize: '18px', fontWeight: '900', color: 'var(--navy-950)' }}>{totalContracts.toLocaleString('en-US')}</span>
             </div>
           </div>
 
@@ -447,179 +383,6 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-
-      {/* Modals */}
-      {showShortTermModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', height: '80vh', background: 'var(--paper-card)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
-                  ⏱️ العقود المؤقتة وفترات الاختبار
-                </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '11px', color: 'var(--muted)' }}>إجمالي: {dashboardData.shortTermTotal} موظف</p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {selectedShortTermDept && (
-                  <button onClick={() => setSelectedShortTermDept(null)} style={{ background: 'var(--line)', border: 0, color: 'var(--ink)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
-                    🔙 رجوع للإدارات
-                  </button>
-                )}
-                <button onClick={() => { setShowShortTermModal(false); setSelectedShortTermDept(null); }} style={{ background: 'var(--stamp-red-bg)', border: 0, color: 'var(--stamp-red)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
-                  إغلاق ✕
-                </button>
-              </div>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-              {!selectedShortTermDept ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {dashboardData.shortTermList.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold', fontSize: '13px', marginTop: '40px' }}>لا توجد عقود مؤقتة حالياً.</div>
-                  ) : (
-                    dashboardData.shortTermList.map((group, idx) => (
-                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid var(--line)', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.2s', background: 'var(--paper-card)' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: 'var(--ink)' }}>🏢 {group.deptName}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '4px 10px', borderRadius: '100px', fontSize: '11px', fontWeight: 'bold' }}>{group.emps.length} موظف</span>
-                          <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold' }}>عرض 👁️</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <h4 style={{ margin: '0 0 16px', color: 'var(--ink)', fontSize: '14px' }}>إدارة: {selectedShortTermDept}</h4>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                    <thead>
-                      <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
-                        <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
-                        <th style={{ padding: '10px', color: 'var(--muted)' }}>سجل التعاقد</th>
-                        <th style={{ padding: '10px', color: 'var(--muted)' }}>الانتهاء</th>
-                        <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dashboardData.shortTermList.find(g => g.deptName === selectedShortTermDept)?.emps.map((emp) => {
-                        const daysLeft = getDaysRemaining(emp.contract_end_date);
-                        return (
-                          <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
-                            <td style={{ padding: '10px' }}>
-                              <div style={{ fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</div>
-                              <div style={{ fontSize: '10px', color: 'var(--brass-500)', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employee_code}</div>
-                            </td>
-                            <td style={{ padding: '10px' }}>
-                              <span style={{ background: 'var(--paper)', color: 'var(--ink)', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px dashed var(--line)' }}>{emp.historyDesc}</span>
-                            </td>
-                            <td style={{ padding: '10px' }}>
-                              <div style={{ fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.contract_end_date}</div>
-                              {daysLeft !== null && <div style={{ fontSize: '9px', color: daysLeft < 0 ? 'var(--stamp-red)' : 'var(--stamp-amber)', fontWeight: 'bold' }}>{daysLeft < 0 ? `منتهي` : `متبقي ${daysLeft} يوم`}</div>}
-                            </td>
-                            <td style={{ padding: '10px', textAlign: 'center' }}>
-                              <button onClick={() => { setShowShortTermModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--paper-card)', color: 'var(--stamp-blue)', border: '1px solid var(--stamp-blue-bg)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>العقد ↗️</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showMissingDataModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-red)', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
-              <button onClick={() => setShowMissingDataModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            {dashboardData.missingDataList.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--stamp-green)', fontWeight: 'bold' }}>بيانات جميع الموظفين مكتملة بنجاح! ✅</div>
-            ) : (
-              <div className="table-responsive">
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>النواقص</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboardData.missingDataList.map((emp) => (
-                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_code}</td>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
-                        <td style={{ padding: '10px', color: 'var(--stamp-red)', fontWeight: 'bold' }}>
-                          {!emp.national_id && <span>الرقم القومي </span>}
-                          {!emp.mobile && <span>- الموبايل </span>}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} style={{ background: 'var(--ink)', color: 'var(--paper-card)', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showAgeModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-amber)', fontWeight: '800' }}>🎂 موظفون عقودهم (دائمة) وبلغوا سن الـ 60</h3>
-              <button onClick={() => setShowAgeModal(false)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            {dashboardData.turning60List.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا يوجد موظفون (بعقود دائمة) يبلغون الـ 60 حالياً. 🎉</div>
-            ) : (
-              <div className="table-responsive">
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)' }}>تاريخ بلوغ الـ 60</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>الحالة</th>
-                      <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboardData.turning60List.map((emp) => (
-                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid var(--paper)', background: emp.daysLeft < 0 ? 'var(--stamp-red-bg)' : 'transparent' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--brass-500)' }}>{emp.employee_code}</td>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: emp.daysLeft < 0 ? 'var(--stamp-red)' : 'inherit' }}>{emp.age60Date}</td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          {emp.daysLeft < 0 ? (
-                            <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid var(--stamp-red-bg)' }}>🚨 تجاوز بـ {Math.abs(emp.daysLeft)} يوم</span>
-                          ) : (
-                            <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px' }}>⏳ متبقي {emp.daysLeft} يوم</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => { setShowAgeModal(false); handleRowClick(emp.employee_code); }} style={{ background: 'var(--brass-500)', color: '#fff', border: 0, padding: '5px 10px', borderRadius: '4px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل العقد ✏️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
