@@ -2,18 +2,21 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { navigateTo } from '@/lib/navigation';
+import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
-import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const getField = (obj: any, ...keys: string[]) => {
+  if (!obj) return '';
+  for (const key of keys) {
+    if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+  }
+  return '';
+};
 
 export default function DashboardPage() {
-  const [allEmployees, setAllEmployees] = useState<any[]>([]);
-  const [allRenewals, setAllRenewals] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  // استخدام البيانات الجاهزة من السيرفر (تتخطى مشاكل RLS)
+  const { employees: allEmployees, renewals: allRenewals, loading } = useAppData();
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
@@ -25,71 +28,7 @@ export default function DashboardPage() {
 
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
 
-  // 🌟 دالة جلب كافة السجلات متجاوزة حد الـ 1000
-  const fetchAllRows = async (tableName: string) => {
-    let allRows: any[] = [];
-    let from = 0;
-    const step = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .range(from, from + step - 1);
-      if (error) throw error;
-      if (data && data.length > 0) {
-        allRows = allRows.concat(data);
-        if (data.length < step) break;
-        from += step;
-      } else {
-        break;
-      }
-    }
-    return allRows;
-  };
-
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      const [rawEmps, rawContracts, rawRenewals] = await Promise.all([
-        fetchAllRows('employees'),
-        fetchAllRows('contracts'),
-        fetchAllRows('renewals')
-      ]);
-
-      const contractsMap = new Map<string, any[]>();
-      rawContracts.forEach(c => {
-        const code = String(c.employee_code).trim();
-        if (!contractsMap.has(code)) contractsMap.set(code, []);
-        contractsMap.get(code)?.push(c);
-      });
-
-      const mergedEmployees = rawEmps.map(emp => {
-        const empCode = String(emp.employee_code).trim();
-        const empContracts = contractsMap.get(empCode) || [];
-
-        empContracts.sort((a, b) => new Date(b.created_at || b.contract_start_date || 0).getTime() - new Date(a.created_at || a.contract_start_date || 0).getTime());
-        const activeContract = empContracts[0] || {};
-
-        return {
-          ...emp,
-          contract_type: activeContract.contract_type || emp.contract_type || 'محدد المدة',
-          contract_start_date: activeContract.contract_start_date || emp.hiring_date,
-          contract_end_date: activeContract.contract_end_date || emp.contract_end_date,
-          contract_status: activeContract.status || emp.status || 'Active',
-        };
-      });
-
-      setAllEmployees(mergedEmployees);
-      setAllRenewals(rawRenewals);
-    } catch (err) {
-      console.error('Error loading Supabase dashboard data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchDashboardData();
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -123,26 +62,31 @@ export default function DashboardPage() {
     return { birthDate: birthDate.toISOString().split('T')[0], age60Date: age60Date.toISOString().split('T')[0], daysUntil60 };
   };
 
-  const companiesList = Array.from(new Set(allEmployees.map((e) => e.company).filter(Boolean)));
-  const deptsList = Array.from(new Set(allEmployees.map((e) => e.department).filter(Boolean)));
+  const companiesList = Array.from(new Set(allEmployees.map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
+  const deptsList = Array.from(new Set(allEmployees.map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    const currentYear = new Date().getFullYear(); // 2026
-
+    // 1. فلترة الموظفين النشطين
     const activeEmployeesOnly = allEmployees.filter(emp => 
-      String(emp.status || 'Active').toLowerCase() === 'active' && 
-      !String(emp.department || '').includes('تحويلات')
+      String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
+      !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
     );
 
     const filteredEmps = activeEmployeesOnly.filter((emp) => {
-      const matchesComp = !filterCompany || String(emp.company || '').toLowerCase().includes(filterCompany.toLowerCase());
-      const matchesDept = !filterDept || String(emp.department || '').toLowerCase().includes(filterDept.toLowerCase());
+      const empComp = String(getField(emp, 'company', 'Company') || '').toLowerCase();
+      const empDept = String(getField(emp, 'department', 'Department') || '').toLowerCase();
+      
+      const matchesComp = !filterCompany || empComp.includes(filterCompany.toLowerCase());
+      const matchesDept = !filterDept || empDept.includes(filterDept.toLowerCase());
       return matchesComp && matchesDept;
     });
 
     const filteredRens = allRenewals.filter((req) => {
-      const matchesComp = !filterCompany || String(req.company || '').toLowerCase().includes(filterCompany.toLowerCase());
-      const matchesDept = !filterDept || String(req.department || '').toLowerCase().includes(filterDept.toLowerCase());
+      const reqComp = String(getField(req, 'company', 'Company') || '').toLowerCase();
+      const reqDept = String(getField(req, 'department', 'Department') || '').toLowerCase();
+
+      const matchesComp = !filterCompany || reqComp.includes(filterCompany.toLowerCase());
+      const matchesDept = !filterDept || reqDept.includes(filterDept.toLowerCase());
       return matchesComp && matchesDept;
     });
 
@@ -157,27 +101,35 @@ export default function DashboardPage() {
     const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
 
     filteredEmps.forEach((emp) => {
-      const type = String(emp.contract_type || 'محدد المدة').trim();
-      const dept = String(emp.department || 'غير محدد').trim();
+      const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
+      const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
+      const nationalId = getField(emp, 'national_id', 'NationalID');
+      const mobile = getField(emp, 'mobile', 'Mobile');
+      const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const empCode = getField(emp, 'employee_code', 'EmployeeCode');
+      const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
       
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      if (!emp.national_id || !emp.mobile) {
-        missingDataList.push(emp);
+      if (!nationalId || !mobile) {
+        missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🌟 حساب الشهر الفعلي للعمليات (بدايات 2026 أو تجديدات تنتهي في 2027)
+      // 🌟 التوزيع الشهري بناءً على ما عملته فعلياً (سنة 2026 أو 2027)
       let targetMonthIdx = -1;
-      if (emp.contract_start_date) {
-        const startDate = new Date(emp.contract_start_date);
+      const currentYear = new Date().getFullYear(); // 2026
+
+      if (startDateStr) {
+        const startDate = new Date(startDateStr);
         if (!isNaN(startDate.getTime()) && startDate.getFullYear() === currentYear) {
           targetMonthIdx = startDate.getMonth();
         }
       }
       
-      if (targetMonthIdx === -1 && emp.contract_end_date) {
-        const endDate = new Date(emp.contract_end_date);
-        // إذا كان تاريخ الانتهاء السنة القادمة، نعتبر الشهر الذي بدأ فيه التجديد هو نفس شهر النهاية
+      // إذا كان العقد ينتهي في 2027 (يعني اتجدد سنة كاملة في 2026) نضعه في نفس الشهر 
+      if (targetMonthIdx === -1 && endDateStr) {
+        const endDate = new Date(endDateStr);
         if (!isNaN(endDate.getTime()) && endDate.getFullYear() === currentYear + 1) {
           targetMonthIdx = endDate.getMonth();
         }
@@ -187,11 +139,12 @@ export default function DashboardPage() {
         contractsByMonth[targetMonthIdx].count++;
       }
 
+      // تصنيف العقود
       if (type.includes('دائم') || type.includes('غير محدد')) {
         perm++;
-        const ageInfo = getAge60Info(emp.national_id);
+        const ageInfo = getAge60Info(nationalId);
         if (ageInfo && ageInfo.daysUntil60 <= 60) {
-          turning60List.push({ ...emp, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date, daysLeft: ageInfo.daysUntil60 });
+          turning60List.push({ ...emp, employee_code: empCode, employee_name: empName, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date, daysLeft: ageInfo.daysUntil60 });
         }
       } else if (type.includes('فوق السن')) {
         aboveAge++;
@@ -199,37 +152,40 @@ export default function DashboardPage() {
         fixed++;
       }
 
+      // التنبيهات
       if (!type.includes('دائم') && !type.includes('غير محدد')) {
-        const days = getDaysRemaining(emp.contract_end_date);
+        const days = getDaysRemaining(endDateStr);
         if (days !== null) {
           if (days < 0) {
             expired++;
-            alerts.push({ ...emp, days, status: 'expired' });
+            alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expired' });
           } else if (days <= 60) {
             expiring++;
-            alerts.push({ ...emp, days, status: 'expiring' });
+            alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
           }
         }
       }
 
+      // العقود المؤقتة
       if (type.includes('محدد') && !type.includes('فوق السن')) {
         const empRens = filteredRens
-          .filter(r => String(r.employee_code).trim() === String(emp.employee_code).trim() && r.status === 'Approved')
-          .sort((a, b) => new Date(a.request_date).getTime() - new Date(b.request_date).getTime());
+          .filter(r => String(getField(r, 'employee_code', 'EmployeeCode')).trim() === String(empCode).trim() && (r.status === 'Approved' || r.status === 'معتمد'))
+          .sort((a, b) => new Date(a.request_date || 0).getTime() - new Date(b.request_date || 0).getTime());
 
         let isShort = false;
         let historyDesc = '';
 
         if (empRens.length > 0) {
           const lastRen = empRens[empRens.length - 1];
-          if (lastRen.renewal_months && Number(lastRen.renewal_months) < 12) {
+          const renewalMonths = getField(lastRen, 'renewal_months', 'RenewalMonths');
+          if (renewalMonths && Number(renewalMonths) < 12) {
             isShort = true;
-            const historyArr = empRens.map(r => `${r.renewal_months} ش`);
+            const historyArr = empRens.map(r => `${getField(r, 'renewal_months', 'RenewalMonths')} ش`);
             historyDesc = `تجديدات: (${historyArr.join(' + ')})`;
           }
-        } else if (emp.contract_start_date && emp.contract_end_date) {
-          const start = new Date(emp.contract_start_date);
-          const end = new Date(emp.contract_end_date);
+        } else if (startDateStr && endDateStr) {
+          const start = new Date(startDateStr);
+          const end = new Date(endDateStr);
           const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
           if (diffDays > 0 && diffDays <= 360) {
             isShort = true;
@@ -241,12 +197,13 @@ export default function DashboardPage() {
         if (isShort) {
           shortTermTotal++;
           if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
-          shortTermByDept[dept].push({ ...emp, historyDesc });
+          shortTermByDept[dept].push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, historyDesc });
         }
       }
     });
 
     alerts.sort((a, b) => a.days - b.days);
+    turning60List.sort((a, b) => a.daysLeft - b.daysLeft); 
 
     const shortTermList = Object.entries(shortTermByDept)
       .map(([deptName, emps]) => ({ 
@@ -261,8 +218,8 @@ export default function DashboardPage() {
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
-    const pendingRequests = filteredRens.filter(r => r.status === 'Pending');
-    const waitingSign = filteredRens.filter(r => r.status === 'Approved' && r.signature_status !== 'تم التوقيع');
+    const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
+    const waitingSign = filteredRens.filter(r => (r.status === 'Approved' || r.status === 'معتمد') && r.signature_status !== 'تم التوقيع');
 
     return {
       totalEmps: filteredEmps.length,
@@ -278,7 +235,8 @@ export default function DashboardPage() {
       urgentAlerts,
       contractsByMonth,
       shortTermTotal,
-      shortTermList
+      shortTermList,
+      turning60List
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
@@ -360,7 +318,7 @@ export default function DashboardPage() {
 
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-            📈 التوزيع الشهري لعقود العام الحالي ({new Date().getFullYear()})
+            📈 التوزيع الشهري لعقود العام الحالي (بدأت أو تجددت في {new Date().getFullYear()})
           </h4>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: 'var(--line)' }}>
             {dashboardData.contractsByMonth.map((month, idx) => {
