@@ -2,13 +2,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { navigateTo } from '@/lib/navigation';
+import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
@@ -19,9 +15,7 @@ const getField = (obj: any, ...keys: string[]) => {
 };
 
 export default function DashboardPage() {
-  const [allEmployees, setAllEmployees] = useState<any[]>([]);
-  const [allRenewals, setAllRenewals] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { employees: allEmployees, renewals: allRenewals, loading } = useAppData();
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
@@ -33,80 +27,11 @@ export default function DashboardPage() {
 
   const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
   
-  // حالة تفاعلية لتحديد سنة عرض الرسم البياني
+  // 🌟 حالات الرسم البياني التفاعلي
   const [chartYear, setChartYear] = useState<number>(new Date().getFullYear());
-
-  // جلب السجلات على دفعات لتجاوز حد الـ 1000 صف
-  const fetchAllRows = async (tableName: string) => {
-    let allRows: any[] = [];
-    let from = 0;
-    const step = 1000;
-    while (true) {
-      const { data, error } = await supabase
-        .from(tableName)
-        .select('*')
-        .range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
-      allRows = allRows.concat(data);
-      if (data.length < step) break;
-      from += step;
-    }
-    return allRows;
-  };
-
-  // جلب ودمج الموظفين مع العقود مباشرة
-  const fetchDashboardData = async () => {
-    setLoading(true);
-    try {
-      const [rawEmps, rawContracts, rawRenewals] = await Promise.all([
-        fetchAllRows('employees'),
-        fetchAllRows('contracts'),
-        fetchAllRows('renewals')
-      ]);
-
-      // خريطة لربط العقود بأكواد الموظفين
-      const contractsMap = new Map<string, any[]>();
-      rawContracts.forEach((c) => {
-        const code = String(c.employee_code || '').trim().replace(/^0+/, '');
-        if (!contractsMap.has(code)) contractsMap.set(code, []);
-        contractsMap.get(code)?.push(c);
-      });
-
-      // دمج بيانات العقد الأحدث بكل موظف
-      const mergedEmployees = rawEmps.map((emp) => {
-        const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
-        const empContracts = contractsMap.get(empCodeClean) || [];
-
-        // ترتيب العقود من الأحدث للأقدم
-        empContracts.sort((a, b) => {
-          const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : new Date(a.created_at || 0).getTime();
-          const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : new Date(b.created_at || 0).getTime();
-          return dateB - dateA;
-        });
-
-        const latestContract = empContracts[0] || {};
-
-        return {
-          ...emp,
-          contract_id: latestContract.contract_id || null,
-          contract_type: latestContract.contract_type || emp.contract_type || 'محدد المدة',
-          contract_start_date: latestContract.contract_start_date || emp.hiring_date || null,
-          contract_end_date: latestContract.contract_end_date || null,
-          contract_status: latestContract.status || emp.status || 'Active',
-        };
-      });
-
-      setAllEmployees(mergedEmployees);
-      setAllRenewals(rawRenewals);
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
 
   useEffect(() => {
-    fetchDashboardData();
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
@@ -176,15 +101,16 @@ export default function DashboardPage() {
     const missingDataList: any[] = [];
     
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0 }));
+    // 🌟 تحديث الهيكل ليحمل عدد العقود وقائمة الموظفين لكل شهر
+    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0, emps: [] as any[] }));
 
     filteredEmps.forEach((emp) => {
       const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
       const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
       const nationalId = getField(emp, 'national_id', 'NationalID');
       const mobile = getField(emp, 'mobile', 'Mobile');
-      const startDateStr = emp.contract_start_date || getField(emp, 'hiring_date', 'HiringDate');
-      const endDateStr = emp.contract_end_date;
+      const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
       
@@ -194,26 +120,21 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🌟 التوزيع الشهري التفاعلي بناءً على السنة المختارة (chartYear)
-      let targetMonthIdx = -1;
-
-      if (startDateStr) {
-        const startDate = new Date(startDateStr);
-        if (!isNaN(startDate.getTime()) && startDate.getFullYear() === chartYear) {
-          targetMonthIdx = startDate.getMonth();
-        }
-      }
-      
-      // إذا كان العقد ينتهي السنة القادمة للسنة المختارة نعتبر أنه اتجدد في السنة المختارة
-      if (targetMonthIdx === -1 && endDateStr) {
+      // 🌟 التوزيع الشهري بناءً على نهاية العقد (العام المختار)
+      if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
-        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === chartYear + 1) {
-          targetMonthIdx = endDate.getMonth();
+        if (!isNaN(endDate.getTime()) && endDate.getFullYear() === chartYear) {
+          const monthIdx = endDate.getMonth();
+          if (monthIdx >= 0 && monthIdx < 12) {
+            contractsByMonth[monthIdx].count++;
+            contractsByMonth[monthIdx].emps.push({
+              employee_code: empCode,
+              employee_name: empName,
+              department: dept,
+              contract_end_date: endDateStr
+            });
+          }
         }
-      }
-
-      if (targetMonthIdx >= 0 && targetMonthIdx < 12) {
-        contractsByMonth[targetMonthIdx].count++;
       }
 
       // تصنيف العقود
@@ -315,7 +236,7 @@ export default function DashboardPage() {
       shortTermList,
       turning60List
     };
-  }, [allEmployees, allRenewals, filterCompany, filterDept, chartYear]); // إضافة chartYear ليتحدث الرسم عند التغيير
+  }, [allEmployees, allRenewals, filterCompany, filterDept, chartYear]);
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
@@ -396,7 +317,7 @@ export default function DashboardPage() {
         <div className="card px-5 sm:px-6 py-5 flex flex-col lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-              📈 التوزيع الشهري لبدايات وتجديد العقود
+              📈 التوزيع الشهري (حسب نهايات العقود)
             </h4>
             <select 
               value={chartYear} 
@@ -404,7 +325,7 @@ export default function DashboardPage() {
               style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '4px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', outline: 'none', cursor: 'pointer' }}
             >
               {availableYearsList.map(y => (
-                <option key={y} value={y}>لسنة {y}</option>
+                <option key={y} value={y}>سنة {y}</option>
               ))}
             </select>
           </div>
@@ -412,7 +333,14 @@ export default function DashboardPage() {
             {dashboardData.contractsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
               return (
-                <div key={idx} className="flex-1 flex flex-col items-center justify-end h-full">
+                <div 
+                  key={idx} 
+                  className="flex-1 flex flex-col items-center justify-end h-full"
+                  onClick={() => month.count > 0 && setSelectedChartMonth(month)}
+                  style={{ cursor: month.count > 0 ? 'pointer' : 'default', transition: 'all 0.2s' }}
+                  onMouseEnter={(e) => month.count > 0 && (e.currentTarget.style.opacity = '0.8')}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
                   <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? 'var(--stamp-green)' : 'transparent' }}>
                     {month.count.toLocaleString('en-US')}
                   </span>
@@ -481,6 +409,47 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* 🌟 نافذة عرض العقود التفاعلية من الرسم البياني */}
+      {selectedChartMonth && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: 'var(--paper-card)', borderRadius: '16px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--stamp-blue)', fontWeight: '800' }}>
+                🗓️ عقود تنتهي في {selectedChartMonth.name} {chartYear}
+              </h3>
+              <button onClick={() => setSelectedChartMonth(null)} style={{ background: 'var(--paper)', border: 0, color: 'var(--muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            
+            <div className="table-responsive">
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                <thead>
+                  <tr style={{ background: 'var(--paper)', borderBottom: '1px solid var(--line)' }}>
+                    <th style={{ padding: '10px', color: 'var(--muted)' }}>الكود</th>
+                    <th style={{ padding: '10px', color: 'var(--muted)' }}>الموظف</th>
+                    <th style={{ padding: '10px', color: 'var(--muted)' }}>الإدارة</th>
+                    <th style={{ padding: '10px', color: 'var(--muted)' }}>تاريخ الانتهاء</th>
+                    <th style={{ padding: '10px', color: 'var(--muted)', textAlign: 'center' }}>إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedChartMonth.emps.map((emp: any, idx: number) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--paper)' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-500)' }}>{emp.employee_code}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.employee_name}</td>
+                      <td style={{ padding: '10px', color: 'var(--muted)' }}>{emp.department || '—'}</td>
+                      <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: 'var(--ink)' }}>{emp.contract_end_date}</td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <button onClick={() => { setSelectedChartMonth(null); handleRowClick(emp.employee_code); }} style={{ background: 'var(--paper-card)', color: 'var(--stamp-blue)', border: '1px solid var(--stamp-blue-bg)', padding: '5px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إدارة العقد ↗️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showShortTermModal && (
