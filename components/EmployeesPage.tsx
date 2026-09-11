@@ -5,6 +5,14 @@ import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
 import * as XLSX from 'xlsx';
 
+// 🌟 القائمة الموحدة الرسمية لأنواع العقود
+const STANDARD_CONTRACT_TYPES = [
+  'محدد المدة',
+  'محدد المدة - فوق السن',
+  'محدد المدة - مكافأة شاملة',
+  'دائم'
+];
+
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
@@ -28,7 +36,7 @@ export default function EmployeesPage() {
   const [editData, setEditData] = useState<any>(null);
   const [profileEmp, setProfileEmp] = useState<any>(null);
 
-  // 🌟 حالة نافذة إعادة التفعيل
+  // حالة نافذة إعادة التفعيل
   const [reactivateEmp, setReactivateEmp] = useState<any>(null);
   const [reactivateDept, setReactivateDept] = useState('');
   const [reactivateCompany, setReactivateCompany] = useState('');
@@ -66,12 +74,12 @@ export default function EmployeesPage() {
   const getField = (obj: any, ...keys: string[]) => {
     if (!obj) return '';
     for (const key of keys) {
-      if (obj[key] !== undefined && obj[key] !== null) return obj[key];
+      if (obj[key] !== undefined && obj[key] !== null) return String(obj[key]).trim();
     }
     return '';
   };
 
-  // 🎂 دالة حساب العمر
+  // 🎂 دالة حساب العمر المرنة
   const getEmployeeAge = (emp: any) => {
     const rawAge = getField(emp, 'age', 'Age');
     if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
@@ -113,26 +121,27 @@ export default function EmployeesPage() {
     return null;
   };
 
-  // قائمة جميع الإدارات والشركات للفلترة
+  // قائمة الإدارات والشركات الفعالة للفلترة
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const compsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
-  const typesList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [employees]);
 
   // التصفية الأولية بناءً على خيارات البحث والشروط
   const baseFilteredEmployees = useMemo(() => {
     return employees.filter(emp => {
       const term = searchTerm.toLowerCase();
-      const empCode = String(getField(emp, 'employee_code', 'EmployeeCode')).toLowerCase();
-      const empName = String(getField(emp, 'employee_name', 'ArabicName')).toLowerCase();
-      const empDept = String(getField(emp, 'department', 'Department')).toLowerCase();
-      const empComp = String(getField(emp, 'company', 'Company')).toLowerCase();
+      const empCode = getField(emp, 'employee_code', 'EmployeeCode').toLowerCase();
+      const empName = getField(emp, 'employee_name', 'ArabicName').toLowerCase();
+      const empDept = getField(emp, 'department', 'Department').toLowerCase();
+      const empComp = getField(emp, 'company', 'Company').toLowerCase();
       const cType = getField(emp, 'contract_type', 'ContractType');
       const age = getEmployeeAge(emp);
 
       const matchesSearch = !term || empCode.includes(term) || empName.includes(term) || empDept.includes(term);
       const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
       const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
-      const matchesType = !selectedType || cType === selectedType;
+      
+      // مطابقة نوع العقد بدقة
+      const matchesType = !selectedType || cType === selectedType || cType.includes(selectedType);
 
       let matchesAge = true;
       if (selectedAgeRange === '60_plus') matchesAge = age !== null && age >= 60;
@@ -144,14 +153,13 @@ export default function EmployeesPage() {
     });
   }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
-  // 📊 حسابات كروت الـ KPI الـ 6 (مع استبعاد "تحويلات تحت الاعتماد" وغير النشطين تماماً)
+  // 📊 حسابات كروت الـ KPI الـ 6 (مع استبعاد تحويلات تحت الاعتماد وغير النشطين)
   const kpiStats = useMemo(() => {
     const currentYear = new Date().getFullYear();
 
-    // تصفية صارمة لحسابات الكروت العلوية فقط
     const activeOnlyForKpi = baseFilteredEmployees.filter(e => {
-      const dept = String(getField(e, 'department', 'Department') || '');
-      const status = String(getField(e, 'status', 'Status') || 'Active');
+      const dept = getField(e, 'department', 'Department');
+      const status = getField(e, 'status', 'Status') || 'Active';
       return !dept.includes('تحويلات') && status.toLowerCase() === 'active';
     });
 
@@ -164,7 +172,7 @@ export default function EmployeesPage() {
     let missingData = 0;
 
     activeOnlyForKpi.forEach(e => {
-      const cType = String(getField(e, 'contract_type', 'ContractType') || '');
+      const cType = getField(e, 'contract_type', 'ContractType');
       const age = getEmployeeAge(e);
       const hiringDateStr = getField(e, 'hiring_date', 'HiringDate');
       const natId = getField(e, 'national_id', 'NationalID');
@@ -207,23 +215,22 @@ export default function EmployeesPage() {
     };
   }, [baseFilteredEmployees]);
 
-  // 🌟 فلترة الجدول النهائي (إخفاء التحويلات افتراضياً وإظهارها فور البحث الصريح)
+  // 🌟 فلترة الجدول النهائي
   const finalTableEmployees = useMemo(() => {
     const currentYear = new Date().getFullYear();
 
     const filtered = baseFilteredEmployees.filter(emp => {
-      const dept = String(getField(emp, 'department', 'Department') || '');
-      const status = String(getField(emp, 'status', 'Status') || 'Active');
-      const cType = String(getField(emp, 'contract_type', 'ContractType') || '');
+      const dept = getField(emp, 'department', 'Department');
+      const status = getField(emp, 'status', 'Status') || 'Active';
+      const cType = getField(emp, 'contract_type', 'ContractType');
       const age = getEmployeeAge(emp);
       const hiringDateStr = getField(emp, 'hiring_date', 'HiringDate');
       const natId = getField(emp, 'national_id', 'NationalID');
       const mobile = getField(emp, 'mobile', 'Mobile');
 
-      const isTransfer = dept.includes('تحويلات') || status !== 'Active';
+      const isTransfer = dept.includes('تحويلات') || status.toLowerCase() !== 'active';
       const isExplicitSearch = searchTerm.trim() !== '' || selectedDept.includes('تحويلات');
 
-      // إخفاء موظفي تحويلات تحت الاعتماد من القائمة الافتراضية، وإظهارهم فقط عند البحث عنهم
       if (isTransfer && !isExplicitSearch) {
         return false;
       }
@@ -249,8 +256,8 @@ export default function EmployeesPage() {
         return sortDirection === 'asc' ? res : -res;
       }
       
-      let valA = String(getField(a, sortColumn, 'employee_code'));
-      let valB = String(getField(b, sortColumn, 'employee_code'));
+      let valA = getField(a, sortColumn, 'employee_code');
+      let valB = getField(b, sortColumn, 'employee_code');
       const res = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
       return sortDirection === 'asc' ? res : -res;
     });
@@ -260,9 +267,9 @@ export default function EmployeesPage() {
     if (!termSearch.trim()) return [];
     const term = termSearch.toLowerCase().trim();
     return employees.filter(e => {
-      const code = String(getField(e, 'employee_code', 'EmployeeCode')).toLowerCase();
-      const name = String(getField(e, 'employee_name', 'ArabicName')).toLowerCase();
-      const dept = String(getField(e, 'department', 'Department')).toLowerCase();
+      const code = getField(e, 'employee_code', 'EmployeeCode').toLowerCase();
+      const name = getField(e, 'employee_name', 'ArabicName').toLowerCase();
+      const dept = getField(e, 'department', 'Department').toLowerCase();
       return code.includes(term) || name.includes(term) || dept.includes(term);
     }).slice(0, 8);
   }, [employees, termSearch]);
@@ -285,7 +292,6 @@ export default function EmployeesPage() {
     setEditData({ emp: { ...emp }, loading: false });
   };
 
-  // 🌟 إجراء إعادة تفعيل الموظف وترجيعه نشطاً (Active)
   const handleConfirmReactivate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!reactivateEmp) return;
@@ -606,7 +612,7 @@ export default function EmployeesPage() {
         </div>
       </div>
 
-      {/* الكروت الإحصائية الـ 6 التفاعلية (بدون تحويلات تحت الاعتماد) */}
+      {/* الكروت الإحصائية الـ 6 التفاعلية */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" style={{ marginBottom: '20px' }}>
         <div 
           onClick={() => setActiveCardFilter(activeCardFilter === 'ALL_ACTIVE' ? null : 'ALL_ACTIVE')}
@@ -738,9 +744,10 @@ export default function EmployeesPage() {
         <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
         <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }}>
+        {/* 🌟 قائمة أنواع العقود الـ 4 المحددة رسمياً */}
+        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
           <option value="">كل أنواع العقود</option>
-          {typesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
+          {STANDARD_CONTRACT_TYPES.map((t, i) => <option key={i} value={t}>{t}</option>)}
         </select>
 
         <select value={selectedAgeRange} onChange={e => setSelectedAgeRange(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
@@ -789,8 +796,8 @@ export default function EmployeesPage() {
               <tbody>
                 {finalTableEmployees.map((emp, i) => {
                   const empCode = getField(emp, 'employee_code', 'EmployeeCode');
-                  const dept = String(getField(emp, 'department', 'Department') || '');
-                  const status = String(getField(emp, 'status', 'Status') || 'Active');
+                  const dept = getField(emp, 'department', 'Department');
+                  const status = getField(emp, 'status', 'Status') || 'Active';
                   const nationalId = getField(emp, 'national_id', 'NationalID');
                   const mobile = getField(emp, 'mobile', 'Mobile');
                   const isMissingData = !nationalId || !mobile;
@@ -1081,11 +1088,10 @@ export default function EmployeesPage() {
                   </div>
                   <div>
                     <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
-                    <select value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }}>
-                      <option value="دائم">دائم</option>
-                      <option value="محدد المدة">محدد المدة</option>
-                      <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                      <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
+                    <select value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
+                      {STANDARD_CONTRACT_TYPES.map((t, idx) => (
+                        <option key={idx} value={t}>{t}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
@@ -1136,15 +1142,14 @@ export default function EmployeesPage() {
                 
                 <div>
                   <label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
-                  <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }}>
-                    <option value="دائم">دائم</option>
-                    <option value="محدد المدة">محدد المدة</option>
-                    <option value="محدد المدة - فوق السن">محدد المدة - فوق السن</option>
-                    <option value="محدد المدة - مكافأة شاملة">محدد المدة - مكافأة شاملة</option>
+                  <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a', fontWeight: 'bold' }}>
+                    {STANDARD_CONTRACT_TYPES.map((t, idx) => (
+                      <option key={idx} value={t}>{t}</option>
+                    ))}
                   </select>
                 </div>
 
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (لالعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? '#f8fafc' : '#ffffff', color:'#0f172a' }} /></div>
+                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (للعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? '#f8fafc' : '#ffffff', color:'#0f172a' }} /></div>
 
                 <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
               </div>
