@@ -25,7 +25,7 @@ export default function DashboardPage() {
   const [showShortTermModal, setShowShortTermModal] = useState(false);
   const [showMissingDataModal, setShowMissingDataModal] = useState(false);
 
-  // 🌟 فلاتر نافذة بلوغ سن الـ 60
+  // فلاتر نافذة بلوغ سن الـ 60
   const [ageFilterYear, setAgeFilterYear] = useState<string>('');
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
@@ -46,24 +46,37 @@ export default function DashboardPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // 🎂 حساب تاريخ بلوغ الـ 60 بدقة من الرقم القومي أو تاريخ الميلاد
-  const getAge60Info = (nationalId: string, birthDateRaw?: string) => {
+  // 🎂 دالة مرنة وشاملة لحساب سن الـ 60 من (تاريخ الميلاد - الرقم القومي - حقل السن)
+  const getAge60Info = (nationalId: any, birthDateRaw?: any, ageRaw?: any) => {
     let birthDate: Date | null = null;
 
+    // 1. الاستخراج من تاريخ الميلاد المباشر
     if (birthDateRaw) {
       const b = new Date(birthDateRaw);
       if (!isNaN(b.getTime())) birthDate = b;
     }
 
-    if (!birthDate && nationalId && String(nationalId).trim().length === 14) {
-      const idStr = String(nationalId).trim();
-      const centuryDigit = idStr.charAt(0);
-      const yearDigits = idStr.substring(1, 3);
-      const monthDigits = idStr.substring(3, 5);
-      const dayDigits = idStr.substring(5, 7);
-      const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
-      const b = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
-      if (!isNaN(b.getTime())) birthDate = b;
+    // 2. الاستخراج من الرقم القومي
+    if (!birthDate && nationalId) {
+      const idStr = String(nationalId).replace(/\D/g, '');
+      if (idStr.length === 14) {
+        const centuryDigit = idStr.charAt(0);
+        const yearDigits = idStr.substring(1, 3);
+        const monthDigits = idStr.substring(3, 5);
+        const dayDigits = idStr.substring(5, 7);
+        const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+        const b = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+        if (!isNaN(b.getTime())) birthDate = b;
+      }
+    }
+
+    // 3. الاستخراج من حقل السن المباشر (Age)
+    if (!birthDate && ageRaw && !isNaN(Number(ageRaw))) {
+      const ageNum = Number(ageRaw);
+      if (ageNum >= 50 && ageNum <= 75) {
+        const today = new Date();
+        birthDate = new Date(today.getFullYear() - ageNum, today.getMonth(), today.getDate());
+      }
     }
 
     if (!birthDate) return null;
@@ -115,8 +128,8 @@ export default function DashboardPage() {
     let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
-    const allTurning60List: any[] = []; // قائمة الـ 60 الكاملة
-    const turning60SoonList: any[] = []; // القائمة الوشيكة خلال 60 يوم
+    const allTurning60List: any[] = [];
+    const turning60SoonList: any[] = [];
     const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
     
@@ -128,6 +141,7 @@ export default function DashboardPage() {
       const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
       const nationalId = getField(emp, 'national_id', 'NationalID');
       const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
+      const empAge = getField(emp, 'age', 'Age');
       const mobile = getField(emp, 'mobile', 'Mobile');
       const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
@@ -140,8 +154,8 @@ export default function DashboardPage() {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🎂 حسابات بلوغ الـ 60 لكل الموظفين
-      const ageInfo = getAge60Info(nationalId, birthDateRaw);
+      // 🎂 حسابات بلوغ الـ 60 المحدثة
+      const ageInfo = getAge60Info(nationalId, birthDateRaw, empAge);
       if (ageInfo) {
         const item = {
           ...emp,
@@ -155,7 +169,9 @@ export default function DashboardPage() {
           month60: ageInfo.month60
         };
         allTurning60List.push(item);
-        if (ageInfo.daysUntil60 <= 60) {
+        
+        // حصر الموظفين القريبين من الـ 60 أو الذين بلغوها مؤخراً
+        if (ageInfo.daysUntil60 <= 90) {
           turning60SoonList.push(item);
         }
       }
@@ -278,7 +294,6 @@ export default function DashboardPage() {
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept]);
 
-  // 🌟 تصفية الموظفين في نافذة بلوغ سن الـ 60 بناءً على الشهر والسنة المختارين
   const filteredAge60ModalList = useMemo(() => {
     return dashboardData.allTurning60List.filter((emp) => {
       const matchesYear = !ageFilterYear || String(emp.year60) === ageFilterYear;
@@ -377,11 +392,10 @@ export default function DashboardPage() {
           icon="⏳" 
           onClick={() => navigateTo('contracts')} 
         />
-        {/* 🌟 كارت سن الـ 60 (خلال 60 يوم) التفاعلي الجديد */}
         <KpiCard 
           loading={loading} 
           tone="red" 
-          title="سن الـ 60 (خلال 60 يوم)" 
+          title="سن الـ 60 (مترقب)" 
           value={dashboardData.turning60SoonCount} 
           sub="اضغط للفرز والجدولة 🎂" 
           icon="🎂" 
@@ -504,7 +518,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 نافذة بلوغ سن الـ 60 المحدثة مع فلاتر الشهر والسنة حتى 2030 */}
+      {/* 🎂 نافذة بلوغ سن الـ 60 المحدثة مع فلاتر الشهر والسنة حتي 2030 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -515,7 +529,7 @@ export default function DashboardPage() {
               <button onClick={() => setShowAgeModal(false)} style={{ background: '#fef3c7', border: 0, color: '#b45309', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
-            {/* 🌟 فلاتر الشهر والسنة داخل النافذة المنبثقة */}
+            {/* فلاتر الشهر والسنة */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>تصفية وحصر المتقاعدين:</span>
               
