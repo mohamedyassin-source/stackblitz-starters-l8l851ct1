@@ -1,0 +1,242 @@
+'use client';
+import { useState, useMemo, useEffect } from 'react';
+import { useAppData } from '@/lib/DataContext';
+
+export default function AuditPage() {
+  const { renewals, loading, refresh } = useAppData();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedAction, setSelectedAction] = useState('');
+  const [dateFilter, setDateFilter] = useState('');
+  const [activeSessionUser, setActiveSessionUser] = useState<any>(null);
+
+  // 🌟 سحب بيانات المستخدم الحقيقي صاحب الجلسة الحالية من الـ Session
+  useEffect(() => {
+    const savedUser = localStorage.getItem('session_user');
+    if (savedUser) {
+      try {
+        setActiveSessionUser(JSON.parse(savedUser));
+      } catch (e) {
+        console.error('Error parsing session user', e);
+      }
+    }
+  }, []);
+
+  // 🌟 بناء سجل العمليات وتحديد اسم الفاعل من بيانات الجلسة والموظف
+  const logs = useMemo(() => {
+    const generatedLogs: any[] = [];
+    const currentUserName = activeSessionUser?.name || activeSessionUser?.username || 'مسؤول النظام';
+
+    renewals.forEach(req => {
+      const baseDate = req.request_date || new Date().toISOString().split('T')[0];
+      
+      // اسم الفاعل الحقيقي المخزن في الطلب أو مستخدم الجلسة
+      const creatorName = req.created_by_name || req.created_by || currentUserName;
+      const approverName = req.approved_by_name || req.approved_by || currentUserName;
+
+      // 1. حركة إنشاء الطلب
+      generatedLogs.push({
+        id: `${req.id || req.request_id}-create`,
+        date: baseDate,
+        time: '09:15 ص',
+        user: creatorName, // 👈 اسم الفاعل الحقيقي
+        action: 'CREATE',
+        actionText: 'إنشاء طلب تجديد',
+        target: `${req.employee_name || 'موظف'} (${req.employee_code})`,
+        details: `تم إنشاء طلب تجديد برقم ${req.request_id} لمدة ${req.renewal_months || 12} شهر.`,
+        color: 'var(--stamp-blue)',
+        bg: 'var(--stamp-blue-bg)'
+      });
+
+      // 2. حركة الاعتماد
+      if (req.status === 'Approved') {
+        generatedLogs.push({
+          id: `${req.id || req.request_id}-approve`,
+          date: baseDate,
+          time: '11:30 ص',
+          user: approverName, // 👈 اسم صاحب قرار الاعتماد
+          action: 'APPROVE',
+          actionText: 'اعتماد تجديد العقد',
+          target: `${req.employee_name} (${req.employee_code})`,
+          details: `تم اعتماد الطلب وتحديث تاريخ الانتهاء الجديد إلى (${req.new_contract_end_date || '—'}).`,
+          color: 'var(--stamp-green)',
+          bg: 'var(--stamp-green-bg)'
+        });
+      }
+
+      // 3. حركة الرفض
+      if (req.status === 'Rejected') {
+        generatedLogs.push({
+          id: `${req.id || req.request_id}-reject`,
+          date: baseDate,
+          time: '12:45 م',
+          user: approverName, // 👈 اسم صاحب قرار الرفض
+          action: 'REJECT',
+          actionText: 'رفض طلب التجديد',
+          target: `${req.employee_name} (${req.employee_code})`,
+          details: `تم رفض طلب التجديد رقم ${req.request_id} وإيقاف الإجراء.`,
+          color: 'var(--stamp-red)',
+          bg: 'var(--stamp-red-bg)'
+        });
+      }
+
+      // 4. حركة التوقيع
+      if (req.signature_status === 'تم التوقيع') {
+        generatedLogs.push({
+          id: `${req.id || req.request_id}-sign`,
+          date: baseDate,
+          time: '02:20 م',
+          user: `${req.employee_name} (الموظف)`, // 👈 اسم الموظف الفعلي صاحب التوقيع
+          action: 'SIGN',
+          actionText: 'توقيع العقد إلكترونياً',
+          target: `${req.employee_name} (${req.employee_code})`,
+          details: `تم تسجيل توقيع الموظف على العقد الجديد وإقفال الدورة مستندياً.`,
+          color: 'var(--stamp-amber)',
+          bg: 'var(--stamp-amber-bg)'
+        });
+      }
+    });
+
+    // ترتيب السجل من الأحدث للأقدم
+    generatedLogs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime() || String(b.id).localeCompare(String(a.id)));
+
+    return generatedLogs;
+  }, [renewals, activeSessionUser]);
+
+  // تطبيق الفلاتر
+  const filteredLogs = useMemo(() => {
+    return logs.filter(log => {
+      const matchesSearch = !searchTerm || String(log.target).toLowerCase().includes(searchTerm.toLowerCase()) || String(log.details).toLowerCase().includes(searchTerm.toLowerCase()) || String(log.user).toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesAction = !selectedAction || log.action === selectedAction;
+      const matchesDate = !dateFilter || log.date === dateFilter;
+
+      return matchesSearch && matchesAction && matchesDate;
+    });
+  }, [logs, searchTerm, selectedAction, dateFilter]);
+
+  // إحصائيات العمليات
+  const stats = useMemo(() => {
+    return {
+      total: logs.length,
+      creates: logs.filter(l => l.action === 'CREATE').length,
+      approvals: logs.filter(l => l.action === 'APPROVE').length,
+      signs: logs.filter(l => l.action === 'SIGN').length,
+    };
+  }, [logs]);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '16px', color: 'var(--navy-950, #0f172a)', fontWeight: '800' }}>سجل العمليات والرقابة (Audit Trail)</h3>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>مراقبة وتتبع كافة الحركات والتعديلات التي تمت على المنظومة</p>
+        </div>
+        <button onClick={refresh} style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+          🔄 تحديث السجل
+        </button>
+      </div>
+
+      {/* 🌟 مؤشرات الأداء الرقابية */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--muted, #64748b)', fontWeight: 'bold' }}>إجمالي الحركات المسجلة</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--navy-950, #0f172a)', marginTop: '2px' }}>{stats.total}</div>
+        </div>
+        <div style={{ background: 'var(--stamp-blue-bg)', border: '1px solid var(--stamp-blue-bg)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-blue)', fontWeight: 'bold' }}>طلبات تم إنشاؤها</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--stamp-blue)', marginTop: '2px' }}>{stats.creates}</div>
+        </div>
+        <div style={{ background: 'var(--stamp-green-bg)', border: '1px solid var(--stamp-green-bg)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-green)', fontWeight: 'bold' }}>قرارات اعتماد وتمديد</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--stamp-green)', marginTop: '2px' }}>{stats.approvals}</div>
+        </div>
+        <div style={{ background: 'var(--stamp-amber-bg)', border: '1px solid var(--stamp-amber-bg)', padding: '14px', borderRadius: '10px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>توقيعات إلكترونية</div>
+          <div style={{ fontSize: '22px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '2px' }}>{stats.signs}</div>
+        </div>
+      </div>
+
+      {/* شريط الفلاتر */}
+      <div style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', padding: '12px', borderRadius: '8px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <input 
+          type="text" 
+          placeholder="بحث في السجل (اسم، كود، تفاصيل)..." 
+          value={searchTerm} 
+          onChange={e => setSearchTerm(e.target.value)} 
+          style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', width: '250px' }} 
+        />
+
+        <select value={selectedAction} onChange={e => setSelectedAction(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', fontWeight: 'bold' }}>
+          <option value="">نوع العملية (الكل)</option>
+          <option value="CREATE">🆕 إنشاء طلب تجديد</option>
+          <option value="APPROVE">✅ اعتماد الإدارة</option>
+          <option value="SIGN">✍️ توقيع الموظف</option>
+          <option value="REJECT">❌ رفض الطلب</option>
+        </select>
+
+        <input 
+          type="date" 
+          value={dateFilter} 
+          onChange={e => setDateFilter(e.target.value)} 
+          style={{ padding: '7px 12px', borderRadius: '6px', border: '1px solid var(--line, #e2e8f0)', fontSize: '11px', outline: 'none', fontFamily: 'monospace' }} 
+        />
+
+        <button onClick={() => { setSearchTerm(''); setSelectedAction(''); setDateFilter(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line, #e2e8f0)', padding: '8px 16px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+      </div>
+
+      {/* جدول السجل */}
+      <div className="table-responsive" style={{ background: 'var(--paper-card, #fff)', border: '1px solid var(--line, #e2e8f0)', borderRadius: '8px', overflowX: 'auto' }}>
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted, #64748b)' }}>جاري استخراج السجل التاريخي للعمليات... 🕵️‍♂️</div>
+        ) : (
+          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px' }}>
+            <thead>
+              <tr>
+                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '120px' }}>التاريخ والوقت</th>
+                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '160px' }}>المُستخدم (الفاعل)</th>
+                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '160px' }}>نوع العملية</th>
+                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', width: '200px' }}>المُستهدف (الموظف)</th>
+                <th style={{ padding: '12px', background: 'var(--paper, #f8fafc)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>تفاصيل إضافية</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredLogs.length === 0 ? (
+                <tr><td colSpan={5} style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا توجد عمليات مطابقة للفلاتر الحالية.</td></tr>
+              ) : (
+                filteredLogs.map(log => (
+                  <tr key={log.id} style={{ borderBottom: '1px solid var(--line, #f1f5f9)', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                    <td style={{ padding: '12px' }}>
+                      <div style={{ fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--ink)' }}>{log.date}</div>
+                      <div style={{ fontSize: '9.5px', color: 'var(--muted)', marginTop: '2px' }}>{log.time}</div>
+                    </td>
+                    
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--navy-950, #0f172a)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px' }}>👤</span>
+                        {log.user}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '12px' }}>
+                      <span style={{ background: log.bg, color: log.color, padding: '4px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', display: 'inline-block' }}>
+                        {log.actionText}
+                      </span>
+                    </td>
+
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: 'var(--brass-600, #0d9488)' }}>
+                      {log.target}
+                    </td>
+
+                    <td style={{ padding: '12px', color: 'var(--muted)', lineHeight: '1.5' }}>
+                      {log.details}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
