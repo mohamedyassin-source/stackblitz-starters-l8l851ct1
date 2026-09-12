@@ -59,6 +59,9 @@ export default function ReportsPage() {
 
   const [activeReport, setActiveReport] = useState<'monthly' | 'above_60' | 'dept_summary' | 'full_roster'>('monthly');
 
+  // 🌟 فلتر جديد خاص بالشريط الفرعي للإحصائيات الشهرية
+  const [activeMonthlyFilter, setActiveMonthlyFilter] = useState<'all' | 'turning60' | 'processed' | 'pending'>('all');
+
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
@@ -70,7 +73,11 @@ export default function ReportsPage() {
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
 
-  // 🌟 دالة السحب التكرارية لتخطي حاجز 1000 صف
+  // إعادة ضبط الفلتر الفرعي عند تغيير الشهر أو التقرير
+  useEffect(() => {
+    setActiveMonthlyFilter('all');
+  }, [activeReport, selectedMonth, selectedYear]);
+
   const fetchAllRows = async (tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) => {
     let allRows: any[] = [];
     let from = 0;
@@ -87,18 +94,16 @@ export default function ReportsPage() {
     return allRows;
   };
 
-  // 🌟 جلب البيانات وربطها بشكل صحيح
   useEffect(() => {
     async function fetchReportsData() {
       setLoading(true);
       try {
         const [allEmps, allContracts, allRens] = await Promise.all([
           fetchAllRows('employees'),
-          fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }), // نجلب العقود النشطة فقط
+          fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }),
           fetchAllRows('renewal_requests')
         ]);
 
-        // تجميع العقود بناءً على كود الموظف (بعد إزالة الأصفار على اليسار)
         const contractsMap = new Map<string, any[]>();
         allContracts.forEach(c => {
           if (!c) return;
@@ -107,16 +112,14 @@ export default function ReportsPage() {
           contractsMap.get(code)?.push(c);
         });
 
-        // دمج الموظفين مع عقودهم
         const mergedEmployees = allEmps.filter(e => e).map(emp => {
           const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
           const empContracts = contractsMap.get(empCodeClean) || [];
 
-          // ترتيب العقود لمعرفة أحدث عقد
           empContracts.sort((a, b) => {
             const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
             const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
-            return dateB - dateA; // تنازلي
+            return dateB - dateA; 
           });
 
           const activeContract = empContracts[0] || {};
@@ -153,9 +156,7 @@ export default function ReportsPage() {
   const getActionStatus = (empCode: string) => {
     if (!empCode) return { text: 'بدون إجراء ⚠️', code: 'none', color: '#ef4444', bg: '#fef2f2', border: '#fecaca' };
     
-    // توحيد الأكواد لضمان الربط الصحيح
     const safeCode = String(empCode).trim().replace(/^0+/, '');
-    
     const empRens = renewals
       .filter((r) => r && String(r.employee_code || '').trim().replace(/^0+/, '') === safeCode)
       .sort((a, b) => String(b.request_id).localeCompare(String(a.request_id)));
@@ -193,6 +194,7 @@ export default function ReportsPage() {
     return deptsList.filter(d => String(d).toLowerCase().includes(deptSearchTerm.toLowerCase().trim()));
   }, [deptsList, deptSearchTerm]);
 
+  // فلترة التقرير
   const reportData = useMemo(() => {
     return activeEmployees.filter(emp => {
       const cType = getField(emp, 'contract_type');
@@ -219,6 +221,13 @@ export default function ReportsPage() {
 
         if (!isExpiringThisMonth && !isTurning60ThisMonth) return false;
 
+        // 🌟 تطبيق الفلتر الفرعي للأشرطة المتفاعلة
+        if (activeMonthlyFilter === 'turning60' && !isTurning60ThisMonth) return false;
+        
+        const actionCode = getActionStatus(code).code;
+        if (activeMonthlyFilter === 'processed' && actionCode === 'none') return false;
+        if (activeMonthlyFilter === 'pending' && actionCode !== 'none') return false;
+
       } else if (activeReport === 'above_60') {
         const isAbove60 = age !== null && age >= 60;
         const isAboveAgeType = String(cType).includes('فوق السن');
@@ -232,7 +241,7 @@ export default function ReportsPage() {
 
       return matchesSearch && matchesComp && matchesDept && matchesType;
     });
-  }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm]);
+  }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm, activeMonthlyFilter, renewals]);
 
   const monthlyStats = useMemo(() => {
     let totalExpirations = 0;
@@ -240,7 +249,7 @@ export default function ReportsPage() {
     let actionTaken = 0;
     let noAction = 0;
 
-    reportData.forEach(emp => {
+    activeEmployees.forEach(emp => {
       const endDateVal = getField(emp, 'contract_end_date');
       const endDate = endDateVal ? new Date(endDateVal) : null;
       const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
@@ -248,16 +257,21 @@ export default function ReportsPage() {
       const m = parseInt(selectedMonth);
       const y = parseInt(selectedYear);
 
-      if (endDate && (endDate.getMonth() + 1 === m) && (endDate.getFullYear() === y)) totalExpirations++;
-      if (retirementDate && (retirementDate.getMonth() + 1 === m) && (retirementDate.getFullYear() === y)) turning60++;
+      const isExpiringThisMonth = endDate && (endDate.getMonth() + 1 === m) && (endDate.getFullYear() === y);
+      const isTurning60ThisMonth = retirementDate && (retirementDate.getMonth() + 1 === m) && (retirementDate.getFullYear() === y);
 
-      const status = getActionStatus(getField(emp, 'employee_code')).code;
-      if (status === 'none') noAction++;
-      else actionTaken++;
+      if (isExpiringThisMonth || isTurning60ThisMonth) {
+        totalExpirations++;
+        if (isTurning60ThisMonth) turning60++;
+
+        const status = getActionStatus(getField(emp, 'employee_code')).code;
+        if (status === 'none') noAction++;
+        else actionTaken++;
+      }
     });
 
     return { totalExpirations, turning60, actionTaken, noAction };
-  }, [reportData, selectedMonth, selectedYear]);
+  }, [activeEmployees, selectedMonth, selectedYear, renewals]);
 
   const deptSummaryData = useMemo(() => {
     const summary: Record<string, { total: number; fixed: number; perm: number; above60: number }> = {};
@@ -367,6 +381,33 @@ export default function ReportsPage() {
           border-color: var(--theme-color);
           box-shadow: 0 0 0 1px var(--theme-color) inset;
         }
+
+        /* 🌟 تنسيق شريط الإحصائيات التفاعلي الجديد */
+        .segmented-control {
+          display: flex;
+          background: #ffffff;
+          border-radius: 12px;
+          border: 1px solid #e2e8f0;
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+          margin-bottom: 24px;
+        }
+        .segmented-item {
+          flex: 1;
+          padding: 16px 10px;
+          text-align: center;
+          cursor: pointer;
+          transition: all 0.2s ease;
+          border-bottom: 4px solid transparent;
+        }
+        .segmented-item:hover {
+          background: #f8fafc;
+        }
+        .segmented-divider {
+          width: 1px;
+          background: #e2e8f0;
+          margin: 12px 0;
+        }
       `}</style>
 
       {/* الهيدر العلوي */}
@@ -385,7 +426,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 🌟 كروت التبويبات (Enterprise Design) */}
+      {/* كروت التبويبات الرئيسية */}
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <div className={`enterprise-stat-card ${activeReport === 'monthly' ? 'active' : ''}`} style={{ '--theme-color': '#2563eb' } as React.CSSProperties} onClick={() => setActiveReport('monthly')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -420,25 +461,36 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 🌟 مؤشرات الشهر الاستباقية */}
+      {/* 🌟 شريط المؤشرات التفاعلي الموزع بالتساوي (Segmented Control) */}
       {activeReport === 'monthly' && (
-        <div className="no-print" style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي انتهاء العقود</span>
-            <span style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a' }}>{monthlyStats.totalExpirations}</span>
+        <div className="segmented-control no-print">
+          
+          <div className="segmented-item" onClick={() => setActiveMonthlyFilter('all')} style={{ background: activeMonthlyFilter === 'all' ? '#f1f5f9' : 'transparent', borderBottomColor: activeMonthlyFilter === 'all' ? '#0f172a' : 'transparent' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>إجمالي انتهاء العقود</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{monthlyStats.totalExpirations}</div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إنذار بلوغ سن (60)</span>
-            <span style={{ fontSize: '22px', fontWeight: '900', color: '#ea580c' }}>{monthlyStats.turning60} <span style={{fontSize:'12px'}}>🚨</span></span>
+          
+          <div className="segmented-divider"></div>
+          
+          <div className="segmented-item" onClick={() => setActiveMonthlyFilter('turning60')} style={{ background: activeMonthlyFilter === 'turning60' ? '#fff7ed' : 'transparent', borderBottomColor: activeMonthlyFilter === 'turning60' ? '#ea580c' : 'transparent' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>إنذار بلوغ سن (60)</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#ea580c' }}>{monthlyStats.turning60} <span style={{fontSize:'14px'}}>🚨</span></div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تمت المعالجة (الـ HR)</span>
-            <span style={{ fontSize: '22px', fontWeight: '900', color: '#10b981' }}>{monthlyStats.actionTaken}</span>
+          
+          <div className="segmented-divider"></div>
+          
+          <div className="segmented-item" onClick={() => setActiveMonthlyFilter('processed')} style={{ background: activeMonthlyFilter === 'processed' ? '#f0fdf4' : 'transparent', borderBottomColor: activeMonthlyFilter === 'processed' ? '#10b981' : 'transparent' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>تمت المعالجة (الـ HR)</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#10b981' }}>{monthlyStats.actionTaken}</div>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>متأخرات (بدون إجراء)</span>
-            <span style={{ fontSize: '22px', fontWeight: '900', color: '#ef4444' }}>{monthlyStats.noAction}</span>
+          
+          <div className="segmented-divider"></div>
+          
+          <div className="segmented-item" onClick={() => setActiveMonthlyFilter('pending')} style={{ background: activeMonthlyFilter === 'pending' ? '#fef2f2' : 'transparent', borderBottomColor: activeMonthlyFilter === 'pending' ? '#ef4444' : 'transparent' }}>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>متأخرات (بدون إجراء)</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#ef4444' }}>{monthlyStats.noAction}</div>
           </div>
+
         </div>
       )}
 
@@ -496,7 +548,7 @@ export default function ReportsPage() {
           {contractTypesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
         </select>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDepts([]); setDeptSearchTerm(''); setSelectedContractType(''); setSelectedMonth(String(new Date().getMonth() + 1)); setSelectedYear(new Date().getFullYear().toString()); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
+        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDepts([]); setDeptSearchTerm(''); setSelectedContractType(''); setSelectedMonth(String(new Date().getMonth() + 1)); setSelectedYear(new Date().getFullYear().toString()); setActiveMonthlyFilter('all'); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
           إعادة ضبط
         </button>
       </div>
@@ -504,7 +556,6 @@ export default function ReportsPage() {
       {/* 🌟 منطقة عرض وطباعة التقرير */}
       <div className="print-area" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         
-        {/* ترويسة التقرير */}
         <div style={{ borderBottom: '2px solid #0f172a', paddingBottom: '14px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>مجموعة شركات المراسم الدولية</h2>
@@ -522,7 +573,7 @@ export default function ReportsPage() {
 
           <div style={{ textAlign: 'left', fontSize: '12px', color: '#475569', fontFamily: 'monospace' }}>
             <div>تاريخ الاستخراج: <strong>{new Date().toLocaleDateString('ar-EG')}</strong></div>
-            <div style={{ marginTop: '4px' }}>إجمالي السجلات: <strong style={{ color: '#2563eb', fontSize: '16px' }}>{activeReport === 'dept_summary' ? deptSummaryData.length : reportData.length}</strong></div>
+            <div style={{ marginTop: '4px' }}>العدد بالجدول: <strong style={{ color: '#2563eb', fontSize: '16px' }}>{activeReport === 'dept_summary' ? deptSummaryData.length : reportData.length}</strong></div>
           </div>
         </div>
 
@@ -637,7 +688,6 @@ export default function ReportsPage() {
           </table>
         )}
 
-        {/* توقيعات الاعتماد لتقارير الطباعة */}
         <div style={{ marginTop: '60px', display: 'flex', justifyContent: 'space-between', padding: '0 40px', fontSize: '13px', color: '#475569', fontWeight: 'bold' }}>
           <div style={{ textAlign: 'center' }}>مُعد التقرير<br/><br/>........................</div>
           <div style={{ textAlign: 'center' }}>مراجعة الموارد البشرية<br/><br/>........................</div>
