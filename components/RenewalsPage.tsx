@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-
+import { useAppData } from '@/lib/DataContext';
+import * as XLSX from 'xlsx';
 
 // دوال حساب التواريخ
 const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
@@ -151,7 +152,7 @@ export default function RenewalsPage() {
   const countRejected = requests.filter(r => r.status === 'Rejected').length;
   const countAll = requests.length;
 
-  // דالة الاعتماد
+  // دالة الاعتماد
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
@@ -405,7 +406,6 @@ export default function RenewalsPage() {
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>دورة الاعتماد الإداري المتدرج للموافقة على تجديد العقود</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {/* 🌟 زراير الاعتماد المجمع والحذف المجمع للطلبات قيد المعالجة */}
           {(activeTab === 'Pending_Project' || activeTab === 'Pending_General') && (
             <>
               <button onClick={() => {
@@ -563,12 +563,10 @@ export default function RenewalsPage() {
                       {req.status === 'Rejected' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', border: '1px solid #fecaca' }}>❌ مرفوض</span>}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {/* 🌟 إضافة زر الحذف هنا للطلبات التي لم تعتمد نهائياً */}
                       {(req.status === 'Pending_Project_Manager' || req.status === 'Pending' || req.status === 'Pending_General_Manager') ? (
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                           <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: '#10b981', color: '#fff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
                           <button onClick={() => handleReject(req.request_id)} style={{ background: '#ef4444', color: '#fff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
-                          {/* 🌟 زر الحذف الفردي للمتكررات */}
                           <button onClick={() => handleDeleteRequest(req.request_id)} title="حذف الطلب نهائياً" style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>🗑️</button>
                         </div>
                       ) : (
@@ -604,7 +602,6 @@ export default function RenewalsPage() {
                 {activeTab === 'Pending_Project' ? 'انت على وشك الموافقة المبدئية وتمرير الطلب للإدارة العامة.' : 'انت على وشك الاعتماد النهائي. سيتم تحديث تواريخ العقد فوراً وإرساله للتوقيع.'}
               </p>
               
-              {/* مدخلات التواريخ للمراجعة والتعديل */}
               {approvalModal.type === 'single' && approvalModal.req && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold' }}>
