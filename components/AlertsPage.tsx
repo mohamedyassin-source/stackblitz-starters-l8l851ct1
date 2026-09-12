@@ -1,10 +1,8 @@
 'use client';
 
+import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-// تهيئة الاتصال بقاعدة بيانات Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
 
 // دالة حساب تاريخ التقاعد (60 سنة)
 const getRetirementDate = (birthDateRaw: string | null | undefined) => {
