@@ -1,9 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import * as XLSX from 'xlsx';
-import { useAppData } from '@/lib/DataContext';
+
 
 // دوال حساب التواريخ
 const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
