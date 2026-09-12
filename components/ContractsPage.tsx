@@ -30,7 +30,7 @@ export default function ContractsPage() {
   const [expiryMonth, setExpiryMonth] = useState(''); 
   const [selectedReqStatus, setSelectedReqStatus] = useState(''); 
   
-  // 🗂️ فلتر الكروت العلوية (5 كروت فقط)
+  // 🗂️ فلتر الكروت العلوية
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'expired'>('all');
 
   // 🔃 حالات الترتيب
@@ -65,7 +65,7 @@ export default function ContractsPage() {
   const [editStartDate, setEditStartDate] = useState('');
   const [editEndDate, setEditEndDate] = useState('');
 
-  // 🌟 نافذة المتابعة (بدون زر اعتماد)
+  // 🌟 نافذة المتابعة
   const [workflowModal, setWorkflowModal] = useState<{ isOpen: boolean; emp?: any; req?: any }>({ isOpen: false });
 
   useEffect(() => {
@@ -171,7 +171,6 @@ export default function ContractsPage() {
     return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
   };
 
-  // 🌟 نظام الفلترة الذكي والإخفاء (المُحصن)
   const filteredContracts = useMemo(() => {
     const term = String(searchTerm || '').trim().toLowerCase();
     const isSearching = term.length > 0;
@@ -184,12 +183,10 @@ export default function ContractsPage() {
       const empType = String(emp.contract_type || '');
       const empStatus = String(emp.status || '');
 
-      // شروط الإخفاء (تحويلات / إيقاف راتب / إنهاء)
       const isHiddenDept = empDept.includes('تحويلات');
       const isHiddenJob = empJob.startsWith('ايقاف راتب');
       const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || empType === 'إنهاء تعاقد';
 
-      // 🛑 إذا لم يكن يبحث عن موظف معين، يتم إخفاء هؤلاء من الجدول
       if (!isSearching && (isHiddenDept || isHiddenJob || isTerminated)) {
         return false;
       }
@@ -255,7 +252,6 @@ export default function ContractsPage() {
     });
   }, [filteredContracts, sortColumn, sortDirection, renewals]);
 
-  // 🌟 الكروت والإحصائيات لا تحسب المعلقين والمنتهيين نهائياً (إلا لو كانوا أكتيف)
   const activeEmployees = useMemo(() => {
     return employees.filter(emp => {
       if (!emp) return false;
@@ -403,12 +399,30 @@ export default function ContractsPage() {
   };
 
   const handleDeleteSelected = async () => {
-    if (!window.confirm('تأكيد الحذف؟')) return;
+    if (!window.confirm('تأكيد الحذف؟ هذا الإجراء سيقوم بحذف الموظفين وعقودهم نهائياً.')) return;
     setIsDeleting(true);
     const parsedCodes = selectedEmpCodes.map(c => parseInt(c, 10));
     await supabase.from('contracts').delete().in('employee_code', parsedCodes);
     await supabase.from('employees').delete().in('employee_code', parsedCodes);
-    alert('تم الحذف ✅'); setSelectedEmpCodes([]); fetchData(); setIsDeleting(false);
+    alert('تم الحذف بنجاح ✅'); setSelectedEmpCodes([]); fetchData(); setIsDeleting(false);
+  };
+
+  // 🌟 دالة الحذف الفردي الجديدة
+  const handleDeleteSingleContract = async (emp: any) => {
+    if (!window.confirm(`هل أنت متأكد من حذف الموظف (${emp.employee_name}) وعقده نهائياً من قاعدة البيانات؟\nهذا الإجراء لا يمكن التراجع عنه.`)) return;
+    
+    setActionLoading(true);
+    try {
+      const parsedCode = parseInt(emp.employee_code, 10);
+      await supabase.from('contracts').delete().eq('employee_code', parsedCode);
+      await supabase.from('employees').delete().eq('employee_code', parsedCode);
+      alert('تم حذف الموظف والعقد بنجاح ✅');
+      fetchData();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الحذف: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleTerminateContract = async (e: React.FormEvent) => {
@@ -436,17 +450,55 @@ export default function ContractsPage() {
 
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
+      {/* 🌟 تصميم Enterprise Cards الجديد */}
       <style>{`
-        .modern-card {
-          background: #ffffff; border-radius: 16px; border: 1px solid rgba(226, 232, 240, 0.8); padding: 20px; cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); position: relative; overflow: hidden;
-          display: flex; flex-direction: column; justify-content: space-between;
+        .enterprise-card {
+          background: #ffffff;
+          border-radius: 12px;
+          border: 1px solid #e2e8f0;
+          padding: 20px;
+          cursor: pointer;
+          transition: all 0.2s ease-in-out;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+          position: relative;
         }
-        .modern-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px -8px rgba(0,0,0,0.08); border-color: #cbd5e1; }
-        .modern-card::before { content: ''; position: absolute; top: 0; right: 0; width: 5px; height: 100%; background: var(--card-color); transition: width 0.3s ease; }
-        .modern-card:hover::before { width: 8px; }
-        .active-card { background: #f8fafc; box-shadow: inset 0 0 0 1px var(--card-color); }
-        .icon-wrapper { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: var(--icon-bg); color: var(--card-color); }
+        .enterprise-card:hover {
+          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.08);
+          border-color: #cbd5e1;
+          transform: translateY(-2px);
+        }
+        .enterprise-card.active {
+          border-color: var(--theme-color);
+          box-shadow: 0 0 0 1px var(--theme-color), 0 4px 6px -1px rgba(0,0,0,0.05);
+        }
+        .card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .card-icon {
+          width: 36px; height: 36px;
+          border-radius: 8px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 18px;
+          background: var(--icon-bg);
+          color: var(--theme-color);
+        }
+        .card-title {
+          font-size: 13px; font-weight: 700; color: #64748b;
+        }
+        .card-value {
+          font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1;
+        }
+        .card-footer {
+          font-size: 12px; font-weight: 600; color: #94a3b8; display: flex; align-items: center; gap: 6px;
+        }
+        .trend-up {
+          color: var(--theme-color); background: var(--icon-bg); padding: 2px 6px; border-radius: 4px; font-size: 11px;
+        }
         .db-action-bar { background: #0f172a; color: #fff; padding: 12px 20px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; animation: fadeIn 0.3s; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }
       `}</style>
 
@@ -457,54 +509,50 @@ export default function ContractsPage() {
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة شاملة لدورة حياة العقود وإنشاء نماذج التجديد</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button onClick={() => { setTerminateEmployeeCode(''); setTermSearchTerm(''); setIsTerminateModalOpen(true); }} style={{ background: '#ef4444', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>🚫 تحويل للانتظار (إنهاء)</button>
-          <button onClick={() => { setSelectedEmployeeCode(''); setEmpSearchTerm(''); setShowEmpDropdown(false); setIsNewContractModalOpen(true); }} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>📝 إنشاء عقد لموظف جديد</button>
+          <button onClick={() => { setTerminateEmployeeCode(''); setTermSearchTerm(''); setIsTerminateModalOpen(true); }} style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #fecaca', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>🚫 تحويل للانتظار</button>
+          <button onClick={() => { setSelectedEmployeeCode(''); setEmpSearchTerm(''); setShowEmpDropdown(false); setIsNewContractModalOpen(true); }} style={{ background: '#0f172a', color: '#ffffff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>📝 إنشاء عقد لموظف جديد</button>
         </div>
       </div>
 
-      {/* 📊 القسم الأول: إحصائيات العقود الأساسية (الصف الأول) */}
+      {/* 📊 إحصائيات العقود الأساسية (Enterprise Cards) */}
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
-          <div className={`modern-card ${activeFilterCard === 'all' ? 'active-card' : ''}`} style={{ '--card-color': '#0f172a', '--icon-bg': '#f1f5f9' } as React.CSSProperties} onClick={() => setActiveFilterCard('all')}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="icon-wrapper">🌍</div><div><p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#0f172a' }}>إجمالي العقود</p><p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>جميع الموظفين</p></div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{totalAll.toLocaleString()}</div><div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>100%</div>
-            </div>
+          
+          {/* كارت 1 */}
+          <div className={`enterprise-card ${activeFilterCard === 'all' ? 'active' : ''}`} style={{ '--theme-color': '#3b82f6', '--icon-bg': '#eff6ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('all')}>
+            <div className="card-header"><span className="card-title">إجمالي العقود السارية</span><div className="card-icon">🌍</div></div>
+            <div className="card-value">{totalAll.toLocaleString()}</div>
+            <div className="card-footer"><span className="trend-up">100%</span><span>القوة الفعالة</span></div>
           </div>
-          <div className={`modern-card ${activeFilterCard === 'fixed' ? 'active-card' : ''}`} style={{ '--card-color': '#3b82f6', '--icon-bg': '#eff6ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('fixed')}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="icon-wrapper">📂</div><div><p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#0f172a' }}>عقود محددة</p><p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>محددة المدة</p></div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#3b82f6', lineHeight: '1' }}>{totalFixedContracts.toLocaleString()}</div><div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{calcPct(totalFixedContracts)}%</div>
-            </div>
+
+          {/* كارت 2 */}
+          <div className={`enterprise-card ${activeFilterCard === 'fixed' ? 'active' : ''}`} style={{ '--theme-color': '#6366f1', '--icon-bg': '#eef2ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('fixed')}>
+            <div className="card-header"><span className="card-title">عقود محددة المدة</span><div className="card-icon">📂</div></div>
+            <div className="card-value">{totalFixedContracts.toLocaleString()}</div>
+            <div className="card-footer"><span className="trend-up">{calcPct(totalFixedContracts)}%</span><span>من الإجمالي</span></div>
           </div>
-          <div className={`modern-card ${activeFilterCard === 'overage' ? 'active-card' : ''}`} style={{ '--card-color': '#a855f7', '--icon-bg': '#faf5ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('overage')}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="icon-wrapper">💼</div><div><p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#0f172a' }}>فوق السن</p><p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تجديد سنوي</p></div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#a855f7', lineHeight: '1' }}>{overAgeContracts.toLocaleString()}</div><div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{calcPct(overAgeContracts)}%</div>
-            </div>
+
+          {/* كارت 3 */}
+          <div className={`enterprise-card ${activeFilterCard === 'overage' ? 'active' : ''}`} style={{ '--theme-color': '#a855f7', '--icon-bg': '#faf5ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('overage')}>
+            <div className="card-header"><span className="card-title">عقود فوق السن</span><div className="card-icon">💼</div></div>
+            <div className="card-value">{overAgeContracts.toLocaleString()}</div>
+            <div className="card-footer"><span className="trend-up">{calcPct(overAgeContracts)}%</span><span>من الإجمالي</span></div>
           </div>
-          <div className={`modern-card ${activeFilterCard === 'expiring' ? 'active-card' : ''}`} style={{ '--card-color': '#f59e0b', '--icon-bg': '#fffbeb' } as React.CSSProperties} onClick={() => setActiveFilterCard('expiring')}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="icon-wrapper">⏳</div><div><p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#0f172a' }}>ينتهي قريباً</p><p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>أقل من 60 يوم</p></div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#f59e0b', lineHeight: '1' }}>{expiringSoonCount.toLocaleString()}</div><div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{calcPct(expiringSoonCount)}%</div>
-            </div>
+
+          {/* كارت 4 */}
+          <div className={`enterprise-card ${activeFilterCard === 'expiring' ? 'active' : ''}`} style={{ '--theme-color': '#f59e0b', '--icon-bg': '#fffbeb' } as React.CSSProperties} onClick={() => setActiveFilterCard('expiring')}>
+            <div className="card-header"><span className="card-title">ينتهي قريباً</span><div className="card-icon">⏳</div></div>
+            <div className="card-value">{expiringSoonCount.toLocaleString()}</div>
+            <div className="card-footer"><span className="trend-up">{calcPct(expiringSoonCount)}%</span><span>خلال 60 يوم</span></div>
           </div>
-          <div className={`modern-card ${activeFilterCard === 'expired' ? 'active-card' : ''}`} style={{ '--card-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setActiveFilterCard('expired')}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="icon-wrapper">🚨</div><div><p style={{ margin: 0, fontSize: '13px', fontWeight: '900', color: '#0f172a' }}>منتهي المدة</p><p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تخطى تاريخ الانتهاء</p></div>
-            </div>
-            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div style={{ fontSize: '28px', fontWeight: '900', color: '#ef4444', lineHeight: '1' }}>{expiredCount.toLocaleString()}</div><div style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>{calcPct(expiredCount)}%</div>
-            </div>
+
+          {/* كارت 5 */}
+          <div className={`enterprise-card ${activeFilterCard === 'expired' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setActiveFilterCard('expired')}>
+            <div className="card-header"><span className="card-title">منتهي المدة</span><div className="card-icon">🚨</div></div>
+            <div className="card-value">{expiredCount.toLocaleString()}</div>
+            <div className="card-footer"><span className="trend-up">{calcPct(expiredCount)}%</span><span>تجاوز التاريخ</span></div>
           </div>
+
         </div>
       </div>
 
@@ -529,22 +577,22 @@ export default function ContractsPage() {
       )}
 
       {/* 🌟 شريط الفلاتر والبحث */}
-      <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+      <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', minWidth: '180px', fontWeight: 'bold' }} />
+          <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', minWidth: '180px', fontWeight: 'bold' }} />
           
-          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
+          <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
             <option value="">الإدارة (الكل)</option>
             {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
           </select>
           
-          <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
+          <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
             <option value="">أنواع العقود (الكل)</option>
             {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
           </select>
 
           {/* 🌟 فلتر حالة التجديد */}
-          <select value={selectedReqStatus} onChange={(e) => setSelectedReqStatus(e.target.value)} style={{ padding: '10px 14px', borderRadius: '10px', border: '1px solid #cbd5e1', color: '#334155', background: '#f8fafc', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
+          <select value={selectedReqStatus} onChange={(e) => setSelectedReqStatus(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', color: '#334155', background: '#f8fafc', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
             <option value="">حالة التجديد (الكل)</option>
             <option value="no_request">متاح للطلب (لم يتم إجراء)</option>
             <option value="pending">⏳ تحت الاعتماد</option>
@@ -552,22 +600,22 @@ export default function ContractsPage() {
             <option value="signed">✅ تم التوقيع والانتهاء</option>
           </select>
 
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '4px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#64748b', marginLeft: '8px', paddingRight: '8px' }}>شهر الانتهاء:</span>
             <input type="month" value={expiryMonth} onChange={e => setExpiryMonth(e.target.value)} style={{ padding: '6px', border: '0', background: 'transparent', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
           </div>
 
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryMonth(''); setSelectedReqStatus(''); setActiveFilterCard('all'); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '10px 16px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', color: '#334155', cursor: 'pointer' }}>
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedType(''); setExpiryMonth(''); setSelectedReqStatus(''); setActiveFilterCard('all'); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', color: '#334155', cursor: 'pointer' }}>
             إعادة ضبط
           </button>
         </div>
         <div style={{ fontSize: '12px', fontWeight: '900', color: '#0f172a' }}>
-          النتائج بالجدول: <span style={{ color: '#4f46e5' }}>{sortedContracts.length}</span> عقد
+          النتائج: <span style={{ color: '#4f46e5' }}>{sortedContracts.length}</span> عقد
         </div>
       </div>
 
-      {/* 🚀 الجدول الرئيسي */}
-      <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', overflowX: 'auto', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+      {/* 🚀 الجدول الرئيسي مع الترتيب */}
+      <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات العقود والطلبات... ⏳</div>
         ) : (
@@ -638,18 +686,24 @@ export default function ContractsPage() {
                     <td style={{ padding: '12px', textAlign: 'center' }}>{reqBadge}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                        
                         {(!reqInfo.locked && !reqInfo.text.includes('تم توقيع')) ? (
-                          <button onClick={() => openSingleRenewal(emp)} disabled={isInactiveVisual} style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: isInactiveVisual ? 'not-allowed' : 'pointer' }}>
-                            + إنشاء نموذج
+                          <button onClick={() => openSingleRenewal(emp)} disabled={isInactiveVisual} style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: isInactiveVisual ? 'not-allowed' : 'pointer' }}>
+                            + نموذج
                           </button>
                         ) : (
-                          <button onClick={() => setWorkflowModal({ isOpen: true, emp })} style={{ background: '#4f46e5', color: '#ffffff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)' }}>
-                            🔄 المتابعة
+                          <button onClick={() => setWorkflowModal({ isOpen: true, emp })} style={{ background: '#4f46e5', color: '#ffffff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)' }}>
+                            🔄 متابعة
                           </button>
                         )}
-                        <button onClick={() => openEditModal(emp)} disabled={actionLoading || isInactiveVisual} style={{ background: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading || isInactiveVisual ? 'not-allowed' : 'pointer' }}>
+                        <button onClick={() => openEditModal(emp)} disabled={actionLoading || isInactiveVisual} style={{ background: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading || isInactiveVisual ? 'not-allowed' : 'pointer' }}>
                           ✏️
                         </button>
+                        {/* 🌟 زر الحذف الفردي الجديد */}
+                        <button onClick={() => handleDeleteSingleContract(emp)} disabled={actionLoading || isInactiveVisual} title="حذف العقد نهائياً" style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading || isInactiveVisual ? 'not-allowed' : 'pointer' }}>
+                          🗑️
+                        </button>
+
                       </div>
                     </td>
                   </tr>
@@ -735,74 +789,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة التعديل المباشر */}
-      {editModal.isOpen && editModal.emp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '480px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#4f46e5', fontWeight: '900' }}>✏️ تعديل بيانات العقد</h3>
-              <button onClick={() => setEditModal({ isOpen: false })} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            <form onSubmit={handleEditContract}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>نوع العقد *</label>
-                <select value={editContractType} onChange={(e) => setEditContractType(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
-                  {STANDARD_CONTRACT_TYPES.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                <div><label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>بداية العقد</label><input type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} /></div>
-                <div><label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>نهاية العقد</label><input type="date" disabled={editContractType === 'دائم'} value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} /></div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" onClick={() => setEditModal({ isOpen: false })} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* نافذة التحويل والإيقاف */}
-      {isTerminateModalOpen && (
-        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '480px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#dc2626', fontWeight: '900' }}>🚫 تحويل للانتظار / إنهاء تعاقد</h3>
-              <button onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            <form onSubmit={handleTerminateContract}>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>البحث عن الموظف *</label>
-                <input type="text" list="term-employees-list" required placeholder="🔍 اكتب كود أو اسم الموظف..." value={termSearchTerm} onChange={(e) => { const val = e.target.value; setTermSearchTerm(val); const code = val.split(' - ')[0]; const emp = activeEmployees.find(e => String(e.employee_code) === String(code)); if (emp) { setTerminateEmployeeCode(code); setTerminateDate(emp.contract_end_date || new Date().toISOString().split('T')[0]); } else { setTerminateEmployeeCode(''); setTerminateDate(new Date().toISOString().split('T')[0]); } }} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} />
-                <datalist id="term-employees-list">{activeEmployees.map((emp) => <option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />)}</datalist>
-              </div>
-              <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>سبب إنهاء الخدمة / التحويل *</label>
-                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
-                  <option value="انتهاء عقد">انتهاء عقد</option>
-                  <option value="إنهاء تعاقد">إنهاء تعاقد</option>
-                  <option value="استقالة">استقالة</option>
-                  <option value="إنهاء خدمات">إنهاء خدمات</option>
-                  <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
-                  <option value="انقطاع عن العمل">انقطاع عن العمل</option>
-                  <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
-                </select>
-              </div>
-              <div style={{ marginBottom: '24px' }}>
-                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>تاريخ الإنهاء الفعلي *</label>
-                <input type="date" required value={terminateDate} onChange={e => setTerminateDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} />
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                <button type="button" onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={actionLoading || !terminateEmployeeCode} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading || !terminateEmployeeCode ? 'not-allowed' : 'pointer' }}>تأكيد الإنهاء والتحويل</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-      
-      {/* نافذة إضافة موظف لعقد جديد */}
+      {/* نافذة إنشاء عقد جديد تماماً */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
@@ -840,6 +827,71 @@ export default function ContractsPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" onClick={() => setIsNewContractModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'إنشاء وتحديث العقد 📄'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {editModal.isOpen && editModal.emp && (
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '480px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#4f46e5', fontWeight: '900' }}>✏️ تعديل بيانات العقد</h3>
+              <button onClick={() => setEditModal({ isOpen: false })} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            <form onSubmit={handleEditContract}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>نوع العقد *</label>
+                <select value={editContractType} onChange={(e) => setEditContractType(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
+                  {STANDARD_CONTRACT_TYPES.map((t, idx) => <option key={idx} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+                <div><label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>بداية العقد</label><input type="date" value={editStartDate} onChange={(e) => setEditStartDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} /></div>
+                <div><label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>نهاية العقد</label><input type="date" disabled={editContractType === 'دائم'} value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} /></div>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" onClick={() => setEditModal({ isOpen: false })} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>{actionLoading ? 'جاري الحفظ...' : 'حفظ التعديلات'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {isTerminateModalOpen && (
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '480px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#dc2626', fontWeight: '900' }}>🚫 تحويل للانتظار / إنهاء تعاقد</h3>
+              <button onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            <form onSubmit={handleTerminateContract}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>البحث عن الموظف *</label>
+                <input type="text" list="term-employees-list" required placeholder="🔍 اكتب كود أو اسم الموظف..." value={termSearchTerm} onChange={(e) => { const val = e.target.value; setTermSearchTerm(val); const code = val.split(' - ')[0]; const emp = activeEmployees.find(e => String(e.employee_code) === String(code)); if (emp) { setTerminateEmployeeCode(code); setTerminateDate(emp.contract_end_date || new Date().toISOString().split('T')[0]); } else { setTerminateEmployeeCode(''); setTerminateDate(new Date().toISOString().split('T')[0]); } }} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} />
+                <datalist id="term-employees-list">{activeEmployees.map((emp) => <option key={emp.employee_code} value={`${emp.employee_code} - ${emp.employee_name}`} />)}</datalist>
+              </div>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>سبب إنهاء الخدمة / التحويل *</label>
+                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
+                  <option value="انتهاء عقد">انتهاء عقد</option>
+                  <option value="إنهاء تعاقد">إنهاء تعاقد</option>
+                  <option value="استقالة">استقالة</option>
+                  <option value="إنهاء خدمات">إنهاء خدمات</option>
+                  <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
+                  <option value="انقطاع عن العمل">انقطاع عن العمل</option>
+                  <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>تاريخ الإنهاء الفعلي *</label>
+                <input type="date" required value={terminateDate} onChange={e => setTerminateDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" onClick={() => setIsTerminateModalOpen(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={actionLoading || !terminateEmployeeCode} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading || !terminateEmployeeCode ? 'not-allowed' : 'pointer' }}>تأكيد الإنهاء والتحويل</button>
               </div>
             </form>
           </div>
