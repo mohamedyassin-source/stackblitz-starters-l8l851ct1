@@ -470,7 +470,7 @@ export default function ContractsPage() {
       fetchData();
     } catch (err: any) {
       alert('حدث خطأ أثناء الحذف: ' + err.message);
-    } fontally {
+    } finally {
       setActionLoading(false);
     }
   };
