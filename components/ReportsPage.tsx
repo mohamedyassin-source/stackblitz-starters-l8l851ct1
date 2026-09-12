@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import * as XLSX from 'xlsx';
 
 const MONTHS_LIST = [
   { value: '1', label: 'يناير (01)' },
@@ -53,7 +54,7 @@ export default function ReportsPage() {
 
   const [activeReport, setActiveReport] = useState<'monthly' | 'above_60' | 'dept_summary' | 'full_roster'>('monthly');
 
-  // 🌟 فلتر جديد خاص بالشريط الفرعي للإحصائيات الشهرية
+  // 🌟 فلتر الشريط الفرعي للإحصائيات الشهرية
   const [activeMonthlyFilter, setActiveMonthlyFilter] = useState<'all' | 'turning60' | 'processed' | 'pending'>('all');
 
   const [searchTerm, setSearchTerm] = useState('');
