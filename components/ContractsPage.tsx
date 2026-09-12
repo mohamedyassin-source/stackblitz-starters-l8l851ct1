@@ -676,7 +676,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🚀 الجدول الرئيسي مع عمود السن المدمج بالـ Badges */}
+      {/* 🚀 الجدول الرئيسي */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات العقود والطلبات... ⏳</div>
@@ -834,7 +834,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* باقی النوافذ المنبثقة */}
+      {/* باقي النوافذ المنبثقة */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
