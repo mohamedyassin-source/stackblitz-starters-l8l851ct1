@@ -439,10 +439,21 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
       {activeTab === 'notifications' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
           <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '20px', borderRadius: '12px' }}>
-            <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--navy-950)', fontWeight: '800' }}>📧 مستلم التقارير اليومية</h4>
+            <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: 'var(--navy-950)', fontWeight: '800' }}>📧 مستلمو التقارير اليومية</h4>
             <div style={{ marginBottom: '16px' }}>
-              <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>البريد الإلكتروني الرئيسي:</label>
-              <input type="email" value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', fontFamily: 'monospace', outline: 'none' }} />
+              <label style={{ display: 'block', fontSize: '11px', color: 'var(--muted)', fontWeight: 'bold', marginBottom: '6px' }}>
+                البريد الإلكتروني (يمكنك إضافة أكثر من إيميل بفصلهم بفاصلة ,):
+              </label>
+              <textarea
+                rows={3}
+                value={recipientEmail}
+                onChange={e => setRecipientEmail(e.target.value)}
+                placeholder="mohamed.yassin@almarasem.com, hr.manager@almarasem.com"
+                style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--line)', fontSize: '12px', fontFamily: 'monospace', outline: 'none', resize: 'vertical' }}
+              />
+              <span style={{ display: 'block', marginTop: '4px', fontSize: '10px', color: '#64748b' }}>
+                💡 مفيد لإرسال التقرير لمدير HR ومدير المشروع في نفس الوقت.
+              </span>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
               <input type="checkbox" checked={enableDailyEmail} onChange={e => setEnableDailyEmail(e.target.checked)} style={{ accentColor: 'var(--brass-600)' }} />
