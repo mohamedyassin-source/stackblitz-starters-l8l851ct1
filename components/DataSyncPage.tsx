@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import * as XLSX from 'xlsx';
 
 export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
@@ -138,7 +139,6 @@ export default function DataSyncPage() {
 
         // 2. معالجة الصفوف صفاً صفاً
         for (const row of rows) {
-          // دمج متطور للكلمات بمختلف اللغات والمسميات (الكود هو المفتاح)
           const rawCode = row['employee_code'] || row['كود الموظف'] || row['EmployeeCode'] || row['code'];
           if (!rawCode) continue;
 
@@ -146,11 +146,9 @@ export default function DataSyncPage() {
           const parsedCodeInt = parseInt(cleanCode, 10);
           if (isNaN(parsedCodeInt)) continue;
 
-          // استخراج الإدارة والوظيفة
           const deptVal = row['department'] || row['الإدارة'] || row['Department'] || null;
           const jobVal = row['job_title'] || row['الوظيفة'] || row['JobTitle'] || null;
 
-          // فحص التحويلات وإيقاف الراتب
           const deptStr = String(deptVal || '');
           const jobStr = String(jobVal || '');
           const isTransferDept = deptStr.includes('تحويلات/تحت الاعتماد') || deptStr.includes('تحويلات تحت الاعتماد') || deptStr.includes('تحويلات');
@@ -161,11 +159,9 @@ export default function DataSyncPage() {
           if (isOldEmployee) {
             // 🌟 سيناريو الموظف القديم:
             if (isTransferDept || isSalaryStop) {
-              // تغيير حالته لـ inactive فوراً
               await supabase.from('employees').update({ status: 'Inactive' }).eq('employee_code', parsedCodeInt);
               setInactiveCount++;
             } else {
-              // تحديث الوظيفة والإدارة حصراً وقصراً (حسب الأعمدة المرفوعة فقط)
               const updateData: any = {};
               if (deptVal !== null && deptVal !== undefined) updateData.department = deptVal;
               if (jobVal !== null && jobVal !== undefined) updateData.job_title = jobVal;
@@ -176,7 +172,7 @@ export default function DataSyncPage() {
               }
             }
           } else {
-            // 🌟 سيناريو الموظف الجديد: (إدخال كامل البيانات المرفوعة)
+            // 🌟 سيناريو الموظف الجديد:
             const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
@@ -193,7 +189,7 @@ export default function DataSyncPage() {
               mobile: row['mobile'] || row['الموبايل'] || null,
               manager: row['manager'] || row['المدير'] || null,
               status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active',
-              contract_type: 'محدد المدة', // تلقائي للجدد
+              contract_type: 'محدد المدة',
               national_id: row['national_id'] ? String(row['national_id']) : null,
               birth_date: parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']),
               age: row['age'] ? parseInt(row['age'], 10) : null,
@@ -203,7 +199,6 @@ export default function DataSyncPage() {
 
             newEmpsPayload.push(newEmpObj);
 
-            // تجهيز سطر العقد الجديد المربوط
             newContractsPayload.push({
               employee_code: parsedCodeInt,
               contract_type: 'محدد المدة',
