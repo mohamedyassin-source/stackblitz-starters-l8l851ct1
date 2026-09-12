@@ -44,7 +44,7 @@ export default function RenewalsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // 🌟 حالات التبويبات المتطورة لمرحلتي الاعتماد
+  // حالات التبويبات المتطورة لمرحلتي الاعتماد
   const [activeTab, setActiveTab] = useState<'All' | 'Pending_Project' | 'Pending_General' | 'Approved' | 'Rejected'>('Pending_Project');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -76,20 +76,17 @@ export default function RenewalsPage() {
     }
   }, [approvalModal, confirmedMonths]);
 
-  // 🌟 دالة السحب المتطورة: تجلب الطلبات وبيانات الموظف (عشان سن المعاش)
+  // دالة السحب المتطورة: تجلب الطلبات وبيانات الموظف
   const fetchRequests = async () => {
     setLoading(true);
     
-    // سحب الطلبات
     const { data: reqData, error: reqErr } = await supabase.from('renewal_requests').select('*');
     if (reqErr) console.error("Error fetching requests:", reqErr.message);
     
-    // سحب الموظفين (للحصول على تواريخ الميلاد والرقم القومي)
     const { data: empData, error: empErr } = await supabase.from('employees').select('employee_code, birth_date, national_id');
     if (empErr) console.error("Error fetching employees:", empErr.message);
 
     if (reqData && empData) {
-      // دمج بيانات الميلاد مع الطلب
       const mergedRequests = reqData.map(req => {
         const emp = empData.find(e => String(e.employee_code) === String(req.employee_code));
         return {
@@ -117,11 +114,10 @@ export default function RenewalsPage() {
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
   const compsList = Array.from(new Set(requests.map(r => r.company).filter(Boolean)));
 
-  // 🌟 فلترة الطلبات بناءً على التبويب النشط (المرحلة)
+  // فلترة الطلبات بناءً على التبويب النشط
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
-      // توافق التبويبات
-      if (activeTab === 'Pending_Project' && req.status !== 'Pending_Project_Manager' && req.status !== 'Pending') return false; // Pending القديم يظهر هنا
+      if (activeTab === 'Pending_Project' && req.status !== 'Pending_Project_Manager' && req.status !== 'Pending') return false;
       if (activeTab === 'Pending_General' && req.status !== 'Pending_General_Manager') return false;
       if (activeTab === 'Approved' && req.status !== 'Approved') return false;
       if (activeTab === 'Rejected' && req.status !== 'Rejected') return false;
@@ -156,11 +152,10 @@ export default function RenewalsPage() {
   const countRejected = requests.filter(r => r.status === 'Rejected').length;
   const countAll = requests.length;
 
-  // 🌟 دالة الاعتماد الذكية (تمر بمرحلتين وتحمي من تخطي السن)
+  // דالة الاعتماد
   const handleConfirmApproval = async () => {
     setActionLoading(true);
     try {
-      // 1. تحديد المرحلة الحالية
       const isProjectStage = activeTab === 'Pending_Project';
       const isGeneralStage = activeTab === 'Pending_General';
       const newStatus = isProjectStage ? 'Pending_General_Manager' : 'Approved';
@@ -175,7 +170,7 @@ export default function RenewalsPage() {
           setActionLoading(false); return alert('يرجى التأكد من التواريخ.');
         }
 
-        // 🛑 جدار حماية سن التقاعد 🛑
+        // جدار حماية سن التقاعد
         const retirementDateStr = calculateRetirementDate(req.birth_date);
         if (retirementDateStr && new Date(newEndDate) > new Date(retirementDateStr)) {
           alert(`🚨 توقف - الموظف سيتجاوز سن التقاعد (60)!\n\nتاريخ بلوغ السن: ${retirementDateStr}\nتاريخ انتهاء العقد المُدخل: ${newEndDate}\n\nيُرجى تعديل تاريخ النهاية المتوقع بحيث لا يتجاوز تاريخ التقاعد.`);
@@ -183,7 +178,6 @@ export default function RenewalsPage() {
           return;
         }
 
-        // تحديث الطلب للحالة الجديدة
         const { error: reqError } = await supabase.from('renewal_requests').update({
           status: newStatus,
           signature_status: newSigStatus,
@@ -193,7 +187,6 @@ export default function RenewalsPage() {
 
         if (reqError) throw reqError;
 
-        // 🌟 إذا كان الاعتماد نهائياً (إدارة عامة)، نحدث تاريخ الموظف ونرحل للتوقيعات
         if (isGeneralStage) {
           const { error: empError } = await supabase.from('employees').update({ 
             contract_start_date: newStartDate,
@@ -209,7 +202,6 @@ export default function RenewalsPage() {
       } else if (approvalModal.type === 'bulk') {
         const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
         
-        // 🛑 فحص جماعي لسن التقاعد 🛑
         const problematicEmps: string[] = [];
         reqsToApprove.forEach(req => {
           const newStartDate = calculateNewStartDate(req.contract_end_date);
@@ -238,7 +230,6 @@ export default function RenewalsPage() {
 
           if (reqError) throw reqError;
 
-          // التحديث النهائي لبيانات الموظف إذا كان الاعتماد عام
           if (isGeneralStage && newEndDate && newStartDate) {
             await supabase.from('employees').update({ contract_start_date: newStartDate, contract_end_date: newEndDate }).eq('employee_code', req.employee_code);
             await supabase.from('contracts').update({ contract_end_date: newEndDate }).eq('employee_code', req.employee_code).eq('status', 'Active');
@@ -261,6 +252,7 @@ export default function RenewalsPage() {
     }
   };
 
+  // 🌟 دالة الحذف الفردي
   const handleDeleteRequest = async (requestId: string) => {
     const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟\n\nتنبيه: سيتم إزالة الطلب وكأنه لم يكن.');
     if (!confirmDelete) return;
@@ -271,6 +263,7 @@ export default function RenewalsPage() {
       if (error) throw error;
       alert('تم حذف طلب التجديد بنجاح 🗑️✅');
       setApprovalModal({ isOpen: false, type: 'single' });
+      setSelectedIds(prev => prev.filter(id => id !== requestId));
       await refreshGlobalData();
       await fetchRequests();
     } catch (err: any) {
@@ -280,9 +273,30 @@ export default function RenewalsPage() {
     }
   };
 
+  // 🌟 دالة الحذف المجمع للطلبات المتكررة أو الخاطئة
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    const confirmDelete = window.confirm(`هل أنت متأكد من حذف ${selectedIds.length} طلب تجديد نهائياً؟`);
+    if (!confirmDelete) return;
+
+    setActionLoading(true);
+    try {
+      const { error } = await supabase.from('renewal_requests').delete().in('request_id', selectedIds);
+      if (error) throw error;
+      alert('تم حذف الطلبات بنجاح 🗑️✅');
+      setSelectedIds([]);
+      await refreshGlobalData();
+      await fetchRequests();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء الحذف المجمع: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleReject = async (requestId: string) => {
     const reason = window.prompt("سبب الرفض (اختياري):", "");
-    if (reason === null) return; // المستخدم ضغط إلغاء
+    if (reason === null) return; 
     
     setActionLoading(true);
     const { error } = await supabase.from('renewal_requests').update({
@@ -350,7 +364,6 @@ export default function RenewalsPage() {
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       
-      {/* 🌟 تصميم Enterprise Cards للتبويبات */}
       <style>{`
         .modern-stat-card {
           background: #ffffff;
@@ -393,13 +406,20 @@ export default function RenewalsPage() {
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>دورة الاعتماد الإداري المتدرج للموافقة على تجديد العقود</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {/* 🌟 زراير الاعتماد المجمع والحذف المجمع للطلبات قيد المعالجة */}
           {(activeTab === 'Pending_Project' || activeTab === 'Pending_General') && (
-            <button onClick={() => {
-              if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
-              setApprovalModal({ isOpen: true, type: 'bulk' });
-            }} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              ✅ اعتماد مجمع ({selectedIds.length})
-            </button>
+            <>
+              <button onClick={() => {
+                if (selectedIds.length === 0) return alert('يرجى تحديد طلب واحد على الأقل من الجدول.');
+                setApprovalModal({ isOpen: true, type: 'bulk' });
+              }} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                ✅ اعتماد مجمع ({selectedIds.length})
+              </button>
+              
+              <button onClick={handleBulkDelete} disabled={selectedIds.length === 0 || actionLoading} style={{ background: '#ffffff', color: '#ef4444', border: '1px solid #fecaca', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: selectedIds.length === 0 ? 'not-allowed' : 'pointer', opacity: selectedIds.length === 0 ? 0.5 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                🗑️ حذف مجمع ({selectedIds.length})
+              </button>
+            </>
           )}
 
           {activeTab === 'Approved' && (
@@ -469,7 +489,7 @@ export default function RenewalsPage() {
         </div>
       </div>
 
-      {/* 🌟 شريط الفلاتر والبحث */}
+      {/* شريط الفلاتر والبحث */}
       <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="text" placeholder="بحث بالاسم، الطلب، الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', width: '220px', fontWeight: 'bold' }} />
@@ -544,10 +564,13 @@ export default function RenewalsPage() {
                       {req.status === 'Rejected' && <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', border: '1px solid #fecaca' }}>❌ مرفوض</span>}
                     </td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
+                      {/* 🌟 إضافة زر الحذف هنا للطلبات التي لم تعتمد نهائياً */}
                       {(req.status === 'Pending_Project_Manager' || req.status === 'Pending' || req.status === 'Pending_General_Manager') ? (
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                          <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: '#10b981', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
-                          <button onClick={() => handleReject(req.request_id)} style={{ background: '#ef4444', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
+                          <button onClick={() => { setApprovalModal({ isOpen: true, type: 'single', req }); setConfirmedMonths(req.renewal_months || 12); }} style={{ background: '#10b981', color: '#fff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>اعتماد ✅</button>
+                          <button onClick={() => handleReject(req.request_id)} style={{ background: '#ef4444', color: '#fff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>رفض ❌</button>
+                          {/* 🌟 زر الحذف الفردي للمتكررات */}
+                          <button onClick={() => handleDeleteRequest(req.request_id)} title="حذف الطلب نهائياً" style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>🗑️</button>
                         </div>
                       ) : (
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
@@ -582,7 +605,7 @@ export default function RenewalsPage() {
                 {activeTab === 'Pending_Project' ? 'انت على وشك الموافقة المبدئية وتمرير الطلب للإدارة العامة.' : 'انت على وشك الاعتماد النهائي. سيتم تحديث تواريخ العقد فوراً وإرساله للتوقيع.'}
               </p>
               
-              {/* 🌟 مدخلات التواريخ للمراجعة والتعديل (مع حماية السن) */}
+              {/* مدخلات التواريخ للمراجعة والتعديل */}
               {approvalModal.type === 'single' && approvalModal.req && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 'bold' }}>
