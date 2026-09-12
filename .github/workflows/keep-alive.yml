@@ -1,0 +1,15 @@
+name: Supabase Keep-Alive Cron
+
+on:
+  schedule:
+    # يشتغل تلقائياً مرتين يومياً (الساعة 12 ظهراً والساعة 12 منتصف الليل)
+    - cron: '0 0,12 * * *'
+  workflow_dispatch: # يتيح لك تشغيله يدوياً من GitHub للتجربة في أي وقت
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Keep-Alive Ping
+        run: |
+          curl -s "https://YOUR-APP-URL.vercel.app/api/keep-alive"
