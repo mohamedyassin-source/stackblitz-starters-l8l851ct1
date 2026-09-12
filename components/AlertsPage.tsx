@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -7,35 +8,55 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// دالة حساب تاريخ التقاعد (60 سنة)
+const getRetirementDate = (birthDateRaw: string | null | undefined) => {
+  if (!birthDateRaw) return null;
+  const birthDate = new Date(birthDateRaw);
+  if (isNaN(birthDate.getTime())) return null;
+  return new Date(birthDate.getFullYear() + 60, birthDate.getMonth(), birthDate.getDate());
+};
+
 export default function AlertsPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [renewals, setRenewals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // مستويات التنبيه المحددة
-  const [severityTab, setSeverityTab] = useState<'all' | 'critical' | 'warning' | 'notice' | 'info'>('critical');
+  // مستويات التنبيه المحددة (تم إضافة فلتر المعاش)
+  const [severityTab, setSeverityTab] = useState<'all' | 'critical' | 'warning' | 'notice' | 'retirement'>('critical');
 
   // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
 
-  // 🌟 جلب البيانات مباشرة من Supabase
+  // 🌟 دالة السحب التكرارية (لتخطي حد الـ 1000 صف)
+  const fetchAllRows = async (tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) => {
+    let allRows: any[] = [];
+    let from = 0;
+    const step = 1000;
+    while (true) {
+      let query = supabase.from(tableName).select(selectFields).range(from, from + step - 1);
+      if (filterEq) query = query.eq(filterEq.col, filterEq.val);
+      const { data, error } = await query;
+      if (error || !data || data.length === 0) break;
+      allRows = [...allRows, ...data];
+      if (data.length < step) break;
+      from += step;
+    }
+    return allRows;
+  };
+
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      // جلب الموظفين والعقود بالتوازي لسرعة أكبر
-      const [empResponse, renResponse] = await Promise.all([
-        supabase.from('employees').select('*'),
-        supabase.from('renewals').select('*')
+      const [empData, renData] = await Promise.all([
+        fetchAllRows('employees'),
+        fetchAllRows('renewal_requests') // تم تصحيح اسم الجدول بناءً على التحديثات السابقة
       ]);
 
-      if (empResponse.error) throw empResponse.error;
-      if (renResponse.error) throw renResponse.error;
-
-      setEmployees(empResponse.data || []);
-      setRenewals(renResponse.data || []);
+      setEmployees(empData.filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد'));
+      setRenewals(renData || []);
     } catch (err) {
       console.error('Error fetching data from Supabase:', err);
     } finally {
@@ -47,48 +68,63 @@ export default function AlertsPage() {
     fetchAllData();
   }, []);
 
-  const getDaysRemaining = (endDateStr: string) => {
-    if (!endDateStr) return null;
-    const end = new Date(endDateStr);
+  const getDaysRemaining = (dateStr: string | Date | null) => {
+    if (!dateStr) return null;
+    const end = new Date(dateStr);
     if (isNaN(end.getTime())) return null;
     const today = new Date();
+    today.setHours(0, 0, 0, 0);
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
 
-  // معالجة قائمة التنبيهات وتصنيف درجات الخطورة
+  // 🌟 معالجة قائمة التنبيهات بذكاء
   const alertItems = useMemo(() => {
     return employees
       .filter((e) => e.contract_type !== 'دائم' && !String(e.job_title).includes('دائم'))
       .map(emp => {
         const days = getDaysRemaining(emp.contract_end_date);
+        
+        // حساب أيام التقاعد
+        const retirementDate = getRetirementDate(emp.birth_date);
+        const daysToRetirement = getDaysRemaining(retirementDate);
+        const isRetiringSoon = daysToRetirement !== null && daysToRetirement <= 90 && daysToRetirement >= 0;
+
+        const safeCode = String(emp.employee_code).trim().replace(/^0+/, '');
         const empRens = renewals
-          .filter(r => String(r.employee_code) === String(emp.employee_code))
+          .filter(r => String(r.employee_code).trim().replace(/^0+/, '') === safeCode)
           .sort((a, b) => (b.request_id || '').localeCompare(a.request_id || ''));
+        
         const latestRenewal = empRens[0];
 
-        let level: 'critical' | 'warning' | 'notice' | 'info' | 'safe' = 'info';
-        if (days !== null) {
+        let level: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
+        
+        if (isRetiringSoon) {
+          level = 'retirement';
+        } else if (days !== null) {
           if (days < 0) level = 'critical';
           else if (days <= 30) level = 'warning';
-          else if (days <= 60) level = 'notice';
-          else if (days <= 90) level = 'info';
-          else level = 'safe';
+          else if (days <= 90) level = 'notice';
         }
 
         return {
           ...emp,
           daysRemaining: days,
+          daysToRetirement: daysToRetirement,
+          retirementDateStr: retirementDate ? retirementDate.toISOString().split('T')[0] : null,
           alertLevel: level,
-          hasActiveRequest: !!latestRenewal && (latestRenewal.status === 'Pending' || latestRenewal.status === 'Approved'),
+          hasActiveRequest: !!latestRenewal && !latestRenewal.status.includes('Rejected') && !latestRenewal.signature_status.includes('تم التوقيع'),
           requestStatus: latestRenewal?.status || 'لا يوجد',
-          signatureStatus: latestRenewal?.signature_status || '—'
         };
       })
-      .filter(item => item.daysRemaining !== null && item.daysRemaining <= 90) 
-      .sort((a, b) => (a.daysRemaining ?? 999) - (b.daysRemaining ?? 999));
+      .filter(item => item.alertLevel !== 'safe') // إخفاء الآمنين تماماً 
+      .sort((a, b) => {
+        if (a.alertLevel === 'critical' && b.alertLevel !== 'critical') return -1;
+        if (b.alertLevel === 'critical' && a.alertLevel !== 'critical') return 1;
+        return (a.daysRemaining ?? 999) - (b.daysRemaining ?? 999);
+      });
   }, [employees, renewals]);
 
   // تطبيق الفلاتر والتبويبات
@@ -110,37 +146,53 @@ export default function AlertsPage() {
       critical: alertItems.filter(i => i.alertLevel === 'critical').length,
       warning: alertItems.filter(i => i.alertLevel === 'warning').length,
       notice: alertItems.filter(i => i.alertLevel === 'notice').length,
-      info: alertItems.filter(i => i.alertLevel === 'info').length,
+      retirement: alertItems.filter(i => i.alertLevel === 'retirement').length,
       all: alertItems.length
     };
   }, [alertItems]);
 
-  // 🌟 إنشاء طلب سريع مباشرة على Supabase بدون API
+  // 🌟 دالة إنشاء طلب سريع (مربوطة بالـ Workflow الجديد وحماية المعاش)
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     try {
+      // 🛑 جدار حماية سن التقاعد 🛑
+      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365) {
+        alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده.`);
+        setActionLoading(false);
+        return;
+      }
+
       const currentYear = new Date().getFullYear();
       const reqId = `RR-${currentYear}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      const { error } = await supabase
-        .from('renewals')
-        .insert([{
-          request_id: reqId,
-          employee_code: parseInt(emp.employee_code, 10),
-          employee_name: emp.employee_name,
-          department: emp.department,
-          job_title: emp.job_title,
-          company: emp.company,
-          contract_end_date: emp.contract_end_date ? new Date(emp.contract_end_date).toISOString() : null,
-          status: 'Pending',
-          signature_status: 'قيد التوقيع',
-          request_date: new Date().toISOString(),
-        }]);
+      // حساب تاريخ النهاية الافتراضي (سنة واحدة)
+      const startDate = new Date(emp.contract_end_date || new Date());
+      startDate.setDate(startDate.getDate() + 1);
+      const endDate = new Date(startDate);
+      endDate.setFullYear(endDate.getFullYear() + 1);
+      endDate.setDate(endDate.getDate() - 1);
+
+      const payload = {
+        request_id: reqId,
+        employee_code: parseInt(emp.employee_code, 10),
+        employee_name: emp.employee_name,
+        department: emp.department,
+        job_title: emp.job_title,
+        company: emp.company,
+        contract_end_date: emp.contract_end_date,
+        new_contract_end_date: endDate.toISOString().split('T')[0],
+        renewal_months: 12,
+        status: 'Pending_Project_Manager', // يذهب للمرحلة الأولى في الدورة الجديدة
+        signature_status: 'قيد التوقيع',
+        request_date: new Date().toISOString().split('T')[0],
+      };
+
+      const { error } = await supabase.from('renewal_requests').insert([payload]);
 
       if (error) throw error;
 
-      alert(`تم إنشاء الطلب ${reqId} بنجاح ✅`);
-      fetchAllData(); // تحديث الواجهة
+      alert(`تم تحويل الموظف بنجاح إلى دورة الاعتماد ✅`);
+      fetchAllData(); 
     } catch (error: any) {
       console.error(error);
       alert('خطأ أثناء إنشاء الطلب: ' + error.message);
@@ -150,16 +202,53 @@ export default function AlertsPage() {
   };
 
   return (
-    <div>
+    <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
+      
+      {/* 🌟 تصميم Enterprise Cards */}
+      <style>{`
+        .modern-stat-card {
+          background: #ffffff;
+          border-radius: 8px;
+          border: 1px solid #e2e8f0;
+          border-right: 4px solid var(--theme-color);
+          border-bottom: 4px solid var(--theme-color);
+          padding: 16px;
+          cursor: pointer;
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          min-height: 90px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        }
+        .modern-stat-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 15px -3px rgba(0,0,0,0.08);
+          background: #f8fafc;
+        }
+        .modern-stat-card.active {
+          background: #f8fafc;
+          border-color: var(--theme-color);
+          box-shadow: 0 0 0 1px var(--theme-color) inset;
+        }
+        .card-icon-box {
+          width: 32px; height: 32px;
+          border-radius: 6px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 16px;
+          background: var(--icon-bg);
+          color: var(--theme-color);
+        }
+      `}</style>
+
       {/* العنوان الرئيسي والأزرار */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '15px', color: 'var(--navy-950)' }}>مركزي تنبيهات وإشعارات العقود (Supabase)</h3>
-          <p style={{ margin: '2px 0 0', fontSize: '10px', color: 'var(--muted)' }}>رصد وتتبع العقود المستحقة للإنهاء أو التجديد لتجنب المخاطر القانونية</p>
+          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>🚨 غرفة العمليات والتنبيهات </h3>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>رصد المخاطر القانونية، التجاوزات الزمنية، وتنبيهات سن التقاعد</p>
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
-          {/* إرسال الإيميل يجب أن يظل API لسرية بيانات الـ SMTP */}
           <button onClick={async () => {
               setActionLoading(true);
               try {
@@ -167,133 +256,171 @@ export default function AlertsPage() {
                   const data = await res.json();
                   alert(data.message || 'تم الإرسال');
               } catch (err) {
-                  alert('حدث خطأ في الإرسال');
+                  alert('حدث خطأ في إرسال البريد');
               }
               setActionLoading(false);
-          }} disabled={actionLoading} style={{ background: 'var(--stamp-green)', color: '#fff', border: 0, padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1 }}>
-              {actionLoading ? 'جاري الإرسال...' : '📧 إرسال التقرير للإيميل الآن'}
+          }} disabled={actionLoading} style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+              {actionLoading ? 'جاري الإرسال...' : '📧 إرسال تقرير الخطر للإدارة'}
           </button>
 
-          <button onClick={fetchAllData} disabled={actionLoading} style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>
-            🔄 تحديث التنبيهات
+          <button onClick={fetchAllData} disabled={actionLoading} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+            🔄 فحص السجلات الآن
           </button>
         </div>
       </div>
 
-      {/* تبويبات درجات الخطورة */}
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-        <button onClick={() => setSeverityTab('critical')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: severityTab === 'critical' ? '2px solid var(--stamp-red)' : '1px solid var(--line)', background: severityTab === 'critical' ? 'var(--stamp-red-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: 'var(--stamp-red)', fontWeight: 'bold' }}>🔴 منتهية بالفعل</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-red)', marginTop: '4px' }}>{counts.critical}</div>
-        </button>
+      {/* 🗂️ كروت درجات الخطورة (Enterprise Design) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
+        
+        <div className={`modern-stat-card ${severityTab === 'critical' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setSeverityTab('critical')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>خطر قانوني (منتهية)</span>
+            <div className="card-icon-box">🔴</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.critical}</div>
+            <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 'bold' }}>تجاوزت التاريخ</div>
+          </div>
+        </div>
 
-        <button onClick={() => setSeverityTab('warning')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: severityTab === 'warning' ? '2px solid var(--stamp-amber)' : '1px solid var(--line)', background: severityTab === 'warning' ? 'var(--stamp-amber-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>🟠 حرج (أقل من 30 يوماً)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '4px' }}>{counts.warning}</div>
-        </button>
+        <div className={`modern-stat-card ${severityTab === 'warning' ? 'active' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setSeverityTab('warning')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>حرج جداً</span>
+            <div className="card-icon-box">🟠</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.warning}</div>
+            <div style={{ fontSize: '11px', color: '#f97316', fontWeight: 'bold' }}>أقل من 30 يوم</div>
+          </div>
+        </div>
 
-        <button onClick={() => setSeverityTab('notice')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: severityTab === 'notice' ? '2px solid var(--stamp-amber)' : '1px solid var(--line)', background: severityTab === 'notice' ? 'var(--stamp-amber-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: 'var(--stamp-amber)', fontWeight: 'bold' }}>🟡 تنبيه (31 - 60 يوماً)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-amber)', marginTop: '4px' }}>{counts.notice}</div>
-        </button>
+        <div className={`modern-stat-card ${severityTab === 'notice' ? 'active' : ''}`} style={{ '--theme-color': '#f59e0b', '--icon-bg': '#fffbeb' } as React.CSSProperties} onClick={() => setSeverityTab('notice')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>إنذار قياسي</span>
+            <div className="card-icon-box">🟡</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.notice}</div>
+            <div style={{ fontSize: '11px', color: '#f59e0b', fontWeight: 'bold' }}>أقل من 90 يوم</div>
+          </div>
+        </div>
 
-        <button onClick={() => setSeverityTab('info')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: severityTab === 'info' ? '2px solid var(--stamp-blue)' : '1px solid var(--line)', background: severityTab === 'info' ? 'var(--stamp-blue-bg)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: 'var(--stamp-blue)', fontWeight: 'bold' }}>🔵 إشعار مبكر (61 - 90 يوماً)</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--stamp-blue)', marginTop: '4px' }}>{counts.info}</div>
-        </button>
+        <div className={`modern-stat-card ${severityTab === 'retirement' ? 'active' : ''}`} style={{ '--theme-color': '#8b5cf6', '--icon-bg': '#f3e8ff' } as React.CSSProperties} onClick={() => setSeverityTab('retirement')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>رادار المعاشات (60)</span>
+            <div className="card-icon-box">👴</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.retirement}</div>
+            <div style={{ fontSize: '11px', color: '#8b5cf6', fontWeight: 'bold' }}>يبلغون السن قريباً</div>
+          </div>
+        </div>
 
-        <button onClick={() => setSeverityTab('all')} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: severityTab === 'all' ? '2px solid var(--navy-950)' : '1px solid var(--line)', background: severityTab === 'all' ? 'var(--paper)' : 'var(--paper-card)', cursor: 'pointer', textAlign: 'center' }}>
-          <div style={{ fontSize: '11px', color: 'var(--navy-950)', fontWeight: 'bold' }}>📂 كافة التنبيهات</div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: 'var(--navy-950)', marginTop: '4px' }}>{counts.all}</div>
-        </button>
+        <div className={`modern-stat-card ${severityTab === 'all' ? 'active' : ''}`} style={{ '--theme-color': '#475569', '--icon-bg': '#f1f5f9' } as React.CSSProperties} onClick={() => setSeverityTab('all')}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>صندوق التنبيهات</span>
+            <div className="card-icon-box">📂</div>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.all}</div>
+            <div style={{ fontSize: '11px', color: '#475569', fontWeight: 'bold' }}>كافة المخاطر</div>
+          </div>
+        </div>
       </div>
 
       {/* شريط الفلاتر */}
-      <div style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', padding: '10px 12px', borderRadius: '8px', marginBottom: '12px', display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
-        <input type="text" placeholder="بحث باسم الموظف أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none', width: '220px' }} />
+      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
+        <input type="text" placeholder="بحث باسم الموظف أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '220px', fontWeight: 'bold' }} />
 
-        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none' }}>
+        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
           <option value="">🏢 كل الشركات</option>
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '6px 10px', borderRadius: '6px', border: '1px solid var(--line)', fontSize: '10px', outline: 'none' }}>
+        <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
           <option value="">💼 كل الإدارات</option>
           {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
         </select>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); }} style={{ background: 'var(--paper)', border: '1px solid var(--line)', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
+        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
+          إعادة ضبط
+        </button>
         
-        <div style={{ flex: 1, textAlign: 'left', fontSize: '10px', color: 'var(--muted)', fontWeight: 'bold' }}>
-          عدد التنبيهات المعروضة: <span style={{ color: 'var(--navy-950)' }}>{filteredAlerts.length}</span> تنبيه
+        <div style={{ flex: 1, textAlign: 'left', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>
+          تنبيهات بالقائمة: <span style={{ color: '#4f46e5' }}>{filteredAlerts.length}</span>
         </div>
       </div>
 
-      {/* جدول التنبيهات الإجرائي */}
-      <div className="table-responsive" style={{ background: 'var(--paper-card)', border: '1px solid var(--line)', borderRadius: '8px', overflowX: 'auto' }}>
+      {/* 🚀 جدول التنبيهات الإجرائي */}
+      <div className="table-responsive" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
-          <div style={{ padding: '40px', textAlign: 'center', fontSize: '11px', fontWeight: 'bold', color: 'var(--muted)' }}>جاري جلب وتصنيف التنبيهات من قاعدة بيانات Supabase...</div>
+          <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري فحص السجلات وتحليل البيانات... ⏳</div>
         ) : (
-          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '10.5px', whiteSpace: 'nowrap' }}>
-            <thead>
+          <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
               <tr>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>مستوى الخطورة</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الكود</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الموظف</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الشركة</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>الإدارة</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>تاريخ الانتهاء</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>المتبقي</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)' }}>حالة الإجراء الحالية</th>
-                <th style={{ padding: '10px', background: 'var(--paper)', borderBottom: '1px solid var(--line)', color: 'var(--muted)', textAlign: 'center' }}>إجراء عاجل</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الخطر</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الكود</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الموظف</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الإدارة</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>انتهاء العقد</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>الإنذار الزمني</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>حالة الإجراء</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>قرار الـ HR</th>
               </tr>
             </thead>
             <tbody>
               {filteredAlerts.length === 0 ? (
-                <tr><td colSpan={9} style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)', fontWeight: 'bold' }}>لا توجد تنبيهات في هذا التصنيف حالياً. 🎉</td></tr>
+                <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>لا توجد مخاطر أو تنبيهات.. وضع السجلات ممتاز! 🎉</td></tr>
               ) : (
                 filteredAlerts.map(item => (
-                  <tr key={item.employee_code} style={{ borderBottom: '1px solid var(--line)' }}>
-                    <td style={{ padding: '8px 10px' }}>
-                      {item.alertLevel === 'critical' && <span style={{ background: 'var(--stamp-red-bg)', color: 'var(--stamp-red)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🔴 منتهي</span>}
-                      {item.alertLevel === 'warning' && <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🟠 حرج (30 يوم)</span>}
-                      {item.alertLevel === 'notice' && <span style={{ background: 'var(--stamp-amber-bg)', color: 'var(--stamp-amber)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🟡 تنبيه (60 يوم)</span>}
-                      {item.alertLevel === 'info' && <span style={{ background: 'var(--stamp-blue-bg)', color: 'var(--stamp-blue)', padding: '3px 8px', borderRadius: '4px', fontSize: '9px', fontWeight: 'bold' }}>🔵 مبكر (90 يوم)</span>}
-                    </td>
-
-                    <td style={{ padding: '8px 10px', fontWeight: 'bold', fontFamily: 'monospace', color: 'var(--brass-600)' }}>{item.employee_code}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 'bold' }}>{item.employee_name}</td>
-                    <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{item.company || '—'}</td>
-                    <td style={{ padding: '8px 10px', color: 'var(--muted)' }}>{item.department || '—'}</td>
-                    <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.contract_end_date || '—'}</td>
+                  <tr key={item.employee_code} style={{ borderBottom: '1px solid #f1f5f9', background: item.alertLevel === 'critical' ? '#fef2f2' : 'transparent' }}>
                     
-                    <td style={{ padding: '8px 10px' }}>
-                      <span style={{ fontWeight: 'bold', color: item.daysRemaining < 0 ? 'var(--stamp-red)' : item.daysRemaining <= 30 ? 'var(--stamp-amber)' : 'var(--stamp-green)' }}>
-                        {item.daysRemaining < 0 ? `منتهي منذ ${Math.abs(item.daysRemaining)} يوم` : `${item.daysRemaining} يوم`}
-                      </span>
+                    <td style={{ padding: '12px' }}>
+                      {item.alertLevel === 'critical' && <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🔴 كارثي</span>}
+                      {item.alertLevel === 'warning' && <span style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🟠 حرج</span>}
+                      {item.alertLevel === 'notice' && <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🟡 تنبيه</span>}
+                      {item.alertLevel === 'retirement' && <span style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>👴 سن معاش</span>}
                     </td>
 
-                    <td style={{ padding: '8px 10px', fontWeight: 'bold', fontSize: '9px' }}>
-                      {item.hasActiveRequest ? (
-                        <span style={{ color: 'var(--stamp-blue)' }}>طلب جاري ({item.requestStatus})</span>
+                    <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace', color: '#4f46e5' }}>{item.employee_code}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{item.employee_name}</td>
+                    <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{item.department || '—'}</td>
+                    <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.contract_end_date || '—'}</td>
+                    
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      {item.alertLevel === 'retirement' ? (
+                        <span style={{ fontWeight: 'bold', color: '#7e22ce' }}>يبلغ 60 بعد {item.daysToRetirement} يوم</span>
                       ) : (
-                        <span style={{ color: 'var(--muted)' }}>يتطلب اتخاذ إجراء</span>
+                        <span style={{ fontWeight: 'bold', color: item.daysRemaining < 0 ? '#dc2626' : item.daysRemaining <= 30 ? '#ea580c' : '#10b981' }}>
+                          {item.daysRemaining < 0 ? `منتهي منذ ${Math.abs(item.daysRemaining)} يوم` : `متبقي ${item.daysRemaining} يوم`}
+                        </span>
                       )}
                     </td>
 
-                    <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
+                      {item.hasActiveRequest ? (
+                        <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>طلب جاري ⏳</span>
+                      ) : (
+                        <span style={{ background: '#f1f5f9', color: '#64748b', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>بدون إجراء ⚠️</span>
+                      )}
+                    </td>
+
+                    <td style={{ padding: '12px', textAlign: 'center' }}>
                       <button
                         onClick={() => handleQuickRenewal(item)}
                         disabled={item.hasActiveRequest || actionLoading}
                         style={{
-                          background: item.hasActiveRequest ? 'var(--line)' : 'var(--brass-600)',
-                          color: item.hasActiveRequest ? 'var(--muted)' : '#fff',
-                          border: 0, padding: '4px 10px', borderRadius: '4px',
-                          fontSize: '9px', fontWeight: 'bold',
-                          cursor: item.hasActiveRequest || actionLoading ? 'not-allowed' : 'pointer'
+                          background: item.hasActiveRequest ? '#f1f5f9' : '#4f46e5',
+                          color: item.hasActiveRequest ? '#94a3b8' : '#ffffff',
+                          border: item.hasActiveRequest ? '1px solid #cbd5e1' : 0, 
+                          padding: '6px 12px', borderRadius: '6px',
+                          fontSize: '10px', fontWeight: 'bold',
+                          cursor: item.hasActiveRequest || actionLoading ? 'not-allowed' : 'pointer',
+                          boxShadow: item.hasActiveRequest ? 'none' : '0 2px 4px rgba(79, 70, 229, 0.2)'
                         }}
                       >
-                        {item.hasActiveRequest ? 'الطلب متسجل بالفعل' : '+ إنتاج طلب تجديد'}
+                        {item.hasActiveRequest ? 'الطلب متسجل بالفعل' : 'إرسال لاعتماد الإدارة ⚡'}
                       </button>
                     </td>
 
