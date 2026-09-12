@@ -1,11 +1,7 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
 
-// تهيئة الاتصال بـ Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function AuditPage() {
   const [requests, setRequests] = useState<any[]>([]);
