@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 // تهيئة الاتصال بقاعدة بيانات Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
