@@ -117,7 +117,7 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    // 3. حساب الأرقام الإجمالية للكروت (قبل تطبيق تفاعل الكارت)
+    // 3. حساب الأرقام الإجمالية للكروت
     let totalFixed = 0, totalPerm = 0, totalAboveAge = 0, totalExpiringSoon = 0;
     const futureTurning60List: any[] = [];
     const turning60SoonList: any[] = [];
@@ -158,7 +158,7 @@ export default function DashboardPage() {
       }
     });
 
-    // 4. 🌟 فلترة الموظفين بناءً على الكارت المنقور عليه ليعكس الرسوم البيانية والجداول بالكامل
+    // 4. 🌟 فلترة الموظفين بناءً على الكارت المنقور عليه
     const kpiFilteredEmps = baseFilteredEmps.filter((emp) => {
       const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
@@ -173,10 +173,10 @@ export default function DashboardPage() {
       if (activeKpiFilter === 'expiring') return !type.includes('دائم') && days !== null && days >= 0 && days <= 60;
       if (activeKpiFilter === 'turning60') return ageInfo !== null && ageInfo.daysUntil60 >= 0 && ageInfo.daysUntil60 <= 60;
 
-      return true; // في حالة 'all'
+      return true;
     });
 
-    // 5. إعادة بناء الرسوم البيانية والجداول بناءً على المجموعات المفلترة بـ الكارت
+    // 5. بناء الرسوم البيانية والجداول
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
     const shortTermByDept: Record<string, any[]> = {};
@@ -195,7 +195,6 @@ export default function DashboardPage() {
 
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      // توزيع الشهور للسنوات القادمة
       if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
         if (!isNaN(endDate.getTime()) && endDate.getFullYear() === targetExpiryYear) {
@@ -212,7 +211,6 @@ export default function DashboardPage() {
         }
       }
 
-      // مهام عاجلة
       if (!type.includes('دائم')) {
         const days = getDaysRemaining(endDateStr);
         if (days !== null && days >= 0 && days <= 60) {
@@ -220,7 +218,6 @@ export default function DashboardPage() {
         }
       }
 
-      // العقود المؤقتة
       if (type.includes('محدد') && !type.includes('فوق السن')) {
         let isShort = false;
         let historyDesc = '';
@@ -335,7 +332,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🌟 الكروت السريعة المبتكرة المتفاعلة مع الصفحة أسفلها */}
+      {/* 🌟 الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px' }}>
           <KpiCard 
@@ -397,15 +394,19 @@ export default function DashboardPage() {
           />
         </div>
 
+        {/* 🎂 كارت المعاشات المحدث بفتح النافذة المنبثقة مباشرة */}
         <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px' }}>
           <KpiCard 
             loading={loading} 
             tone="red" 
             title="سيبلغون الـ 60 (60 يوم)" 
             value={dashboardData.turning60SoonCount} 
-            sub="جدولة التقاعد القادم 🎂" 
+            sub="عرض الجدول والنافذة 🎂" 
             icon="🎂" 
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'turning60' ? 'all' : 'turning60')} 
+            onClick={() => {
+              setActiveKpiFilter('turning60');
+              setShowAgeModal(true);
+            }} 
           />
         </div>
       </div>
@@ -546,7 +547,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🎂 نافذة بلوغ سن الـ 60 */}
+      {/* 🎂 نافذة بلوغ سن الـ 60 المنبثقة المحدثة */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -644,7 +645,7 @@ export default function DashboardPage() {
 
       {/* نافذة تفاصيل الشهر بالرسومات */}
       {selectedChartMonth && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', itemsCenter: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>
