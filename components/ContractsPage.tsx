@@ -676,7 +676,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🚀 الجدول الرئيسي */}
+      {/* 🚀 الجدول الرئيسي بعد ترتيب الأعمدة */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات العقود والطلبات... ⏳</div>
@@ -689,13 +689,13 @@ export default function ContractsPage() {
                 </th>
                 <th onClick={() => handleSort('employee_code')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
                 <th onClick={() => handleSort('employee_name')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الموظف {renderSortArrow('employee_name')}</th>
-                
-                {/* 🎂 رأس عمود السن */}
-                <th onClick={() => handleSort('age')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>السن {renderSortArrow('age')}</th>
-                
                 <th onClick={() => handleSort('department')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
                 <th onClick={() => handleSort('job_title')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                 <th onClick={() => handleSort('contract_type')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>النوع {renderSortArrow('contract_type')}</th>
+                
+                {/* 🎂 رأس عمود السن في مكانه الجديد (بعد النوع وقبل الانتهاء) */}
+                <th onClick={() => handleSort('age')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>السن {renderSortArrow('age')}</th>
+                
                 <th onClick={() => handleSort('contract_end_date')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الانتهاء {renderSortArrow('contract_end_date')}</th>
                 <th onClick={() => handleSort('days_left')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>المتبقي {renderSortArrow('days_left')}</th>
                 <th onClick={() => handleSort('req_status')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>حالة النموذج {renderSortArrow('req_status')}</th>
@@ -747,8 +747,13 @@ export default function ContractsPage() {
                       {emp.employee_name}
                       {isInactiveVisual && <span style={{ fontSize: '10px', color: '#ef4444', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px', marginRight: '6px', border: '1px solid #fca5a5' }}>مستبعد / موقوف</span>}
                     </td>
+                    <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empDept || '—'}</td>
+                    <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empJob || '—'}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
+                      {isTerminated ? 'إنهاء تعاقد' : empType}
+                    </td>
 
-                    {/* 🎂 خلايا عمود السن مع الـ Badges الذكية */}
+                    {/* 🎂 خلايا عمود السن في مكانها الجديد (بعد نوع العقد وقبل الانتهاء) */}
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
                       {age !== null ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
@@ -769,11 +774,6 @@ export default function ContractsPage() {
                       )}
                     </td>
 
-                    <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empDept || '—'}</td>
-                    <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empJob || '—'}</td>
-                    <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
-                      {isTerminated ? 'إنهاء تعاقد' : empType}
-                    </td>
                     <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace' }}>{emp.contract_end_date || '—'}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>{reqBadge}</td>
