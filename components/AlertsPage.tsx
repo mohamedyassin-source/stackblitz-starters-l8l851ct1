@@ -219,10 +219,11 @@ export default function AlertsPage() {
     }
   };
 
+  // 🌟 إرسال تقرير محدد برقم ونوع الكارت المختار حالياً
   const handleSendEmailReport = async () => {
     setActionLoading(true);
     try {
-      const res = await fetch('/api/cron');
+      const res = await fetch(`/api/cron?type=${severityTab}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message || 'فشل الاتصال بـ Cron API');
       alert(data.message || 'تم إرسال تقرير التنبيهات بنجاح ✅');
@@ -231,6 +232,15 @@ export default function AlertsPage() {
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const getButtonText = () => {
+    if (actionLoading) return 'جاري الإرسال...';
+    if (severityTab === 'critical') return `📧 إرسال تقرير الخطر القانوني (${counts.critical})`;
+    if (severityTab === 'warning') return `📧 إرسال تقرير التنبيه الحرج (${counts.warning})`;
+    if (severityTab === 'notice') return `📧 إرسال تقرير الإنذار القياسي (${counts.notice})`;
+    if (severityTab === 'retirement') return `📧 إرسال تقرير رادار المعاشات (${counts.retirement})`;
+    return `📧 إرسال التقرير المجمع للكل (${counts.all})`;
   };
 
   return (
@@ -284,7 +294,7 @@ export default function AlertsPage() {
             disabled={actionLoading} 
             style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
           >
-            {actionLoading ? 'جاري الإرسال...' : '📧 إرسال تقرير الخطر للإدارة'}
+            {getButtonText()}
           </button>
 
           <button onClick={fetchAllData} disabled={actionLoading} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
