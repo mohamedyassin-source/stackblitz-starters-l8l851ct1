@@ -18,7 +18,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tempUserData, setTempUserData] = useState<any>(null);
 
-  // 1. تسجيل الدخول المباشر من Supabase
+  // 1. تسجيل الدخول المباشر من جدول app_users
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = employeeCode.trim();
@@ -34,26 +34,16 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     try {
       const codeNumber = parseInt(cleanCode, 10);
 
-      // البحث عن المستخدم في جدول app_users أو users
-      let { data: users, error } = await supabase
+      // البحث عن المستخدم حصراً في جدول app_users
+      const { data: users, error } = await supabase
         .from('app_users')
         .select('*')
         .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
 
-      // تجربة البحث في جدول users لو لم يجد في app_users
-      if ((!users || users.length === 0) && !error) {
-        const res = await supabase
-          .from('users')
-          .select('*')
-          .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
-        users = res.data;
-        error = res.error;
-      }
-
       if (error) throw error;
 
       if (!users || users.length === 0) {
-        setErrorMsg('كود الموظف غير موجود في حسابات النظام.');
+        setErrorMsg('كود الموظف غير موجود في حسابات النظام (app_users).');
         setLoading(false);
         return;
       }
@@ -67,7 +57,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         return;
       }
 
-      // الإجبار على تغيير كلمة السر لو كانت "123" أو "123456"
+      // الإجبار على تغيير كلمة السر لو كانت افتراضية "123" أو "123456"
       if (password === '123' || password === '123456') {
         setTempUserData(user);
         setRequirePasswordChange(true);
@@ -96,19 +86,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     try {
       const codeNumber = parseInt(cleanCode, 10);
 
-      let { data: users, error } = await supabase
+      const { data: users, error } = await supabase
         .from('app_users')
         .select('*')
         .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
-
-      if (!users || users.length === 0) {
-        const res = await supabase
-          .from('users')
-          .select('*')
-          .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
-        users = res.data;
-        error = res.error;
-      }
 
       if (error) throw error;
 
@@ -125,7 +106,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
   };
 
-  // 3. حفظ كلمة السر الجديدة في Supabase
+  // 3. حفظ كلمة السر الجديدة في app_users
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
@@ -142,13 +123,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const idKey = tempUserData.user_id ? 'user_id' : 'id';
-      const table = tempUserData.user_id ? 'app_users' : 'users';
-
       const { error } = await supabase
-        .from(table)
+        .from('app_users')
         .update({ password: newPassword })
-        .eq(idKey, tempUserData[idKey]);
+        .eq('employee_code', tempUserData.employee_code);
 
       if (error) throw error;
 
@@ -193,7 +171,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || tempUserData?.username || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود (Supabase Direct)'}
+            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || tempUserData?.username || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود (app_users)'}
           </p>
         </div>
 
