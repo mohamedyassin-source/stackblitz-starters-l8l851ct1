@@ -44,7 +44,7 @@ export default function RenewalsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // حالات التبويبات المتطورة لمرحلتي الاعتماد
+  // حالات التبويبات لمرحلتي الاعتماد
   const [activeTab, setActiveTab] = useState<'All' | 'Pending_Project' | 'Pending_General' | 'Approved' | 'Rejected'>('Pending_Project');
 
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,6 +52,10 @@ export default function RenewalsPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedMonth, setSelectedMonth] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // 🔃 حالات الترتيب لجميع الأعمدة
+  const [sortColumn, setSortColumn] = useState<string>('days_left');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [approvalModal, setApprovalModal] = useState<{ isOpen: boolean, type: 'single' | 'bulk', req?: any }>({ isOpen: false, type: 'single' });
   const [confirmedMonths, setConfirmedMonths] = useState<number>(12);
@@ -76,14 +80,14 @@ export default function RenewalsPage() {
     }
   }, [approvalModal, confirmedMonths]);
 
-  // دالة السحب المتطورة: تجلب الطلبات وبيانات الموظف
+  // دالة السحب المتطورة
   const fetchRequests = async () => {
     setLoading(true);
     
     const { data: reqData, error: reqErr } = await supabase.from('renewal_requests').select('*');
     if (reqErr) console.error("Error fetching requests:", reqErr.message);
     
-    const { data: empData, error: empErr } = await supabase.from('employees').select('employee_code, birth_date, national_id');
+    const { data: empData, error: empErr } = await supabase.from('employees').select('employee_code, birth_date, national_id, job_title');
     if (empErr) console.error("Error fetching employees:", empErr.message);
 
     if (reqData && empData) {
@@ -91,6 +95,7 @@ export default function RenewalsPage() {
         const emp = empData.find(e => String(e.employee_code) === String(req.employee_code));
         return {
           ...req,
+          job_title: req.job_title || emp?.job_title || '—',
           birth_date: emp?.birth_date || null,
           national_id: emp?.national_id || null
         };
@@ -114,7 +119,7 @@ export default function RenewalsPage() {
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
   const compsList = Array.from(new Set(requests.map(r => r.company).filter(Boolean)));
 
-  // فلترة الطلبات بناءً على التبويب النشط
+  // فلترة الطلبات
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
       if (activeTab === 'Pending_Project' && req.status !== 'Pending_Project_Manager' && req.status !== 'Pending') return false;
@@ -123,7 +128,12 @@ export default function RenewalsPage() {
       if (activeTab === 'Rejected' && req.status !== 'Rejected') return false;
 
       const term = searchTerm.toLowerCase();
-      const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
+      const matchesSearch = !term || 
+        String(req.employee_code).toLowerCase().includes(term) || 
+        String(req.employee_name).toLowerCase().includes(term) || 
+        String(req.request_id).toLowerCase().includes(term) ||
+        String(req.job_title).toLowerCase().includes(term);
+
       const matchesDept = !selectedDept || req.department === selectedDept;
       const matchesComp = !selectedCompany || req.company === selectedCompany;
       
@@ -137,13 +147,47 @@ export default function RenewalsPage() {
     });
   }, [requests, activeTab, searchTerm, selectedDept, selectedCompany, selectedMonth]);
 
-  const sortedRequests = [...filteredRequests].sort((a, b) => {
-    const daysA = getDaysRemaining(a.contract_end_date);
-    const daysB = getDaysRemaining(b.contract_end_date);
-    if (daysA === null) return 1; 
-    if (daysB === null) return -1;
-    return daysA - daysB; 
-  });
+  // 🔃 ترتيب الطلبات شامل لجميع الأعمدة
+  const sortedRequests = useMemo(() => {
+    return [...filteredRequests].sort((a, b) => {
+      if (!a) return 1;
+      if (!b) return -1;
+
+      let valA: any = a[sortColumn] || '';
+      let valB: any = b[sortColumn] || '';
+
+      if (sortColumn === 'days_left') {
+        valA = getDaysRemaining(a.contract_end_date) ?? (sortDirection === 'asc' ? 99999 : -99999);
+        valB = getDaysRemaining(b.contract_end_date) ?? (sortDirection === 'asc' ? 99999 : -99999);
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+
+      if (sortColumn === 'renewal_months') {
+        valA = Number(a.renewal_months || 12);
+        valB = Number(b.renewal_months || 12);
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+
+      const res = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+      return sortDirection === 'asc' ? res : -res;
+    });
+  }, [filteredRequests, sortColumn, sortDirection]);
+
+  // دالة تغيير اتجاه الترتيب
+  const handleSort = (col: string) => {
+    setSortDirection(sortColumn === col && sortDirection === 'asc' ? 'desc' : 'asc');
+    setSortColumn(col);
+  };
+
+  const renderSortArrow = (col: string) => (
+    sortColumn !== col ? (
+      <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>
+    ) : sortDirection === 'asc' ? (
+      <span style={{ color: '#3b82f6', marginRight: '4px' }}>▲</span>
+    ) : (
+      <span style={{ color: '#3b82f6', marginRight: '4px' }}>▼</span>
+    )
+  );
 
   // حسابات الكروت
   const countProj = requests.filter(r => r.status === 'Pending_Project_Manager' || r.status === 'Pending').length;
@@ -188,13 +232,10 @@ export default function RenewalsPage() {
         if (reqError) throw reqError;
 
         if (isGeneralStage) {
-          const { error: empError } = await supabase.from('employees').update({ 
+          await supabase.from('contracts').update({ 
             contract_start_date: newStartDate,
             contract_end_date: newEndDate 
-          }).eq('employee_code', req.employee_code);
-          if (empError) throw empError;
-          
-          await supabase.from('contracts').update({ contract_end_date: newEndDate }).eq('employee_code', req.employee_code).eq('status', 'Active');
+          }).eq('employee_code', req.employee_code).eq('status', 'Active');
         }
 
         alert(isProjectStage ? `تم اعتماد المشروع بنجاح ✅\nالطلب الآن بانتظار الإدارة العامة.` : `تم الاعتماد النهائي وتحديث العقد بنجاح ✅\nالطلب جاهز الآن بصفحة التوقيعات.`);
@@ -231,8 +272,10 @@ export default function RenewalsPage() {
           if (reqError) throw reqError;
 
           if (isGeneralStage && newEndDate && newStartDate) {
-            await supabase.from('employees').update({ contract_start_date: newStartDate, contract_end_date: newEndDate }).eq('employee_code', req.employee_code);
-            await supabase.from('contracts').update({ contract_end_date: newEndDate }).eq('employee_code', req.employee_code).eq('status', 'Active');
+            await supabase.from('contracts').update({ 
+              contract_start_date: newStartDate,
+              contract_end_date: newEndDate 
+            }).eq('employee_code', req.employee_code).eq('status', 'Active');
           }
         });
 
@@ -252,9 +295,8 @@ export default function RenewalsPage() {
     }
   };
 
-  // 🌟 دالة الحذف الفردي
   const handleDeleteRequest = async (requestId: string) => {
-    const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟\n\nتنبيه: سيتم إزالة الطلب وكأنه لم يكن.');
+    const confirmDelete = window.confirm('هل أنت متأكد من حذف هذا الطلب نهائياً من النظام؟');
     if (!confirmDelete) return;
 
     setActionLoading(true);
@@ -273,7 +315,6 @@ export default function RenewalsPage() {
     }
   };
 
-  // 🌟 دالة الحذف المجمع للطلبات المتكررة أو الخاطئة
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
     const confirmDelete = window.confirm(`هل أنت متأكد من حذف ${selectedIds.length} طلب تجديد نهائياً؟`);
@@ -491,7 +532,7 @@ export default function RenewalsPage() {
       {/* شريط الفلاتر والبحث */}
       <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="text" placeholder="بحث بالاسم، الطلب، الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', width: '220px', fontWeight: 'bold' }} />
+          <input type="text" placeholder="بحث بالاسم، الطلب، الكود، الوظيفة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', width: '220px', fontWeight: 'bold' }} />
           
           <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', width: '150px', fontWeight: 'bold' }} />
           <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
@@ -511,7 +552,7 @@ export default function RenewalsPage() {
         </div>
       </div>
 
-      {/* الجدول الرئيسي */}
+      {/* الجدول الرئيسي المحدث بجميع السورت وعمود الوظيفة */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل الطلبات وترتيبها...</div>
@@ -522,20 +563,24 @@ export default function RenewalsPage() {
                 <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', textAlign: 'center', width: '30px' }}>
                   <input type="checkbox" onChange={handleSelectAll} checked={selectedIds.length > 0 && selectedIds.length === sortedRequests.filter(r => r.status === activeTab || (activeTab === 'Pending_Project' && r.status === 'Pending')).length} disabled={activeTab === 'All' || activeTab === 'Rejected'} style={{ accentColor: '#4f46e5', cursor: 'pointer' }} />
                 </th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>رقم الطلب</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الكود</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الموظف</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الإدارة</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>انتهاء العقد</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>المتبقي</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>مدة التجديد</th>
-                <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>الاعتماد</th>
+                <th onClick={() => handleSort('request_id')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>رقم الطلب {renderSortArrow('request_id')}</th>
+                <th onClick={() => handleSort('employee_code')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
+                <th onClick={() => handleSort('employee_name')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الموظف {renderSortArrow('employee_name')}</th>
+                <th onClick={() => handleSort('department')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
+                
+                {/* 👔 عمود الوظيفة المضاف حديثاً مع السورت */}
+                <th onClick={() => handleSort('job_title')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
+                
+                <th onClick={() => handleSort('contract_end_date')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>انتهاء العقد {renderSortArrow('contract_end_date')}</th>
+                <th onClick={() => handleSort('days_left')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>المتبقي {renderSortArrow('days_left')}</th>
+                <th onClick={() => handleSort('renewal_months')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>مدة التجديد {renderSortArrow('renewal_months')}</th>
+                <th onClick={() => handleSort('status')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>الاعتماد {renderSortArrow('status')}</th>
                 <th style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>الإجراء</th>
               </tr>
             </thead>
             <tbody>
               {sortedRequests.length === 0 ? (
-                <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد طلبات في هذه المرحلة.</td></tr>
+                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد طلبات في هذه المرحلة.</td></tr>
               ) : sortedRequests.map((req) => {
                 const days = getDaysRemaining(req.contract_end_date);
                 return (
@@ -547,6 +592,10 @@ export default function RenewalsPage() {
                     <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace', color: '#4f46e5' }}>{req.employee_code}</td>
                     <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{req.employee_name}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{req.department || '—'}</td>
+                    
+                    {/* 👔 خلية الوظيفة */}
+                    <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{req.job_title || '—'}</td>
+
                     <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{req.contract_end_date || '—'}</td>
                     <td style={{ padding: '12px' }}>
                       {days !== null ? (
@@ -584,7 +633,7 @@ export default function RenewalsPage() {
         )}
       </div>
 
-      {/* 🚀 نافذة الاعتماد الذكية (مع جدار حماية السن) */}
+      {/* 🚀 نافذة الاعتماد الذكية */}
       {approvalModal.isOpen && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '480px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
