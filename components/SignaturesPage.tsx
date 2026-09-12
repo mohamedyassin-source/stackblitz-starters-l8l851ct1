@@ -1,8 +1,8 @@
-'use client';
+''use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { useAppData } from '@/lib/DataContext';
+
 
 // أسماء أيام الأسبوع بالعربي
 const ARABIC_WEEKDAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
