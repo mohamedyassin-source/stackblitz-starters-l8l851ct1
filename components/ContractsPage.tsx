@@ -62,6 +62,20 @@ export default function ContractsPage() {
   // 🌟 نافذة المتابعة
   const [workflowModal, setWorkflowModal] = useState<{ isOpen: boolean; emp?: any; req?: any }>({ isOpen: false });
 
+  // 🎂 دالة حساب العمر بالسنوات
+  const calculateAge = (birthDateRaw: string | null | undefined) => {
+    if (!birthDateRaw) return null;
+    const birthDate = new Date(birthDateRaw);
+    if (isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   useEffect(() => {
     if (expiryMonth) {
       setSortColumn('days_left');
@@ -150,7 +164,6 @@ export default function ContractsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // 🌟 تعديل مسميات الـ Workflow لتدعم المرحلتين
   const getRenewalStatusInfo = (empCode: string) => {
     if (!empCode) return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
     const empRens = renewals
@@ -210,14 +223,14 @@ export default function ContractsPage() {
 
       let matchesCard = true;
       if (activeFilterCard === 'fixed') matchesCard = empType.includes('محدد');
-      if (activeFilterCard === 'overage') matchesCard = empType.includes('فوق السن');
+      if (activeFilterCard === 'overage') matchesCard = empType.includes('فوق السن') || (calculateAge(emp.birth_date) ?? 0) >= 60;
       if (activeFilterCard === 'expiring') matchesCard = days !== null && days <= 60 && days >= 0;
       if (activeFilterCard === 'expired') matchesCard = days !== null && days < 0;
 
       let matchesReqStatus = true;
       if (selectedReqStatus) {
         if (selectedReqStatus === 'no_request') matchesReqStatus = reqInfo.text.includes('متاح');
-        else if (selectedReqStatus === 'pending') matchesReqStatus = reqInfo.text.includes('اعتماد'); // يشمل مرحلتي الاعتماد
+        else if (selectedReqStatus === 'pending') matchesReqStatus = reqInfo.text.includes('اعتماد');
         else if (selectedReqStatus === 'approved_not_signed') matchesReqStatus = reqInfo.text.includes('بانتظار التوقيع');
         else if (selectedReqStatus === 'signed') matchesReqStatus = reqInfo.text.includes('تم توقيع');
       }
@@ -233,6 +246,12 @@ export default function ContractsPage() {
       
       let valA: any = a[sortColumn] || '';
       let valB: any = b[sortColumn] || '';
+
+      if (sortColumn === 'age') {
+        valA = calculateAge(a.birth_date) ?? -1;
+        valB = calculateAge(b.birth_date) ?? -1;
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
 
       if (sortColumn === 'days_left') {
         valA = getDaysRemaining(a.contract_end_date) ?? (sortDirection === 'asc' ? 99999 : -99999);
@@ -268,7 +287,7 @@ export default function ContractsPage() {
   
   const totalAll = activeEmployees.length;
   const totalFixedContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('محدد')).length;
-  const overAgeContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('فوق السن')).length;
+  const overAgeContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('فوق السن') || (calculateAge(e.birth_date) ?? 0) >= 60).length;
   const expiringSoonCount = activeEmployees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
   const expiredCount = activeEmployees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d < 0; }).length;
 
@@ -293,12 +312,11 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 حاسبة سن التقاعد (60 سنة)
   const calculateRetirementDate = (birthDate: string | null | undefined) => {
     if (!birthDate) return null;
     const date = new Date(birthDate);
     if (isNaN(date.getTime())) return null;
-    date.setFullYear(date.getFullYear() + 60); // يضيف 60 سنة بالضبط
+    date.setFullYear(date.getFullYear() + 60);
     return date.toISOString().split('T')[0];
   };
   
@@ -347,12 +365,11 @@ export default function ContractsPage() {
       const emp = modalState.emp;
       const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
       
-      // 🌟 جدار الحماية: التحقق من بلوغ سن 60
       const retirementDateStr = calculateRetirementDate(emp.birth_date);
       if (retirementDateStr && new Date(targetEndDate) > new Date(retirementDateStr)) {
         alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\nتاريخ انتهاء العقد المقترح: ${targetEndDate}\n\nيُمنع النظام استكمال الطلب. يرجى اختيار "تاريخ انتهاء مخصص" بحيث لا يتجاوز تاريخ بلوغ السن أعلاه.`);
         setActionLoading(false);
-        return; // إيقاف العملية تماماً
+        return;
       }
 
       const [reqId] = generateSequentialIds(1);
@@ -368,7 +385,7 @@ export default function ContractsPage() {
         contract_end_date: emp.contract_end_date,
         new_contract_end_date: targetEndDate,
         renewal_months: renewalMode === 'months' ? renewalMonths : null,
-        status: 'Pending_Project_Manager', // 🌟 يذهب للمرحلة الأولى من الاعتماد
+        status: 'Pending_Project_Manager',
         signature_status: 'قيد التوقيع',
         request_date: new Date().toISOString().split('T')[0],
       };
@@ -379,7 +396,6 @@ export default function ContractsPage() {
     } else if (modalState.type === 'bulk') {
       const selectedEmps = employees.filter(e => e && selectedEmpCodes.includes(String(e.employee_code)));
       
-      // 🌟 جدار الحماية للمجموعة: استخراج الموظفين اللي هيتجاوزوا الـ 60
       const problematicEmps: string[] = [];
       selectedEmps.forEach(emp => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
@@ -392,7 +408,7 @@ export default function ContractsPage() {
       if (problematicEmps.length > 0) {
         alert(`🚨 توقف - يوجد موظفين سيتجاوزون سن التقاعد (60):\n\n${problematicEmps.join('\n')}\n\nيرجى إلغاء تحديدهم من القائمة، وتجديد عقودهم بشكل فردي بتاريخ لا يتجاوز سن تقاعدهم.`);
         setActionLoading(false);
-        return; // إيقاف التجديد المجمع تماماً
+        return;
       }
 
       const reqIds = generateSequentialIds(selectedEmps.length);
@@ -403,7 +419,7 @@ export default function ContractsPage() {
           department: emp.department, job_title: emp.job_title, company: emp.company,
           contract_end_date: emp.contract_end_date, new_contract_end_date: targetEndDate,
           renewal_months: renewalMode === 'months' ? renewalMonths : null, 
-          status: 'Pending_Project_Manager', // 🌟 يذهب للمرحلة الأولى
+          status: 'Pending_Project_Manager',
           signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0],
         };
       });
@@ -475,7 +491,6 @@ export default function ContractsPage() {
     setActionLoading(true);
     const emp = employees.find((e) => e && String(e.employee_code) === String(selectedEmployeeCode));
     
-    // 🌟 جدار الحماية: عند إنشاء عقد جديد
     const retirementDateStr = calculateRetirementDate(emp?.birth_date);
     if (retirementDateStr && new Date(newContractEndDate) > new Date(retirementDateStr)) {
       alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\n\nيُرجى تعديل "نهاية العقد" ليكون بحد أقصى تاريخ بلوغ السن.`);
@@ -493,14 +508,13 @@ export default function ContractsPage() {
 
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
-      {/* 🌟 تصميم Border Accent Cards */}
       <style>{`
         .modern-stat-card {
           background: #ffffff;
-          border-radius: 8px; /* مستطيل بحواف حادة نسبياً */
+          border-radius: 8px;
           border: 1px solid #e2e8f0;
-          border-right: 4px solid var(--theme-color); /* الخط الجانبي */
-          border-bottom: 4px solid var(--theme-color); /* الخط السفلي */
+          border-right: 4px solid var(--theme-color);
+          border-bottom: 4px solid var(--theme-color);
           padding: 16px;
           cursor: pointer;
           transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -535,7 +549,7 @@ export default function ContractsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>📄 العقود الحالية والسارية</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة شاملة لدورة حياة العقود وإنشاء نماذج التجديد</p>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة شاملة لدورة حياة العقود ومتابعة أعمار الموظفين وسن التقاعد</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <button onClick={() => { setTerminateEmployeeCode(''); setTermSearchTerm(''); setIsTerminateModalOpen(true); }} style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #fecaca', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>🚫 تحويل للانتظار</button>
@@ -543,7 +557,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 📊 الكروت العلوية بالتصميم المستطيل */}
+      {/* 📊 الكروت العلوية */}
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px' }}>
           
@@ -571,8 +585,8 @@ export default function ContractsPage() {
 
           <div className={`modern-stat-card ${activeFilterCard === 'overage' ? 'active' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setActiveFilterCard('overage')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>فوق السن</span>
-              <div className="card-icon-box">💼</div>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>فوق السن (60+)</span>
+              <div className="card-icon-box">👴</div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
               <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{overAgeContracts.toLocaleString()}</div>
@@ -675,6 +689,7 @@ export default function ContractsPage() {
                 </th>
                 <th onClick={() => handleSort('employee_code')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
                 <th onClick={() => handleSort('employee_name')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الموظف {renderSortArrow('employee_name')}</th>
+                <th onClick={() => handleSort('age')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>السن {renderSortArrow('age')}</th>
                 <th onClick={() => handleSort('department')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
                 <th onClick={() => handleSort('job_title')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                 <th onClick={() => handleSort('contract_type')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>النوع {renderSortArrow('contract_type')}</th>
@@ -686,7 +701,7 @@ export default function ContractsPage() {
             </thead>
             <tbody>
               {sortedContracts.length === 0 ? (
-                <tr><td colSpan={10} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد عقود مطابقة للبحث 🔍</td></tr>
+                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد عقود مطابقة للبحث 🔍</td></tr>
               ) : sortedContracts.map((emp) => {
                 const reqInfo = getRenewalStatusInfo(String(emp.employee_code || ''));
                 
@@ -701,7 +716,11 @@ export default function ContractsPage() {
                 const isInactiveVisual = isHiddenDept || isHiddenJob || isTerminated;
 
                 const daysLeft = getDaysRemaining(emp.contract_end_date);
-                
+                const age = calculateAge(emp.birth_date);
+                const isOverAgeContract = empType.includes('فوق السن');
+                const isAgeSixtyOrAbove = age !== null && age >= 60;
+                const isNearSixty = age !== null && age >= 59 && age < 60;
+
                 let remainingLabel = <span style={{ color: '#64748b' }}>—</span>;
                 if (daysLeft !== null) {
                   if (daysLeft < 0) remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>منتهي ({Math.abs(daysLeft)} يوم)</span>;
@@ -725,9 +744,33 @@ export default function ContractsPage() {
                       {emp.employee_name}
                       {isInactiveVisual && <span style={{ fontSize: '10px', color: '#ef4444', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px', marginRight: '6px', border: '1px solid #fca5a5' }}>مستبعد / موقوف</span>}
                     </td>
+
+                    {/* 🎂 عمود السن المعدل بالـ Badges التفاعلية */}
+                    <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
+                      {age !== null ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
+                          <span style={{ fontSize: '12px', color: '#0f172a', fontFamily: 'monospace' }}>{age} سنة</span>
+                          {(isOverAgeContract || isAgeSixtyOrAbove) && (
+                            <span style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5', padding: '2px 6px', borderRadius: '6px', fontSize: '9.5px', fontWeight: 'bold' }}>
+                              👴 فوق السن
+                            </span>
+                          )}
+                          {!isOverAgeContract && !isAgeSixtyOrAbove && isNearSixty && (
+                            <span style={{ background: '#eff6ff', color: '#2563eb', border: '1px solid #dbeafe', padding: '2px 6px', borderRadius: '6px', fontSize: '9.5px', fontWeight: 'bold' }}>
+                              ⏳ قريب من الـ 60
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>—</span>
+                      )}
+                    </td>
+
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empDept || '—'}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empJob || '—'}</td>
-                    <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>{isTerminated ? 'إنهاء تعاقد' : empType}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
+                      {isTerminated ? 'إنهاء تعاقد' : empType}
+                    </td>
                     <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace' }}>{emp.contract_end_date || '—'}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>{reqBadge}</td>
@@ -788,7 +831,7 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* باقي النوافذ (تجديد، إنشاء، تعديل، إنهاء) */}
+      {/* باقي النوافذ المنبثقة */}
       {modalState.isOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
           <div style={{ width: '500px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
