@@ -45,7 +45,6 @@ const getEmployeeAge = (emp: any) => {
   return age;
 };
 
-// 🌟 دالة حساب تاريخ التقاعد
 const getRetirementDate = (birthDateRaw: string | null) => {
   if (!birthDateRaw) return null;
   const birthDate = new Date(birthDateRaw);
@@ -60,47 +59,78 @@ export default function ReportsPage() {
 
   const [activeReport, setActiveReport] = useState<'monthly' | 'above_60' | 'dept_summary' | 'full_roster'>('monthly');
 
-  // الفلاتر الرئيسية
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedContractType, setSelectedContractType] = useState('');
 
-  // فلتر الإدارات
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
   const [deptSearchTerm, setDeptSearchTerm] = useState('');
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
 
-  // 🌟 جلب البيانات
+  // 🌟 دالة السحب التكرارية لتخطي حاجز 1000 صف
+  const fetchAllRows = async (tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) => {
+    let allRows: any[] = [];
+    let from = 0;
+    const step = 1000;
+    while (true) {
+      let query = supabase.from(tableName).select(selectFields).range(from, from + step - 1);
+      if (filterEq) query = query.eq(filterEq.col, filterEq.val);
+      const { data, error } = await query;
+      if (error || !data || data.length === 0) break;
+      allRows = [...allRows, ...data];
+      if (data.length < step) break;
+      from += step;
+    }
+    return allRows;
+  };
+
+  // 🌟 جلب البيانات وربطها بشكل صحيح
   useEffect(() => {
     async function fetchReportsData() {
       setLoading(true);
       try {
-        const [empRes, contRes, renRes] = await Promise.all([
-          supabase.from('employees').select('*'),
-          supabase.from('contracts').select('*').eq('status', 'Active'),
-          supabase.from('renewal_requests').select('*')
+        const [allEmps, allContracts, allRens] = await Promise.all([
+          fetchAllRows('employees'),
+          fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }), // نجلب العقود النشطة فقط
+          fetchAllRows('renewal_requests')
         ]);
 
-        if (empRes.error) throw empRes.error;
+        // تجميع العقود بناءً على كود الموظف (بعد إزالة الأصفار على اليسار)
+        const contractsMap = new Map<string, any[]>();
+        allContracts.forEach(c => {
+          if (!c) return;
+          const code = String(c.employee_code || '').trim().replace(/^0+/, '');
+          if (!contractsMap.has(code)) contractsMap.set(code, []);
+          contractsMap.get(code)?.push(c);
+        });
 
-        const mergedEmployees = (empRes.data || []).map(emp => {
-          const empContracts = (contRes.data || []).filter(c => String(c.employee_code) === String(emp.employee_code));
-          empContracts.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+        // دمج الموظفين مع عقودهم
+        const mergedEmployees = allEmps.filter(e => e).map(emp => {
+          const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
+          const empContracts = contractsMap.get(empCodeClean) || [];
+
+          // ترتيب العقود لمعرفة أحدث عقد
+          empContracts.sort((a, b) => {
+            const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
+            const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
+            return dateB - dateA; // تنازلي
+          });
+
           const activeContract = empContracts[0] || {};
           
           return {
             ...emp,
-            contract_type: activeContract.contract_type || emp.contract_type,
-            contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date,
-            contract_end_date: activeContract.contract_end_date || emp.contract_end_date,
+            contract_type: activeContract.contract_type || emp.contract_type || '—',
+            contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date || null,
+            contract_end_date: activeContract.contract_end_date || emp.contract_end_date || null,
           };
         });
 
         setEmployees(mergedEmployees);
-        setRenewals(renRes.data || []);
+        setRenewals(allRens.filter(r => r));
       } catch (err) {
         console.error('Error fetching reports data:', err);
       } finally {
@@ -120,12 +150,16 @@ export default function ReportsPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // 🌟 استخراج حالة إجراء التجديد للموظف
   const getActionStatus = (empCode: string) => {
     if (!empCode) return { text: 'بدون إجراء ⚠️', code: 'none', color: '#ef4444', bg: '#fef2f2', border: '#fecaca' };
+    
+    // توحيد الأكواد لضمان الربط الصحيح
+    const safeCode = String(empCode).trim().replace(/^0+/, '');
+    
     const empRens = renewals
-      .filter((r) => String(r.employee_code).trim() === String(empCode).trim())
+      .filter((r) => r && String(r.employee_code || '').trim().replace(/^0+/, '') === safeCode)
       .sort((a, b) => String(b.request_id).localeCompare(String(a.request_id)));
+    
     const latest = empRens[0];
     
     if (!latest || latest.status === 'Rejected') return { text: 'بدون إجراء ⚠️', code: 'none', color: '#ef4444', bg: '#fef2f2', border: '#fecaca' };
@@ -136,13 +170,12 @@ export default function ReportsPage() {
     return { text: 'بدون إجراء ⚠️', code: 'none', color: '#ef4444', bg: '#fef2f2', border: '#fecaca' };
   };
 
-  // استبعاد التحويلات والمستقيلين
   const activeEmployees = useMemo(() => {
     return employees.filter(e => {
-      const dept = String(getField(e, 'department', 'Department')).trim();
-      const status = String(getField(e, 'status', 'Status') || 'Active').trim().toLowerCase();
-      const type = String(getField(e, 'contract_type', 'ContractType')).trim();
-      const job = String(getField(e, 'job_title', '')).trim();
+      const dept = String(getField(e, 'department')).trim();
+      const status = String(getField(e, 'status') || 'Active').trim().toLowerCase();
+      const type = String(getField(e, 'contract_type')).trim();
+      const job = String(getField(e, 'job_title')).trim();
 
       const isTransfer = dept.includes('تحويل') || job.includes('ايقاف راتب');
       const isTerminated = type === 'إنهاء تعاقد' || status === 'inactive' || status === 'terminated';
@@ -151,30 +184,28 @@ export default function ReportsPage() {
     });
   }, [employees]);
 
-  const companiesList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [activeEmployees]);
-  const deptsList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'department', 'Department')).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ar')), [activeEmployees]);
-  const contractTypesList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'contract_type', 'ContractType')).filter(Boolean))), [activeEmployees]);
+  const companiesList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'company')).filter(Boolean))), [activeEmployees]);
+  const deptsList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'department')).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ar')), [activeEmployees]);
+  const contractTypesList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'contract_type')).filter(t => t && t !== '—'))), [activeEmployees]);
 
   const filteredDeptsList = useMemo(() => {
     if (!deptSearchTerm.trim()) return deptsList;
     return deptsList.filter(d => String(d).toLowerCase().includes(deptSearchTerm.toLowerCase().trim()));
   }, [deptsList, deptSearchTerm]);
 
-  // فلترة التقرير
   const reportData = useMemo(() => {
     return activeEmployees.filter(emp => {
-      const cType = getField(emp, 'contract_type', 'ContractType');
-      const endDateVal = getField(emp, 'contract_end_date', 'ContractEndDate');
-      const comp = getField(emp, 'company', 'Company');
-      const dept = getField(emp, 'department', 'Department');
-      const code = String(getField(emp, 'employee_code', 'EmployeeCode')).toLowerCase();
-      const name = String(getField(emp, 'employee_name', 'ArabicName', 'EmployeeName')).toLowerCase();
+      const cType = getField(emp, 'contract_type');
+      const endDateVal = getField(emp, 'contract_end_date');
+      const comp = getField(emp, 'company');
+      const dept = getField(emp, 'department');
+      const code = String(getField(emp, 'employee_code')).toLowerCase();
+      const name = String(getField(emp, 'employee_name')).toLowerCase();
       const age = getEmployeeAge(emp);
 
-      // فلتر التقرير المختار
       if (activeReport === 'monthly') {
         const endDate = endDateVal ? new Date(endDateVal) : null;
-        const retirementDate = getRetirementDate(getField(emp, 'birth_date', 'BirthDate'));
+        const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
 
         const matchesMonthYear = (d: Date | null) => {
           if (!d || isNaN(d.getTime())) return false;
@@ -186,7 +217,6 @@ export default function ReportsPage() {
         const isExpiringThisMonth = matchesMonthYear(endDate);
         const isTurning60ThisMonth = matchesMonthYear(retirementDate);
 
-        // إذا لم يكن عقده ينتهي في هذا الشهر ولم يكن سيبلغ 60 في هذا الشهر، يتم استبعاده
         if (!isExpiringThisMonth && !isTurning60ThisMonth) return false;
 
       } else if (activeReport === 'above_60') {
@@ -204,7 +234,6 @@ export default function ReportsPage() {
     });
   }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm]);
 
-  // 🌟 إحصائيات تقرير الشهر (الاستباقية)
   const monthlyStats = useMemo(() => {
     let totalExpirations = 0;
     let turning60 = 0;
@@ -230,12 +259,11 @@ export default function ReportsPage() {
     return { totalExpirations, turning60, actionTaken, noAction };
   }, [reportData, selectedMonth, selectedYear]);
 
-  // ملخص الإدارات
   const deptSummaryData = useMemo(() => {
     const summary: Record<string, { total: number; fixed: number; perm: number; above60: number }> = {};
     reportData.forEach(emp => {
-      const dept = getField(emp, 'department', 'Department') || 'غير محدد';
-      const cType = getField(emp, 'contract_type', 'ContractType');
+      const dept = getField(emp, 'department') || 'غير محدد';
+      const cType = getField(emp, 'contract_type');
       const age = getEmployeeAge(emp);
       if (!summary[dept]) summary[dept] = { total: 0, fixed: 0, perm: 0, above60: 0 };
       summary[dept].total += 1;
@@ -250,7 +278,6 @@ export default function ReportsPage() {
     setSelectedDepts(prev => prev.includes(deptName) ? prev.filter(d => d !== deptName) : [...prev, deptName]);
   };
 
-  // 🌟 التصدير التكتيكي لملف Excel
   const handleExportExcel = () => {
     if (reportData.length === 0) return alert('لا توجد بيانات للتصدير.');
 
@@ -264,7 +291,6 @@ export default function ReportsPage() {
         'فوق السن (60+)': d.above60,
       }));
     } else if (activeReport === 'monthly') {
-      // 🌟 التصدير التكتيكي للمديرين
       exportRows = reportData.map(e => {
         const actionStatus = getActionStatus(getField(e, 'employee_code')).text.replace(/[^أ-ي ]/g, '').trim();
         return {
@@ -275,7 +301,6 @@ export default function ReportsPage() {
           'نوع العقد الحالي': getField(e, 'contract_type'),
           'تاريخ انتهاء العقد': getField(e, 'contract_end_date') || '—',
           'حالة الإجراء بالـ HR': actionStatus,
-          // أعمدة فارغة للمديرين لملئها
           'توصية مدير الإدارة (يُجدد / لا يُجدد)': '',
           'المدة المقترحة للتجديد (شهور)': '',
           'تقييم الأداء العام': '',
@@ -296,8 +321,6 @@ export default function ReportsPage() {
     }
 
     const ws = XLSX.utils.json_to_sheet(exportRows);
-    
-    // تنسيق عرض الأعمدة في الإكسيل
     const colWidths = [
       { wch: 10 }, { wch: 25 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, 
       { wch: 30 }, { wch: 25 }, { wch: 20 }, { wch: 30 }
@@ -366,15 +389,15 @@ export default function ReportsPage() {
       <div className="no-print" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         <div className={`enterprise-stat-card ${activeReport === 'monthly' ? 'active' : ''}`} style={{ '--theme-color': '#2563eb' } as React.CSSProperties} onClick={() => setActiveReport('monthly')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>استحقاقات وتجديدات الشهر</span>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>استحقاقات الشهر</span>
             <span style={{ fontSize: '20px' }}>🗓️</span>
           </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>حسب بداية ونهاية العقود وإنذارات المعاش</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>حسب النهاية وإنذارات المعاش</div>
         </div>
 
         <div className={`enterprise-stat-card ${activeReport === 'above_60' ? 'active' : ''}`} style={{ '--theme-color': '#ea580c' } as React.CSSProperties} onClick={() => setActiveReport('above_60')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>العمالة فوق السن (60+)</span>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>فوق السن (60+)</span>
             <span style={{ fontSize: '20px' }}>💼</span>
           </div>
           <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>متابعة عقود المتقاعدين</div>
@@ -385,19 +408,19 @@ export default function ReportsPage() {
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>ملخص الإدارات</span>
             <span style={{ fontSize: '20px' }}>📊</span>
           </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>إحصائيات القوة مجمعة لكل إدارة</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>إحصائيات مجمعة لكل إدارة</div>
         </div>
 
         <div className={`enterprise-stat-card ${activeReport === 'full_roster' ? 'active' : ''}`} style={{ '--theme-color': '#475569' } as React.CSSProperties} onClick={() => setActiveReport('full_roster')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>السجل العام للقوة الحالية</span>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>السجل العام</span>
             <span style={{ fontSize: '20px' }}>📋</span>
           </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>كشف شامل لكافة الموظفين النشطين</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>كشف شامل للنشطين</div>
         </div>
       </div>
 
-      {/* 🌟 كروت مؤشرات الشهر الاستباقية (تظهر فقط في التقرير الشهري) */}
+      {/* 🌟 مؤشرات الشهر الاستباقية */}
       {activeReport === 'monthly' && (
         <div className="no-print" style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px', display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
@@ -405,15 +428,15 @@ export default function ReportsPage() {
             <span style={{ fontSize: '22px', fontWeight: '900', color: '#0f172a' }}>{monthlyStats.totalExpirations}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إنذار بلوغ سن (60) هذا الشهر</span>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إنذار بلوغ سن (60)</span>
             <span style={{ fontSize: '22px', fontWeight: '900', color: '#ea580c' }}>{monthlyStats.turning60} <span style={{fontSize:'12px'}}>🚨</span></span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', borderLeft: '1px solid #cbd5e1', paddingLeft: '20px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تمت المعالجة (تجديدات قيد التنفيذ)</span>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تمت المعالجة (الـ HR)</span>
             <span style={{ fontSize: '22px', fontWeight: '900', color: '#10b981' }}>{monthlyStats.actionTaken}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>متأخرات (بدون إجراء حتى الآن)</span>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>متأخرات (بدون إجراء)</span>
             <span style={{ fontSize: '22px', fontWeight: '900', color: '#ef4444' }}>{monthlyStats.noAction}</span>
           </div>
         </div>
@@ -424,17 +447,13 @@ export default function ReportsPage() {
         
         {activeReport === 'monthly' && (
           <div style={{ display: 'flex', gap: '6px', background: '#eff6ff', padding: '6px 12px', borderRadius: '8px', border: '1px solid #bfdbfe', alignItems: 'center' }}>
-            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ استحقاقات شهر:</span>
+            <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#1e40af' }}>🗓️ استحقاقات:</span>
             <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '12px', fontWeight: 'bold', outline: 'none', background: '#fff' }}>
               <option value="">كل الأشهر</option>
               {MONTHS_LIST.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
             <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} style={{ padding: '6px 8px', borderRadius: '6px', border: '1px solid #93c5fd', fontSize: '12px', fontWeight: 'bold', outline: 'none', background: '#fff' }}>
-              <option value="">كل السنوات</option>
-              <option value="2025">2025</option>
-              <option value="2026">2026</option>
-              <option value="2027">2027</option>
-              <option value="2028">2028</option>
+              <option value="">الكل</option><option value="2025">2025</option><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option>
             </select>
           </div>
         )}
@@ -446,12 +465,10 @@ export default function ReportsPage() {
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
 
-        {/* فلتر الإدارات المطور */}
         <div style={{ position: 'relative' }} ref={deptDropdownRef}>
           <button type="button" onClick={() => setIsDeptDropdownOpen(!isDeptDropdownOpen)} style={{ padding: '8px 14px', borderRadius: '8px', border: selectedDepts.length > 0 ? '2px solid #2563eb' : '1px solid #cbd5e1', background: selectedDepts.length > 0 ? '#eff6ff' : '#ffffff', color: selectedDepts.length > 0 ? '#2563eb' : '#0f172a', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', minWidth: '160px', justifyContent: 'space-between' }}>
             <span>💼 الإدارات ({selectedDepts.length === 0 ? 'الكل' : selectedDepts.length})</span><span>▼</span>
           </button>
-
           {isDeptDropdownOpen && (
             <div style={{ position: 'absolute', top: '100%', right: 0, width: '260px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', marginTop: '6px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 100 }}>
               <input type="text" placeholder="🔍 ابحث اسم الإدارة..." value={deptSearchTerm} onChange={e => setDeptSearchTerm(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', marginBottom: '10px', boxSizing: 'border-box' }} />
@@ -461,7 +478,7 @@ export default function ReportsPage() {
               </div>
               <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {filteredDeptsList.length === 0 ? (
-                  <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', padding: '8px' }}>لا توجد إدارة بهذا الاسم</div>
+                  <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', padding: '8px' }}>لا توجد إدارة</div>
                 ) : (
                   filteredDeptsList.map((d, i) => (
                     <label key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: selectedDepts.includes(d) ? 'bold' : 'normal', color: '#0f172a' }}>
@@ -575,10 +592,8 @@ export default function ReportsPage() {
                 const age = getEmployeeAge(emp);
                 const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
                 
-                // تحديد حالة الإجراء للتقرير الشهري
                 const actionStatus = getActionStatus(code);
                 
-                // فحص إذا كان الموظف سيبلغ 60 هذا الشهر للتظليل
                 let isTurning60Now = false;
                 if (retirementDate && activeReport === 'monthly') {
                   if (retirementDate.getMonth() + 1 === parseInt(selectedMonth) && retirementDate.getFullYear() === parseInt(selectedYear)) {
