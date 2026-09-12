@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -10,4 +10,21 @@ if (!supabaseUrl || !supabaseKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+// 🌟 استخدام نمط Singleton لمنع تكرار إنشاء الـ Instance في المتصفح عند التنقل بين الصفحات
+declare global {
+  var supabaseInstance: SupabaseClient | undefined;
+}
+
+export const supabase =
+  globalThis.supabaseInstance ||
+  createClient(supabaseUrl, supabaseKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+
+if (process.env.NODE_ENV !== 'production') {
+  globalThis.supabaseInstance = supabase;
+}
