@@ -3,7 +3,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
-
 // دالة حساب تاريخ التقاعد (60 سنة)
 const getRetirementDate = (birthDateRaw: string | null | undefined) => {
   if (!birthDateRaw) return null;
@@ -37,7 +36,7 @@ export default function AlertsPage() {
       const { data, error } = await query;
       if (error || !data || data.length === 0) break;
       allRows = [...allRows, ...data];
-      if (data.length < step) break; // لو اللي راجع أقل من 1000 يبقى دي آخر صفحة
+      if (data.length < step) break;
       from += step;
     }
     return allRows;
@@ -46,14 +45,12 @@ export default function AlertsPage() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      // 🌟 جلب الموظفين، العقود النشطة، والطلبات بالتوازي
       const [empData, contData, renData] = await Promise.all([
         fetchAllRows('employees'),
-        fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }), // نجلب العقود النشطة لتحديد تاريخ النهاية الفعلي
+        fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }),
         fetchAllRows('renewal_requests')
       ]);
 
-      // تجميع العقود بناءً على كود الموظف
       const contractsMap = new Map<string, any[]>();
       contData.forEach(c => {
         if (!c) return;
@@ -62,7 +59,6 @@ export default function AlertsPage() {
         contractsMap.get(code)?.push(c);
       });
 
-      // دمج بيانات الموظف مع أحدث عقد له (السر في ظهور التواريخ بشكل صحيح)
       const mergedEmployees = empData.filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد').map(emp => {
         const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
         const empContracts = contractsMap.get(empCodeClean) || [];
@@ -108,14 +104,12 @@ export default function AlertsPage() {
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
 
-  // 🌟 معالجة التنبيهات والأيام المتبقية
   const alertItems = useMemo(() => {
     return employees
       .filter((e) => e.contract_type !== 'دائم' && !String(e.job_title).includes('دائم'))
       .map(emp => {
-        const days = getDaysRemaining(emp.contract_end_date); // هنا أصبح يقرأ من العقد المدمج
+        const days = getDaysRemaining(emp.contract_end_date);
         
-        // حساب أيام التقاعد
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
         const isRetiringSoon = daysToRetirement !== null && daysToRetirement <= 90 && daysToRetirement >= 0;
@@ -147,7 +141,7 @@ export default function AlertsPage() {
           requestStatus: latestRenewal?.status || 'لا يوجد',
         };
       })
-      .filter(item => item.alertLevel !== 'safe') // إخفاء الآمنين تماماً 
+      .filter(item => item.alertLevel !== 'safe')
       .sort((a, b) => {
         if (a.alertLevel === 'critical' && b.alertLevel !== 'critical') return -1;
         if (b.alertLevel === 'critical' && a.alertLevel !== 'critical') return 1;
@@ -155,7 +149,6 @@ export default function AlertsPage() {
       });
   }, [employees, renewals]);
 
-  // تطبيق الفلاتر والتبويبات
   const filteredAlerts = useMemo(() => {
     return alertItems.filter(item => {
       if (severityTab !== 'all' && item.alertLevel !== severityTab) return false;
@@ -179,11 +172,9 @@ export default function AlertsPage() {
     };
   }, [alertItems]);
 
-  // دالة إنشاء طلب سريع
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     try {
-      // جدار حماية سن التقاعد
       if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365) {
         alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده.`);
         setActionLoading(false);
@@ -209,7 +200,7 @@ export default function AlertsPage() {
         contract_end_date: emp.contract_end_date,
         new_contract_end_date: endDate.toISOString().split('T')[0],
         renewal_months: 12,
-        status: 'Pending_Project_Manager', // للمرحلة الأولى
+        status: 'Pending_Project_Manager',
         signature_status: 'قيد التوقيع',
         request_date: new Date().toISOString().split('T')[0],
       };
@@ -228,10 +219,22 @@ export default function AlertsPage() {
     }
   };
 
+  const handleSendEmailReport = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/cron');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'فشل الاتصال بـ Cron API');
+      alert(data.message || 'تم إرسال تقرير التنبيهات بنجاح ✅');
+    } catch (err: any) {
+      alert('حدث خطأ في إرسال البريد: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
-      
-      {/* 🌟 تصميم Enterprise Cards */}
       <style>{`
         .modern-stat-card {
           background: #ffffff;
@@ -276,18 +279,12 @@ export default function AlertsPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={async () => {
-              setActionLoading(true);
-              try {
-                  const res = await fetch('/api/cron');
-                  const data = await res.json();
-                  alert(data.message || 'تم الإرسال');
-              } catch (err) {
-                  alert('حدث خطأ في إرسال البريد');
-              }
-              setActionLoading(false);
-          }} disabled={actionLoading} style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-              {actionLoading ? 'جاري الإرسال...' : '📧 إرسال تقرير الخطر للإدارة'}
+          <button 
+            onClick={handleSendEmailReport} 
+            disabled={actionLoading} 
+            style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
+          >
+            {actionLoading ? 'جاري الإرسال...' : '📧 إرسال تقرير الخطر للإدارة'}
           </button>
 
           <button onClick={fetchAllData} disabled={actionLoading} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
@@ -296,9 +293,8 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* 🗂️ كروت درجات الخطورة (Enterprise Design) */}
+      {/* الكروت الإحصائية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-        
         <div className={`modern-stat-card ${severityTab === 'critical' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setSeverityTab('critical')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>خطر قانوني (منتهية)</span>
@@ -378,7 +374,7 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* 🚀 جدول التنبيهات الإجرائي */}
+      {/* الجدول */}
       <div className="table-responsive" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري فحص السجلات وتحليل البيانات... ⏳</div>
