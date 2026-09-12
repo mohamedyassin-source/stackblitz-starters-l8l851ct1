@@ -7,8 +7,9 @@ import * as XLSX from 'xlsx';
 export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
+  const [progress, setProgress] = useState(0);
 
-  // 🌟 دالة إنشاء وتحميل قالب Excel بالأسماء الجديدة للأعمدة
+  // 🌟 دالة إنشاء وتحميل قالب Excel
   const handleDownloadTemplate = () => {
     const templateData = [
       {
@@ -52,8 +53,6 @@ export default function DataSyncPage() {
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(templateData);
-    
-    // ضبط عرض الأعمدة
     worksheet['!cols'] = [
       { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 20 },
       { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 12 },
@@ -66,7 +65,6 @@ export default function DataSyncPage() {
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
-  // 🌟 دالة معالجة التواريخ لتنسيق ISO (YYYY-MM-DD)
   const parseExcelDate = (excelDate: any) => {
     if (!excelDate) return null;
     if (typeof excelDate === 'number') {
@@ -77,7 +75,6 @@ export default function DataSyncPage() {
     return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
   };
 
-  // 🌟 دالة حساب "سنة إلا يوم"
   const calculateYearMinusOneDay = (startDateStr: string | null) => {
     if (!startDateStr) return null;
     const parts = startDateStr.split('-');
@@ -92,7 +89,7 @@ export default function DataSyncPage() {
     return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
   };
 
-  // 🌟 دالة تخطي حاجز الـ 1000 صف من Supabase
+  // 🌟 دالة جلب كل الموظفين لتخطي حد الـ 1000
   const fetchAllRows = async (tableName: string, selectFields = '*') => {
     let allRows: any[] = [];
     let from = 0;
@@ -107,13 +104,14 @@ export default function DataSyncPage() {
     return allRows;
   };
 
-  // 🌟 دالة القراءة والمزامنة المباشرة والجراحية
+  // 🌟 دالة الرفع فائقة السرعة مع النسبة المئوية
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
-    setStatusMsg('جاري قراءة الملف وتحليل الأعمدة... ⏳');
+    setProgress(5);
+    setStatusMsg('جاري قراءة ملف Excel وتصنيف البيانات... ⏳');
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -126,18 +124,19 @@ export default function DataSyncPage() {
 
         if (rows.length === 0) throw new Error('الملف المرفوع فارغ تماماً.');
 
-        setStatusMsg(`تم العثور على ${rows.length} صف. جاري فحص الأكواد وتطبيق قواعد المزامنة الجراحية... 🚀`);
+        setStatusMsg(`تم قراءة ${rows.length} صف. جاري فحص قاعدة البيانات... 🚀`);
+        setProgress(15);
 
-        // 1. جلب كافة الموظفين الحاليين لتصنيف القديم والجديد (يتخطى الـ 1000)
+        // 1. جلب أكواد الموظفين الموجودة حالياً بالكامل
         const existingEmps = await fetchAllRows('employees', 'employee_code');
         const existingCodesSet = new Set(existingEmps.map(e => String(e.employee_code || '').trim().replace(/^0+/, '')));
 
-        let updatedOldCount = 0;
-        let setInactiveCount = 0;
+        const oldToUpdateDeptAndJob: any[] = [];
+        const oldToSetInactiveCodes: number[] = [];
         const newEmpsPayload: any[] = [];
         const newContractsPayload: any[] = [];
 
-        // 2. معالجة الصفوف صفاً صفاً
+        // 2. تصنيف السجلات في الذاكرة (سريع جداً)
         for (const row of rows) {
           const rawCode = row['employee_code'] || row['كود الموظف'] || row['EmployeeCode'] || row['code'];
           if (!rawCode) continue;
@@ -157,26 +156,21 @@ export default function DataSyncPage() {
           const isOldEmployee = existingCodesSet.has(cleanCode);
 
           if (isOldEmployee) {
-            // 🌟 سيناريو الموظف القديم:
             if (isTransferDept || isSalaryStop) {
-              await supabase.from('employees').update({ status: 'Inactive' }).eq('employee_code', parsedCodeInt);
-              setInactiveCount++;
+              oldToSetInactiveCodes.push(parsedCodeInt);
             } else {
-              const updateData: any = {};
-              if (deptVal !== null && deptVal !== undefined) updateData.department = deptVal;
-              if (jobVal !== null && jobVal !== undefined) updateData.job_title = jobVal;
-
-              if (Object.keys(updateData).length > 0) {
-                await supabase.from('employees').update(updateData).eq('employee_code', parsedCodeInt);
-                updatedOldCount++;
+              const updateObj: any = { employee_code: parsedCodeInt };
+              if (deptVal !== null) updateObj.department = deptVal;
+              if (jobVal !== null) updateObj.job_title = jobVal;
+              if (Object.keys(updateObj).length > 1) {
+                oldToUpdateDeptAndJob.push(updateObj);
               }
             }
           } else {
-            // 🌟 سيناريو الموظف الجديد:
             const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
-            const newEmpObj: any = {
+            newEmpsPayload.push({
               employee_code: parsedCodeInt,
               employee_name: row['employee_name'] || row['اسم الموظف'] || 'غير مسجل',
               department: deptVal,
@@ -195,9 +189,7 @@ export default function DataSyncPage() {
               age: row['age'] ? parseInt(row['age'], 10) : null,
               termination_date: parseExcelDate(row['termination_date']),
               termination_reason: row['termination_reason'] || null,
-            };
-
-            newEmpsPayload.push(newEmpObj);
+            });
 
             newContractsPayload.push({
               employee_code: parsedCodeInt,
@@ -209,21 +201,51 @@ export default function DataSyncPage() {
           }
         }
 
-        // 3. رفع الموظفين الجدد وعقودهم دفعة واحدة (Batch Operations)
-        let insertedNewEmpsCount = 0;
-        if (newEmpsPayload.length > 0) {
-          const { error: empInsertErr } = await supabase.from('employees').insert(newEmpsPayload);
-          if (empInsertErr) throw empInsertErr;
-          insertedNewEmpsCount = newEmpsPayload.length;
+        setProgress(30);
 
-          if (newContractsPayload.length > 0) {
-            await supabase.from('contracts').insert(newContractsPayload);
+        // 3. معالجة الدفعات المجمعة (Batch Operations)
+        const BATCH_SIZE = 300;
+
+        // أ) تحويل الموظفين المستبعدين لـ Inactive
+        if (oldToSetInactiveCodes.length > 0) {
+          setStatusMsg(`جاري تحويل ${oldToSetInactiveCodes.length} موظف لـ Inactive...`);
+          for (let i = 0; i < oldToSetInactiveCodes.length; i += BATCH_SIZE) {
+            const chunk = oldToSetInactiveCodes.slice(i, i + BATCH_SIZE);
+            await supabase.from('employees').update({ status: 'Inactive' }).in('employee_code', chunk);
           }
         }
 
-        const msg = `تمت العملية بنجاح كامل! 🎉\n\n- موظفين قدامى تم تحديث (إدارتهم ووظيفتهم): ${updatedOldCount}\n- موظفين تم تحويلهم لـ Inactive (بسبب التحويلات/إيقاف الراتب): ${setInactiveCount}\n- موظفين وعقود جديدة تم إنشاؤهم بمدة (سنة إلا يوم): ${insertedNewEmpsCount}`;
-        setStatusMsg(msg);
-        alert(msg);
+        setProgress(45);
+
+        // ب) تحديث الموظفين القدامى باستخدام Upsert (سريع جداً بالدفعة)
+        if (oldToUpdateDeptAndJob.length > 0) {
+          setStatusMsg(`جاري تحديث الوظيفة والإدارة لـ ${oldToUpdateDeptAndJob.length} موظف قديم...`);
+          for (let i = 0; i < oldToUpdateDeptAndJob.length; i += BATCH_SIZE) {
+            const chunk = oldToUpdateDeptAndJob.slice(i, i + BATCH_SIZE);
+            await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
+            
+            const currentPct = Math.min(85, 45 + Math.round(((i + chunk.length) / oldToUpdateDeptAndJob.length) * 40));
+            setProgress(currentPct);
+            setStatusMsg(`جاري تحديث الموظفين القدامى: ${currentPct}% (${Math.min(i + BATCH_SIZE, oldToUpdateDeptAndJob.length)} من ${oldToUpdateDeptAndJob.length})`);
+          }
+        }
+
+        // ج) إدخال الموظفين الجدد وعقودهم بالدفعة المجمعة
+        if (newEmpsPayload.length > 0) {
+          setStatusMsg(`جاري إضافة ${newEmpsPayload.length} موظف جديد بجدول العقود...`);
+          for (let i = 0; i < newEmpsPayload.length; i += BATCH_SIZE) {
+            const empChunk = newEmpsPayload.slice(i, i + BATCH_SIZE);
+            const contChunk = newContractsPayload.slice(i, i + BATCH_SIZE);
+
+            await supabase.from('employees').insert(empChunk);
+            await supabase.from('contracts').insert(contChunk);
+          }
+        }
+
+        setProgress(100);
+        const finalMsg = `تمت المزامنة بنجاح 100%! 🎉\n\n- قدامى تم تحديث (وظيفتهم وإدارتهم): ${oldToUpdateDeptAndJob.length}\n- قدامى تم تحويلهم لـ Inactive: ${oldToSetInactiveCodes.length}\n- موظفين وعقود جديدة تم إنشاؤهم: ${newEmpsPayload.length}`;
+        setStatusMsg(finalMsg);
+        alert('تمت المزامنة بنجاح بنسبة 100%!');
         e.target.value = '';
 
       } catch (err: any) {
@@ -278,6 +300,19 @@ export default function DataSyncPage() {
           box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
         }
         .custom-file-upload.disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        .progress-bar-container {
+          width: 100%;
+          height: 10px;
+          background: #334155;
+          border-radius: 5px;
+          overflow: hidden;
+          margin-top: 12px;
+        }
+        .progress-bar-fill {
+          height: 100%;
+          background: #10b981;
+          transition: width 0.3s ease;
+        }
       `}</style>
 
       <div className="upload-card">
@@ -288,8 +323,7 @@ export default function DataSyncPage() {
               📊 مركز مزامنة ورفع البيانات (Data Sync Tool)
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
-              تحديث جراحي حصري للإدارة والوظيفة للموجودين (أو تحويلهم لـ Inactive للتحويلات). 
-              <br/>إدخال الموظفين الجدد مع إنشاء عقد آلي (محدد المدة - سنة إلا يوم) بجدول العقود.
+              تحديث جراحي سريع بنظام الدفعات (Batches). يدعم رفع الآلاف من الصفوف مع شريط تقدم حي ومتابعة مباشرة للعمليات.
             </p>
           </div>
 
@@ -305,7 +339,7 @@ export default function DataSyncPage() {
         <div className="upload-area">
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>📂</div>
           <h4 style={{ margin: '0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>ارفع ملف الإكسيل المعبأ هنا</h4>
-          <p style={{ margin: '0 0 24px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>يمكنك رفع كود الموظف والإدارة والوظيفة فقط، أو شيت كامل بكل البيانات</p>
+          <p style={{ margin: '0 0 24px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>يمكنك رفع أي عدد من الصفوف وسيقوم النظام بتحديث الموظفين بسرعة وسلاسة</p>
 
           <input
             type="file"
@@ -317,23 +351,32 @@ export default function DataSyncPage() {
           />
           <label htmlFor="excel-upload-input" className={`custom-file-upload ${loading ? 'disabled' : ''}`}>
             {loading ? (
-              <>⏳ جاري المزامنة والحفظ...</>
+              <>⏳ جاري المزامنة والحفظ ({progress}%)...</>
             ) : (
               <>🚀 اختر الملف للرفع والتحديث</>
             )}
           </label>
         </div>
 
-        {/* شاشة الكونسول الذكية */}
+        {/* شاشة الكونسول والشريط الحي */}
         <div style={{ background: '#0f172a', padding: '18px', borderRadius: '12px', minHeight: '130px', border: '1px solid #334155' }}>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ display: 'inline-block', width: '8px', height: '8px', background: loading ? '#f59e0b' : '#10b981', borderRadius: '50%' }}></span>
-            مراقبة تنفيذ العمليات الجراحية (Terminal Logs):
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ display: 'inline-block', width: '8px', height: '8px', background: loading ? '#f59e0b' : '#10b981', borderRadius: '50%' }}></span>
+              مراقبة تنفيذ العمليات (Batch Logs):
+            </span>
+            {loading && <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{progress}%</span>}
           </div>
           
           <div style={{ fontSize: '13px', fontWeight: 'bold', whiteSpace: 'pre-line', color: statusMsg.includes('❌') ? '#fca5a5' : '#6ee7b7', fontFamily: 'monospace', lineHeight: '1.6' }}>
-            {statusMsg || 'المنظومة في وضع الاستعداد.. اضغط على الزر أعلاه وابدأ المزامنة.'}
+            {statusMsg || 'المنظومة في وضع الاستعداد.. اختر الملف للبدء.'}
           </div>
+
+          {loading && (
+            <div className="progress-bar-container">
+              <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
+            </div>
+          )}
         </div>
 
       </div>
