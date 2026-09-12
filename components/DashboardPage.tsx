@@ -21,6 +21,9 @@ export default function DashboardPage() {
   const [filterDept, setFilterDept] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
 
+  // 🌟 حالة الفلتر النشط من الكروت العلوية (Active KPI Filter)
+  const [activeKpiFilter, setActiveKpiFilter] = useState<'all' | 'fixed' | 'perm' | 'aboveAge' | 'expiring' | 'turning60'>('all');
+
   // حالات النوافذ المنبثقة
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showShortTermModal, setShowShortTermModal] = useState(false);
@@ -48,7 +51,7 @@ export default function DashboardPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
-  // 🎂 دالة دقيقة لحساب تاريخ بلوغ الـ 60 باليوم والشهر والسنة
+  // 🎂 حاسبة بلوغ سن الـ 60
   const getAge60Info = (nationalId: any, birthDateRaw?: any) => {
     let birthDate: Date | null = null;
 
@@ -93,16 +96,19 @@ export default function DashboardPage() {
   const companiesList = Array.from(new Set((allEmployees || []).map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
   const deptsList = Array.from(new Set((allEmployees || []).map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
 
+  // 🌟 معالجة الداتا والحسابات المتفاعلة
   const dashboardData = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const targetExpiryYear = currentYear + 1;
 
+    // 1. الموظفون النشطون المستهدفون
     const activeEmployeesOnly = (allEmployees || []).filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
       !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
     );
 
-    const filteredEmps = activeEmployeesOnly.filter((emp) => {
+    // 2. تطبيق فلاتر الشركة والإدارة العلوية
+    const baseFilteredEmps = activeEmployeesOnly.filter((emp) => {
       const empComp = String(getField(emp, 'company', 'Company') || '').toLowerCase();
       const empDept = String(getField(emp, 'department', 'Department') || '').toLowerCase();
       
@@ -111,66 +117,85 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    const filteredRens = (allRenewals || []).filter((req) => {
-      const reqComp = String(getField(req, 'company', 'Company') || '').toLowerCase();
-      const reqDept = String(getField(req, 'department', 'Department') || '').toLowerCase();
-
-      const matchesComp = !filterCompany || reqComp.includes(filterCompany.toLowerCase());
-      const matchesDept = !filterDept || reqDept.includes(filterDept.toLowerCase());
-      return matchesComp && matchesDept;
-    });
-
-    let expired = 0, expiring = 0, perm = 0, fixed = 0, aboveAge = 0, shortTermTotal = 0;
-    const deptsCount: Record<string, number> = {};
-    const alerts: any[] = [];
+    // 3. حساب الأرقام الإجمالية للكروت (قبل تطبيق تفاعل الكارت)
+    let totalFixed = 0, totalPerm = 0, totalAboveAge = 0, totalExpiringSoon = 0;
     const futureTurning60List: any[] = [];
     const turning60SoonList: any[] = [];
-    const shortTermByDept: Record<string, any[]> = {}; 
     const missingDataList: any[] = [];
-    
-    const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
-    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0, emps: [] as any[] }));
 
-    filteredEmps.forEach((emp) => {
+    baseFilteredEmps.forEach((emp) => {
       const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
-      const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
       const nationalId = getField(emp, 'national_id', 'NationalID');
       const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
-      const mobile = getField(emp, 'mobile', 'Mobile');
-      const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const mobile = getField(emp, 'mobile', 'Mobile');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
-      
-      deptsCount[dept] = (deptsCount[dept] || 0) + 1;
+      const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
 
       if (!nationalId || !mobile) {
         missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
       }
 
-      // 🎂 حصر الموظفين الذين سيبلوغون سن الـ 60 مستقبلاً
+      if (type.includes('دائم') || type.includes('غير محدد')) totalPerm++;
+      else if (type.includes('فوق السن')) totalAboveAge++;
+      else totalFixed++;
+
+      const days = getDaysRemaining(endDateStr);
+      if (!type.includes('دائم') && !type.includes('غير محدد') && days !== null && days >= 0 && days <= 60) {
+        totalExpiringSoon++;
+      }
+
       const ageInfo = getAge60Info(nationalId, birthDateRaw);
       if (ageInfo && ageInfo.daysUntil60 >= 0) {
         const item = {
-          ...emp,
-          employee_code: empCode,
-          employee_name: empName,
-          department: dept,
-          contract_type: type,
-          birthDate: ageInfo.birthDate,
-          age60Date: ageInfo.age60Date,
-          daysLeft: ageInfo.daysUntil60,
-          year60: ageInfo.year60,
-          month60: ageInfo.month60
+          ...emp, employee_code: empCode, employee_name: empName, department: dept,
+          contract_type: type, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date,
+          daysLeft: ageInfo.daysUntil60, year60: ageInfo.year60, month60: ageInfo.month60
         };
-
         futureTurning60List.push(item);
-        
-        if (ageInfo.daysUntil60 <= 60) {
-          turning60SoonList.push(item);
-        }
+        if (ageInfo.daysUntil60 <= 60) turning60SoonList.push(item);
       }
+    });
 
+    // 4. 🌟 فلترة الموظفين بناءً على الكارت المنقور عليه ليعكس الرسوم البيانية والجداول بالكامل
+    const kpiFilteredEmps = baseFilteredEmps.filter((emp) => {
+      const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const days = getDaysRemaining(endDateStr);
+      const nationalId = getField(emp, 'national_id', 'NationalID');
+      const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
+      const ageInfo = getAge60Info(nationalId, birthDateRaw);
+
+      if (activeKpiFilter === 'fixed') return !type.includes('دائم') && !type.includes('فوق السن');
+      if (activeKpiFilter === 'perm') return type.includes('دائم') || type.includes('غير محدد');
+      if (activeKpiFilter === 'aboveAge') return type.includes('فوق السن');
+      if (activeKpiFilter === 'expiring') return !type.includes('دائم') && days !== null && days >= 0 && days <= 60;
+      if (activeKpiFilter === 'turning60') return ageInfo !== null && ageInfo.daysUntil60 >= 0 && ageInfo.daysUntil60 <= 60;
+
+      return true; // في حالة 'all'
+    });
+
+    // 5. إعادة بناء الرسوم البيانية والجداول بناءً على المجموعات المفلترة بـ الكارت
+    const deptsCount: Record<string, number> = {};
+    const alerts: any[] = [];
+    const shortTermByDept: Record<string, any[]> = {};
+    let shortTermTotal = 0;
+
+    const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    const contractsByMonth = monthsNames.map((name) => ({ name, count: 0, emps: [] as any[] }));
+
+    kpiFilteredEmps.forEach((emp) => {
+      const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
+      const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const empCode = getField(emp, 'employee_code', 'EmployeeCode');
+      const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
+      const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
+
+      deptsCount[dept] = (deptsCount[dept] || 0) + 1;
+
+      // توزيع الشهور للسنوات القادمة
       if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
         if (!isNaN(endDate.getTime()) && endDate.getFullYear() === targetExpiryYear) {
@@ -187,42 +212,19 @@ export default function DashboardPage() {
         }
       }
 
-      // تصنيف هيكل العقود
-      if (type.includes('دائم') || type.includes('غير محدد')) {
-        perm++;
-      } else if (type.includes('فوق السن')) {
-        aboveAge++;
-      } else {
-        fixed++;
-      }
-
-      // تنبيهات العقود المتبقية (خلال 60 يوم)
-      if (!type.includes('دائم') && !type.includes('غير محدد')) {
+      // مهام عاجلة
+      if (!type.includes('دائم')) {
         const days = getDaysRemaining(endDateStr);
         if (days !== null && days >= 0 && days <= 60) {
-          expiring++;
           alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
         }
       }
 
       // العقود المؤقتة
       if (type.includes('محدد') && !type.includes('فوق السن')) {
-        const empRens = filteredRens
-          .filter(r => String(getField(r, 'employee_code', 'EmployeeCode')).trim() === String(empCode).trim() && (r.status === 'Approved' || r.status === 'معتمد'))
-          .sort((a, b) => new Date(a.request_date || 0).getTime() - new Date(b.request_date || 0).getTime());
-
         let isShort = false;
         let historyDesc = '';
-
-        if (empRens.length > 0) {
-          const lastRen = empRens[empRens.length - 1];
-          const renewalMonths = getField(lastRen, 'renewal_months', 'RenewalMonths');
-          if (renewalMonths && Number(renewalMonths) < 12) {
-            isShort = true;
-            const historyArr = empRens.map(r => `${getField(r, 'renewal_months', 'RenewalMonths')} ش`);
-            historyDesc = `تجديدات: (${historyArr.join(' + ')})`;
-          }
-        } else if (startDateStr && endDateStr) {
+        if (startDateStr && endDateStr) {
           const start = new Date(startDateStr);
           const end = new Date(endDateStr);
           const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
@@ -232,7 +234,6 @@ export default function DashboardPage() {
             historyDesc = `تعيين (${diffMonths} ش)`;
           }
         }
-
         if (isShort) {
           shortTermTotal++;
           if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
@@ -242,8 +243,11 @@ export default function DashboardPage() {
     });
 
     alerts.sort((a, b) => a.days - b.days);
-    futureTurning60List.sort((a, b) => a.daysLeft - b.daysLeft);
-    turning60SoonList.sort((a, b) => a.daysLeft - b.daysLeft); 
+
+    const topDepts = Object.entries(deptsCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([name, count]) => ({ name, count }));
 
     const shortTermList = Object.entries(shortTermByDept)
       .map(([deptName, emps]) => ({ 
@@ -252,34 +256,24 @@ export default function DashboardPage() {
       }))
       .sort((a, b) => b.emps.length - a.emps.length);
 
-    const urgentAlerts = alerts.slice(0, 20);
-    const topDepts = Object.entries(deptsCount)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([name, count]) => ({ name, count }));
-
-    const pendingRequests = filteredRens.filter(r => r.status === 'Pending' || r.status === 'قيد الانتظار');
-    const waitingSign = filteredRens.filter(r => (r.status === 'Approved' || r.status === 'معتمد') && r.signature_status !== 'تم التوقيع');
-
-    const totalEmpsCount = filteredEmps.length || 1;
+    const totalEmpsCount = baseFilteredEmps.length || 1;
     const calcPct = (val: number) => ((val / totalEmpsCount) * 100).toFixed(1);
 
     return {
-      totalEmps: filteredEmps.length,
-      permCount: perm,
-      permPct: calcPct(perm),
-      fixedCount: fixed,
-      fixedPct: calcPct(fixed),
-      aboveAgeCount: aboveAge,
-      aboveAgePct: calcPct(aboveAge),
-      expiringSoonCount: expiring,
-      expiringSoonPct: calcPct(expiring),
+      totalEmps: baseFilteredEmps.length,
+      kpiFilteredCount: kpiFilteredEmps.length,
+      permCount: totalPerm,
+      permPct: calcPct(totalPerm),
+      fixedCount: totalFixed,
+      fixedPct: calcPct(totalFixed),
+      aboveAgeCount: totalAboveAge,
+      aboveAgePct: calcPct(totalAboveAge),
+      expiringSoonCount: totalExpiringSoon,
+      expiringSoonPct: calcPct(totalExpiringSoon),
       turning60SoonCount: turning60SoonList.length,
-      pendingCount: pendingRequests.length,
-      waitingSignCount: waitingSign.length,
       missingDataList,
       topDepts,
-      urgentAlerts,
+      urgentAlerts: alerts.slice(0, 20),
       contractsByMonth,
       shortTermTotal,
       shortTermList,
@@ -288,9 +282,8 @@ export default function DashboardPage() {
       currentYear,
       targetExpiryYear
     };
-  }, [allEmployees, allRenewals, filterCompany, filterDept]);
+  }, [allEmployees, allRenewals, filterCompany, filterDept, activeKpiFilter]);
 
-  // تصفية المتقاعدين مستقبلاً بحسب الشهر والسنة المختارين
   const filteredAge60ModalList = useMemo(() => {
     return dashboardData.futureTurning60List.filter((emp) => {
       const matchesYear = !ageFilterYear || String(emp.year60) === ageFilterYear;
@@ -303,10 +296,10 @@ export default function DashboardPage() {
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeFormatted = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  
+
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  const totalContracts = dashboardData.permCount + dashboardData.fixedCount + dashboardData.aboveAgeCount;
+  const totalContracts = dashboardData.kpiFilteredCount;
   const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
   const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
   const donutGradient = totalContracts === 0 
@@ -336,76 +329,113 @@ export default function DashboardPage() {
           <input list="dashDeptList" className="field" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
           <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
 
-          {(filterCompany || filterDept) && (
-            <button style={{ background: '#f1f5f9', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }} onClick={() => { setFilterCompany(''); setFilterDept(''); }}>إعادة ضبط</button>
+          {(filterCompany || filterDept || activeKpiFilter !== 'all') && (
+            <button style={{ background: '#f1f5f9', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }} onClick={() => { setFilterCompany(''); setFilterDept(''); setActiveKpiFilter('all'); }}>إعادة ضبط الفلاتر 🔄</button>
           )}
         </div>
       </div>
 
-      {/* الكروت السريعة */}
+      {/* 🌟 الكروت السريعة المبتكرة المتفاعلة مع الصفحة أسفلها */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KpiCard 
-          loading={loading} 
-          tone="brass" 
-          title="إجمالي الموظفين" 
-          value={dashboardData.totalEmps} 
-          sub="القوة الفعالة (100%)" 
-          icon="👥" 
-          onClick={() => navigateTo('employees')} 
-        />
-        <KpiCard 
-          loading={loading} 
-          tone="blue" 
-          title="عقود محددة المدة" 
-          value={dashboardData.fixedCount} 
-          sub={`نسبة ${dashboardData.fixedPct}% من القوة`} 
-          icon="📂" 
-          onClick={() => navigateTo('contracts')} 
-        />
-        <KpiCard 
-          loading={loading} 
-          tone="green" 
-          title="عقود دائمة" 
-          value={dashboardData.permCount} 
-          sub={`نسبة ${dashboardData.permPct}% من القوة`} 
-          icon="🛡️" 
-          onClick={() => navigateTo('contracts')} 
-        />
-        <KpiCard 
-          loading={loading} 
-          tone="purple" 
-          title="فوق السن (60+)" 
-          value={dashboardData.aboveAgeCount} 
-          sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} 
-          icon="💼" 
-          onClick={() => navigateTo('contracts')} 
-        />
-        <KpiCard 
-          loading={loading} 
-          tone="amber" 
-          title="تنتهي قريباً (60 يوم)" 
-          value={dashboardData.expiringSoonCount} 
-          sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} 
-          icon="⏳" 
-          onClick={() => navigateTo('contracts')} 
-        />
-        <KpiCard 
-          loading={loading} 
-          tone="red" 
-          title="سيبلغون الـ 60 (60 يوم)" 
-          value={dashboardData.turning60SoonCount} 
-          sub="جدولة التقاعد القادم 🎂" 
-          icon="🎂" 
-          onClick={() => { setShowAgeModal(true); setAgeFilterYear(currentYearStr); setAgeFilterMonth(''); }} 
-        />
+        <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="brass" 
+            title="إجمالي الموظفين" 
+            value={dashboardData.totalEmps} 
+            sub={activeKpiFilter === 'all' ? "المعروض (الكل)" : "اضغط لعرض الكل"} 
+            icon="👥" 
+            onClick={() => setActiveKpiFilter('all')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'fixed' ? '2px solid #3b82f6' : 'none', borderRadius: '12px' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="blue" 
+            title="عقود محددة المدة" 
+            value={dashboardData.fixedCount} 
+            sub={`نسبة ${dashboardData.fixedPct}% من القوة`} 
+            icon="📂" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'fixed' ? 'all' : 'fixed')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'perm' ? '2px solid #10b981' : 'none', borderRadius: '12px' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="green" 
+            title="عقود دائمة" 
+            value={dashboardData.permCount} 
+            sub={`نسبة ${dashboardData.permPct}% من القوة`} 
+            icon="🛡️" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'perm' ? 'all' : 'perm')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'aboveAge' ? '2px solid #8b5cf6' : 'none', borderRadius: '12px' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="purple" 
+            title="فوق السن (60+)" 
+            value={dashboardData.aboveAgeCount} 
+            sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} 
+            icon="💼" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="amber" 
+            title="تنتهي قريباً (60 يوم)" 
+            value={dashboardData.expiringSoonCount} 
+            sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} 
+            icon="⏳" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="red" 
+            title="سيبلغون الـ 60 (60 يوم)" 
+            value={dashboardData.turning60SoonCount} 
+            sub="جدولة التقاعد القادم 🎂" 
+            icon="🎂" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'turning60' ? 'all' : 'turning60')} 
+          />
+        </div>
       </div>
 
-      {/* الرسوم البيانية */}
+      {/* شريط الإشعار بالفلتر النشط */}
+      {activeKpiFilter !== 'all' && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#166534', fontWeight: 'bold' }}>
+          <span>
+            🔍 تم تصفية الشاشة والرسوم البيانية لعرض: <strong>
+              {activeKpiFilter === 'fixed' && 'العقود محددة المدة'}
+              {activeKpiFilter === 'perm' && 'العقود الدائمة'}
+              {activeKpiFilter === 'aboveAge' && 'العمالة فوق السن (60+)'}
+              {activeKpiFilter === 'expiring' && 'العقود التي تنتهي خلال 60 يوم'}
+              {activeKpiFilter === 'turning60' && 'الموظفين البالغين لسن التقاعد قريباً'}
+            </strong> ({dashboardData.kpiFilteredCount} موظف)
+          </span>
+          <button onClick={() => setActiveKpiFilter('all')} style={{ background: '#ffffff', border: '1px solid #86efac', color: '#15803d', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+            عرض الكل ✕
+          </button>
+        </div>
+      )}
+
+      {/* الرسوم البيانية المتفاعلة */}
       <div className="grid lg:grid-cols-3 gap-5">
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }}>
-          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>📊 أكبر 5 إدارات (كثافة)</h4>
+          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>📊 أكبر 5 إدارات في هذه المجموعه</h4>
           <div className="flex flex-col gap-4">
-            {dashboardData.topDepts.map((dept, idx) => {
+            {dashboardData.topDepts.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#64748b', fontSize: '12px', padding: '20px' }}>لا توجد بيانات مطابقة لهذا الفلتر</div>
+            ) : dashboardData.topDepts.map((dept, idx) => {
               const max = dashboardData.topDepts[0]?.count || 1;
               const percentage = (dept.count / max) * 100;
               return (
@@ -423,10 +453,11 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* الرسم البياني لتوزيع الشهور */}
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>
-              📈 توزيع تجديد العقود الشهري لعام {dashboardData.currentYear}
+              📈 توزيع تجديد عقود المجموعه لعام {dashboardData.currentYear}
             </h4>
             <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#2563eb', background: '#eff6ff', padding: '4px 12px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
               خطة عقود {dashboardData.targetExpiryYear} 📅
@@ -458,12 +489,12 @@ export default function DashboardPage() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '24px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col justify-center items-center relative lg:col-span-1">
-          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: '#0f172a' }}>📑 توزيع هيكل العقود</h4>
+          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: '#0f172a' }}>📑 نسبة العقود بالمجموعة</h4>
           
           <div style={{ width: '170px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}>
             <div style={{ width: '115px', height: '115px', background: '#ffffff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>الإجمالي</span>
-              <span style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{totalContracts.toLocaleString('en-US')}</span>
+              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تصفية الفلتر</span>
+              <span style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
             </div>
           </div>
 
@@ -477,12 +508,12 @@ export default function DashboardPage() {
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: '#dc2626' }}>
-              <span className="text-base">🚨</span> مهام عاجلة (تنتهي خلال 60 يوم)
+              <span className="text-base">🚨</span> مهام عاجلة للمجموعة الفعالة (تنتهي خلال 60 يوم)
             </h4>
           </div>
           {dashboardData.urgentAlerts.length === 0 ? (
             <div className="text-center py-8 rounded-xl text-[13px] font-bold" style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
-              لا توجد مهام عاجلة! جميع العقود سارية. 🎉
+              لا توجد مهام عاجلة في الفلتر المختار! 🎉
             </div>
           ) : (
             <div className="overflow-y-auto max-h-[220px]">
@@ -515,7 +546,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🎂 نافذة بلوغ سن الـ 60 القادم مستقبلاً */}
+      {/* 🎂 نافذة بلوغ سن الـ 60 */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -526,15 +557,10 @@ export default function DashboardPage() {
               <button onClick={() => setShowAgeModal(false)} style={{ background: '#fef3c7', border: 0, color: '#b45309', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
             </div>
 
-            {/* فلاتر الشهر والسنة */}
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>فلترة موعد التقاعد القادم:</span>
               
-              <select 
-                value={ageFilterYear} 
-                onChange={(e) => setAgeFilterYear(e.target.value)} 
-                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}
-              >
+              <select value={ageFilterYear} onChange={(e) => setAgeFilterYear(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}>
                 <option value="2026">سنة 2026 (الافتراضي)</option>
                 <option value="2027">سنة 2027</option>
                 <option value="2028">سنة 2028</option>
@@ -543,11 +569,7 @@ export default function DashboardPage() {
                 <option value="">كل السنوات (حتى 2030)</option>
               </select>
 
-              <select 
-                value={ageFilterMonth} 
-                onChange={(e) => setAgeFilterMonth(e.target.value)} 
-                style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}
-              >
+              <select value={ageFilterMonth} onChange={(e) => setAgeFilterMonth(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}>
                 <option value="">كل الشهور</option>
                 <option value="1">يناير (01)</option>
                 <option value="2">فبراير (02)</option>
@@ -620,7 +642,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* باقي النوافذ المنبثقة */}
+      {/* نافذة تفاصيل الشهر بالرسومات */}
       {selectedChartMonth && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -657,130 +679,6 @@ export default function DashboardPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showShortTermModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', height: '80vh', background: '#ffffff', borderRadius: '20px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
-            <div style={{ padding: '20px 24px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '800' }}>
-                  ⏱️ العقود المؤقتة وفترات الاختبار
-                </h3>
-                <p style={{ margin: '4px 0 0', fontSize: '11px', color: '#64748b' }}>إجمالي: {dashboardData.shortTermTotal} موظف</p>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                {selectedShortTermDept && (
-                  <button onClick={() => setSelectedShortTermDept(null)} style={{ background: '#e2e8f0', border: 0, color: '#0f172a', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
-                    🔙 رجوع للإدارات
-                  </button>
-                )}
-                <button onClick={() => { setShowShortTermModal(false); setSelectedShortTermDept(null); }} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
-                  إغلاق ✕
-                </button>
-              </div>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-              {!selectedShortTermDept ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {dashboardData.shortTermList.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: '#64748b', fontWeight: 'bold', fontSize: '13px', marginTop: '40px' }}>لا توجد عقود مؤقتة حالياً.</div>
-                  ) : (
-                    dashboardData.shortTermList.map((group, idx) => (
-                      <div key={idx} onClick={() => setSelectedShortTermDept(group.deptName)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px', border: '1px solid #e2e8f0', borderRadius: '12px', cursor: 'pointer', background: '#ffffff' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#0f172a' }}>🏢 {group.deptName}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 12px', borderRadius: '100px', fontSize: '11px', fontWeight: 'bold' }}>{group.emps.length} موظف</span>
-                          <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عرض 👁️</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="table-responsive">
-                  <h4 style={{ margin: '0 0 16px', color: '#0f172a', fontSize: '14px' }}>إدارة: {selectedShortTermDept}</h4>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                    <thead>
-                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
-                        <th style={{ padding: '10px' }}>الموظف</th>
-                        <th style={{ padding: '10px' }}>سجل التعاقد</th>
-                        <th style={{ padding: '10px' }}>الانتهاء</th>
-                        <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dashboardData.shortTermList.find(g => g.deptName === selectedShortTermDept)?.emps.map((emp) => {
-                        const daysLeft = getDaysRemaining(emp.contract_end_date);
-                        return (
-                          <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: '10px' }}>
-                              <div style={{ fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</div>
-                              <div style={{ fontSize: '10px', color: '#0d9488', fontFamily: 'monospace', fontWeight: 'bold' }}>{emp.employee_code}</div>
-                            </td>
-                            <td style={{ padding: '10px' }}>
-                              <span style={{ background: '#f8fafc', color: '#0f172a', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px dashed #cbd5e1' }}>{emp.historyDesc}</span>
-                            </td>
-                            <td style={{ padding: '10px' }}>
-                              <div style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>{emp.contract_end_date}</div>
-                              {daysLeft !== null && <div style={{ fontSize: '9px', color: daysLeft < 0 ? '#dc2626' : '#d97706', fontWeight: 'bold' }}>{daysLeft < 0 ? `منتهي` : `متبقي ${daysLeft} يوم`}</div>}
-                            </td>
-                            <td style={{ padding: '10px', textAlign: 'center' }}>
-                              <button onClick={() => { setShowShortTermModal(false); handleRowClick(emp.employee_code); }} style={{ background: '#ffffff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '6px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>العقد ↗️</button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {showMissingDataModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '800' }}>⚠️ سجل نواقص البيانات ({dashboardData.missingDataList.length} موظف)</h3>
-              <button onClick={() => setShowMissingDataModal(false)} style={{ background: '#f1f5f9', border: 0, color: '#64748b', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            {dashboardData.missingDataList.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: '#16a34a', fontWeight: 'bold' }}>بيانات جميع الموظفين مكتملة بنجاح! ✅</div>
-            ) : (
-              <div className="table-responsive">
-                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                  <thead>
-                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
-                      <th style={{ padding: '10px' }}>الكود</th>
-                      <th style={{ padding: '10px' }}>الموظف</th>
-                      <th style={{ padding: '10px' }}>النواقص</th>
-                      <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {dashboardData.missingDataList.map((emp) => (
-                      <tr key={emp.employee_code} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_code}</td>
-                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{emp.employee_name}</td>
-                        <td style={{ padding: '10px', color: '#dc2626', fontWeight: 'bold' }}>
-                          {!emp.national_id && <span>الرقم القومي </span>}
-                          {!emp.mobile && <span>- الموبايل </span>}
-                        </td>
-                        <td style={{ padding: '10px', textAlign: 'center' }}>
-                          <button onClick={() => { setShowMissingDataModal(false); navigateTo('employees'); }} style={{ background: '#0f172a', color: '#ffffff', border: 0, padding: '5px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تحديث السجل ✏️</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
           </div>
         </div>
       )}
