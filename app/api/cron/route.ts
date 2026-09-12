@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { Resend } from 'resend';
 
-// دالة سحب جميع الصفوف لتجاوز حد الـ 1000 صف من Supabase
+const resend = new Resend(process.env.RESEND_API_KEY || '');
+
 async function fetchAllRows(tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) {
   let allRows: any[] = [];
   let from = 0;
@@ -18,15 +20,26 @@ async function fetchAllRows(tableName: string, selectFields = '*', filterEq?: { 
   return allRows;
 }
 
-export async function GET() {
+const getDaysToRetirement = (birthDateRaw: any) => {
+  if (!birthDateRaw) return null;
+  const birthDate = new Date(birthDateRaw);
+  if (isNaN(birthDate.getTime())) return null;
+  const age60Date = new Date(birthDate.getFullYear() + 60, birthDate.getMonth(), birthDate.getDate());
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
+};
+
+export async function GET(req: NextRequest) {
   try {
-    // 1. سحب كامل الموظفين والعقود بالتوازي بدون التقيد بحد الـ 1000 صف
+    const { searchParams } = new URL(req.url);
+    const filterType = searchParams.get('type') || 'critical';
+
     const [empData, contData] = await Promise.all([
       fetchAllRows('employees'),
       fetchAllRows('contracts', '*', { col: 'status', val: 'Active' })
     ]);
 
-    // 2. تجميع العقود وتجهيز الخريطة بنفس مطابقة الأكواد
     const contractsMap = new Map<string, any[]>();
     contData.forEach(c => {
       if (!c) return;
@@ -38,14 +51,12 @@ export async function GET() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 3. مطابقة الموظفين مع العقود وحساب التنبيه الحرج
-    const criticalList = empData
+    const targetList = empData
       .filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد')
       .map(emp => {
         const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
         const empContracts = contractsMap.get(empCodeClean) || [];
 
-        // ترتيب العقود لمعرفة أحدث تاريخ
         empContracts.sort((a, b) => {
           const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
           const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
@@ -56,42 +67,90 @@ export async function GET() {
         const endDateStr = activeContract.contract_end_date || emp.contract_end_date || null;
         const type = String(activeContract.contract_type || emp.contract_type || '');
 
-        if (!endDateStr || type.includes('دائم')) return null;
+        const daysToRetirement = getDaysToRetirement(emp.birth_date);
+        const isRetiringSoon = daysToRetirement !== null && daysToRetirement <= 90 && daysToRetirement >= 0;
 
-        const endDate = new Date(endDateStr);
-        if (isNaN(endDate.getTime())) return null;
+        let days = null;
+        if (endDateStr) {
+          const endDate = new Date(endDateStr);
+          if (!isNaN(endDate.getTime())) {
+            days = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+          }
+        }
 
-        const days = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
-        
-        // تصفية التنبيهات الحرجة جداً (أقل من أو يساوي 30 يوم)
-        if (days <= 30) {
+        let match = false;
+        if (filterType === 'retirement' && isRetiringSoon) {
+          match = true;
+        } else if (!type.includes('دائم') && days !== null) {
+          if (filterType === 'critical' && days <= 30) match = true;
+          else if (filterType === 'warning' && days > 0 && days <= 30) match = true;
+          else if (filterType === 'notice' && days > 30 && days <= 90) match = true;
+          else if (filterType === 'all' && (days <= 90 || isRetiringSoon)) match = true;
+        }
+
+        if (match) {
           return {
             code: empCodeClean,
             name: emp.employee_name || emp.ArabicName,
-            days
+            department: emp.department || '—',
+            endDate: endDateStr || '—',
+            daysLeft: days
           };
         }
         return null;
       })
       .filter(Boolean);
 
-    // 4. قراءة البريد الإلكتروني المستهدف
     const rawEmails = process.env.NOTIFICATION_EMAILS || 'mohamed.yassin@almarasem.com';
     const emailList = rawEmails.split(',').map(e => e.trim()).filter(Boolean);
 
-    const msg = `تم إعداد وتجهيز تقرير الخطر بنجاح! 📧\n\nالمستلمون المحددون: ${emailList.join(', ')}\nإجمالي العقود الحرجة المكتشفة: (${criticalList.length}) عقد.`;
+    // 📧 إرسال الإيميل الفعلي عبر Resend
+    if (process.env.RESEND_API_KEY) {
+      const rowsHtml = targetList.slice(0, 50).map(item => `
+        <tr>
+          <td style="padding: 8px; border: 1px solid #ddd;">${item?.code}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${item?.name}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${item?.department}</td>
+          <td style="padding: 8px; border: 1px solid #ddd;">${item?.endDate}</td>
+        </tr>
+      `).join('');
+
+      await resend.emails.send({
+        from: 'HR Contracts <onboarding@resend.dev>',
+        to: emailList,
+        subject: `🚨 تقرير تنبيهات العقود (${targetList.length} حالة) - المراسم الدولية`,
+        html: `
+          <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #0d9488;">مجموعة شركات المراسم الدولية - تقرير غرفة العمليات</h2>
+            <p>نفيد سيادتكم بوجود عدد <strong>(${targetList.length})</strong> حالة تتطلب اتخاذ إجراء عاجل.</p>
+            <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 12px;">
+              <thead>
+                <tr style="background: #f1f5f9;">
+                  <th style="padding: 8px; border: 1px solid #ddd;">الكود</th>
+                  <th style="padding: 8px; border: 1px solid #ddd;">الموظف</th>
+                  <th style="padding: 8px; border: 1px solid #ddd;">الإدارة</th>
+                  <th style="padding: 8px; border: 1px solid #ddd;">تاريخ الانتهاء</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
+        `
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      message: msg,
-      criticalCount: criticalList.length,
-      recipients: emailList,
-      timestamp: new Date().toISOString(),
+      message: `تم إرسال البريد بنجاح إلى (${emailList.join(', ')}) 📧\n\nعدد الحالات المرسلة: ${targetList.length}`,
+      count: targetList.length,
+      recipients: emailList
     });
 
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, message: 'حدث خطأ أثناء معالجة البيانات: ' + err.message },
+      { success: false, message: 'حدث خطأ أثناء إرسال البريد: ' + err.message },
       { status: 500 }
     );
   }
