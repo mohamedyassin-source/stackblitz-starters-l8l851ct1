@@ -156,6 +156,7 @@ export default function ContractsPage() {
     return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
+  // 🌟 تعديل مسميات الـ Workflow لتدعم المرحلتين
   const getRenewalStatusInfo = (empCode: string) => {
     if (!empCode) return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
     const empRens = renewals
@@ -164,7 +165,10 @@ export default function ContractsPage() {
     const latest = empRens[0];
     
     if (!latest || latest.status === 'Rejected') return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
-    if (latest.status === 'Pending') return { text: 'تحت الاعتماد ⏳', color: 'var(--stamp-blue)', locked: true };
+    
+    if (latest.status === 'Pending_Project_Manager' || latest.status === 'Pending') return { text: 'اعتماد المشروع ⏳', color: 'var(--stamp-blue)', locked: true };
+    if (latest.status === 'Pending_General_Manager') return { text: 'اعتماد الإدارة ⏳', color: 'var(--stamp-blue)', locked: true };
+    
     if (latest.status === 'Approved' && latest.signature_status !== 'تم التوقيع') return { text: 'بانتظار التوقيع ✍️', color: 'var(--stamp-amber)', locked: true };
     if (latest.status === 'Approved' && latest.signature_status === 'تم التوقيع') return { text: 'تم توقيع العقد ✅', color: 'var(--stamp-green)', locked: false };
     
@@ -219,7 +223,7 @@ export default function ContractsPage() {
       let matchesReqStatus = true;
       if (selectedReqStatus) {
         if (selectedReqStatus === 'no_request') matchesReqStatus = reqInfo.text.includes('متاح');
-        else if (selectedReqStatus === 'pending') matchesReqStatus = reqInfo.text.includes('تحت الاعتماد');
+        else if (selectedReqStatus === 'pending') matchesReqStatus = reqInfo.text.includes('اعتماد'); // يشمل مرحلتي الاعتماد
         else if (selectedReqStatus === 'approved_not_signed') matchesReqStatus = reqInfo.text.includes('بانتظار التوقيع');
         else if (selectedReqStatus === 'signed') matchesReqStatus = reqInfo.text.includes('تم توقيع');
       }
@@ -294,6 +298,15 @@ export default function ContractsPage() {
       setSelectedEmpCodes(sortedContracts.filter(e => e).map(e => String(e.employee_code)));
     }
   };
+
+  // 🌟 حاسبة سن التقاعد (60 سنة)
+  const calculateRetirementDate = (birthDate: string | null | undefined) => {
+    if (!birthDate) return null;
+    const date = new Date(birthDate);
+    if (isNaN(date.getTime())) return null;
+    date.setFullYear(date.getFullYear() + 60); // يضيف 60 سنة بالضبط
+    return date.toISOString().split('T')[0];
+  };
   
   const openBulkRenewal = () => {
     if (selectedEmpCodes.length === 0) return alert('يرجى تحديد موظفين أولاً');
@@ -339,6 +352,15 @@ export default function ContractsPage() {
     if (modalState.type === 'single' && modalState.emp) {
       const emp = modalState.emp;
       const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
+      
+      // 🌟 جدار الحماية: التحقق من بلوغ سن 60
+      const retirementDateStr = calculateRetirementDate(emp.birth_date);
+      if (retirementDateStr && new Date(targetEndDate) > new Date(retirementDateStr)) {
+        alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\nتاريخ انتهاء العقد المقترح: ${targetEndDate}\n\nيُمنع النظام استكمال الطلب. يرجى اختيار "تاريخ انتهاء مخصص" بحيث لا يتجاوز تاريخ بلوغ السن أعلاه.`);
+        setActionLoading(false);
+        return; // إيقاف العملية تماماً
+      }
+
       const [reqId] = generateSequentialIds(1);
       const parsedCode = parseInt(emp.employee_code, 10);
 
@@ -352,15 +374,33 @@ export default function ContractsPage() {
         contract_end_date: emp.contract_end_date,
         new_contract_end_date: targetEndDate,
         renewal_months: renewalMode === 'months' ? renewalMonths : null,
-        status: 'Pending',
+        status: 'Pending_Project_Manager', // 🌟 يذهب للمرحلة الأولى من الاعتماد
         signature_status: 'قيد التوقيع',
         request_date: new Date().toISOString().split('T')[0],
       };
       const { error } = await supabase.from('renewal_requests').insert([payload]);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
       if (error) alert('خطأ: ' + error.message); else fetchData();
+      
     } else if (modalState.type === 'bulk') {
       const selectedEmps = employees.filter(e => e && selectedEmpCodes.includes(String(e.employee_code)));
+      
+      // 🌟 جدار الحماية للمجموعة: استخراج الموظفين اللي هيتجاوزوا الـ 60
+      const problematicEmps: string[] = [];
+      selectedEmps.forEach(emp => {
+        const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
+        const retDate = calculateRetirementDate(emp.birth_date);
+        if (retDate && new Date(targetEndDate) > new Date(retDate)) {
+          problematicEmps.push(`- ${emp.employee_name} (يبلغ السن في ${retDate})`);
+        }
+      });
+
+      if (problematicEmps.length > 0) {
+        alert(`🚨 توقف - يوجد موظفين سيتجاوزون سن التقاعد (60):\n\n${problematicEmps.join('\n')}\n\nيرجى إلغاء تحديدهم من القائمة، وتجديد عقودهم بشكل فردي بتاريخ لا يتجاوز سن تقاعدهم.`);
+        setActionLoading(false);
+        return; // إيقاف التجديد المجمع تماماً
+      }
+
       const reqIds = generateSequentialIds(selectedEmps.length);
       const payloads = selectedEmps.map((emp, index) => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
@@ -368,13 +408,14 @@ export default function ContractsPage() {
           request_id: reqIds[index], employee_code: parseInt(emp.employee_code, 10), employee_name: emp.employee_name,
           department: emp.department, job_title: emp.job_title, company: emp.company,
           contract_end_date: emp.contract_end_date, new_contract_end_date: targetEndDate,
-          renewal_months: renewalMode === 'months' ? renewalMonths : null, status: 'Pending',
+          renewal_months: renewalMode === 'months' ? renewalMonths : null, 
+          status: 'Pending_Project_Manager', // 🌟 يذهب للمرحلة الأولى
           signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0],
         };
       });
       const { error } = await supabase.from('renewal_requests').insert(payloads);
       setActionLoading(false); setModalState({ isOpen: false, type: 'single' });
-      if (error) alert('خطأ: ' + error.message); else { alert('تم إنشاء النماذج المجمعة بنجاح!'); setSelectedEmpCodes([]); fetchData(); }
+      if (error) alert('خطأ: ' + error.message); else { alert('تم إرسال النماذج لاعتماد المشروع بنجاح!'); setSelectedEmpCodes([]); fetchData(); }
     }
   };
 
@@ -431,7 +472,7 @@ export default function ContractsPage() {
     const parsedCode = parseInt(terminateEmployeeCode, 10);
     await supabase.from('employees').update({ department: 'تحويلات تحت الاعتماد', status: 'Inactive', termination_date: terminateDate, termination_reason: termReason }).eq('employee_code', parsedCode);
     await supabase.from('contracts').update({ status: 'Inactive', contract_end_date: terminateDate }).eq('employee_code', parsedCode).eq('status', 'Active');
-    setActionLoading(false); alert('تم التحويل ✅'); setIsTerminateModalOpen(false); fetchData();
+    setActionLoading(false); alert('تم التحويل للانتظار بنجاح ✅'); setIsTerminateModalOpen(false); fetchData();
   };
 
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
@@ -439,17 +480,26 @@ export default function ContractsPage() {
     if (!selectedEmployeeCode) return;
     setActionLoading(true);
     const emp = employees.find((e) => e && String(e.employee_code) === String(selectedEmployeeCode));
+    
+    // 🌟 جدار الحماية: عند إنشاء عقد جديد
+    const retirementDateStr = calculateRetirementDate(emp?.birth_date);
+    if (retirementDateStr && new Date(newContractEndDate) > new Date(retirementDateStr)) {
+      alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\n\nيُرجى تعديل "نهاية العقد" ليكون بحد أقصى تاريخ بلوغ السن.`);
+      setActionLoading(false);
+      return;
+    }
+
     const [reqId] = generateSequentialIds(1);
     const parsedCode = parseInt(emp.employee_code, 10);
-    await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
+    await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending_Project_Manager', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
     await supabase.from('contracts').update({ status: 'Archived' }).eq('employee_code', parsedCode).eq('status', 'Active');
     await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: newContractType, contract_start_date: newContractStartDate, contract_end_date: newContractEndDate, status: 'Active' }]);
-    setActionLoading(false); setIsNewContractModalOpen(false); alert('تم إنشاء العقد ✅'); fetchData();
+    setActionLoading(false); setIsNewContractModalOpen(false); alert('تم إنشاء العقد وإرساله لاعتماد المشروع ✅'); fetchData();
   };
 
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
-      {/* 🌟 تصميم الكروت المستطيلة (Rectangular Enterprise Cards) */}
+      {/* 🌟 تصميم Border Accent Cards */}
       <style>{`
         .modern-stat-card {
           background: #ffffff;
@@ -503,7 +553,6 @@ export default function ContractsPage() {
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '16px' }}>
           
-          {/* كارت 1 (أزرق) */}
           <div className={`modern-stat-card ${activeFilterCard === 'all' ? 'active' : ''}`} style={{ '--theme-color': '#3b82f6', '--icon-bg': '#eff6ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('all')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>إجمالي العقود</span>
@@ -515,7 +564,6 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          {/* كارت 2 (أخضر) */}
           <div className={`modern-stat-card ${activeFilterCard === 'fixed' ? 'active' : ''}`} style={{ '--theme-color': '#10b981', '--icon-bg': '#ecfdf5' } as React.CSSProperties} onClick={() => setActiveFilterCard('fixed')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>عقود محددة</span>
@@ -527,7 +575,6 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          {/* كارت 3 (برتقالي) */}
           <div className={`modern-stat-card ${activeFilterCard === 'overage' ? 'active' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setActiveFilterCard('overage')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>فوق السن</span>
@@ -539,7 +586,6 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          {/* كارت 4 (بنفسجي) */}
           <div className={`modern-stat-card ${activeFilterCard === 'expiring' ? 'active' : ''}`} style={{ '--theme-color': '#8b5cf6', '--icon-bg': '#f3e8ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('expiring')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>ينتهي قريباً</span>
@@ -551,7 +597,6 @@ export default function ContractsPage() {
             </div>
           </div>
 
-          {/* كارت 5 (أحمر) */}
           <div className={`modern-stat-card ${activeFilterCard === 'expired' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setActiveFilterCard('expired')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>منتهي المدة</span>
@@ -601,11 +646,10 @@ export default function ContractsPage() {
             {typesList.map((t: any, i) => (<option key={i} value={t}>{t}</option>))}
           </select>
 
-          {/* 🌟 فلتر حالة التجديد */}
           <select value={selectedReqStatus} onChange={(e) => setSelectedReqStatus(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', color: '#334155', background: '#f8fafc', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
             <option value="">حالة التجديد (الكل)</option>
             <option value="no_request">متاح للطلب (لم يتم إجراء)</option>
-            <option value="pending">⏳ تحت الاعتماد</option>
+            <option value="pending">⏳ تحت الاعتماد (مشروع/إدارة)</option>
             <option value="approved_not_signed">✍️ بانتظار التوقيع</option>
             <option value="signed">✅ تم التوقيع والانتهاء</option>
           </select>
@@ -624,7 +668,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🚀 الجدول الرئيسي مع الترتيب */}
+      {/* 🚀 الجدول الرئيسي */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات العقود والطلبات... ⏳</div>
@@ -642,7 +686,7 @@ export default function ContractsPage() {
                 <th onClick={() => handleSort('contract_type')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>النوع {renderSortArrow('contract_type')}</th>
                 <th onClick={() => handleSort('contract_end_date')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الانتهاء {renderSortArrow('contract_end_date')}</th>
                 <th onClick={() => handleSort('days_left')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>المتبقي {renderSortArrow('days_left')}</th>
-                <th onClick={() => handleSort('req_status')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>الاعتماد {renderSortArrow('req_status')}</th>
+                <th onClick={() => handleSort('req_status')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>حالة النموذج {renderSortArrow('req_status')}</th>
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>الإجراء السريع</th>
               </tr>
             </thead>
@@ -673,7 +717,7 @@ export default function ContractsPage() {
                 if (empType === 'دائم') remainingLabel = <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم</span>;
 
                 let reqBadge = <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 'bold' }}>متاح للطلب</span>;
-                if (reqInfo.text.includes('تحت الاعتماد')) reqBadge = <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bfdbfe' }}>⏳ تحت الاعتماد</span>;
+                if (reqInfo.text.includes('اعتماد')) reqBadge = <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bfdbfe' }}>⏳ تحت الاعتماد</span>;
                 if (reqInfo.text.includes('بانتظار التوقيع')) reqBadge = <span style={{ background: '#fff7ed', color: '#ea580c', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fed7aa' }}>✍️ بانتظار التوقيع</span>;
                 if (reqInfo.text.includes('تم توقيع')) reqBadge = <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bbf7d0' }}>📜 تم التوقيع</span>;
 
@@ -789,7 +833,7 @@ export default function ContractsPage() {
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-start', gap: '10px', direction: 'rtl' }}>
               <button onClick={confirmRenewalAction} disabled={actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>
-                ✅ {actionLoading ? 'جاري التنفيذ...' : 'إرسال للاعتماد للإدارة'}
+                ✅ {actionLoading ? 'جاري التنفيذ...' : 'إرسال لاعتماد المشروع / الإدارة'}
               </button>
               <button onClick={() => setModalState({ isOpen: false, type: 'single' })} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>إلغاء</button>
             </div>
@@ -797,7 +841,6 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* نافذة إنشاء عقد جديد تماماً */}
       {isNewContractModalOpen && (
         <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '520px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
