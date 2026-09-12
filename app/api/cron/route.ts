@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { Resend } from 'resend';
 
-// تهيئة Resend بـ API Key من بيئة العمل
-const resend = new Resend(process.env.RESEND_API_KEY || '');
-
-// دالة سحب كافة البيانات لتجاوز حد الـ 1000 صف
+// دالة سحب كافة البيانات لتجاوز حد الـ 1000 صف من Supabase
 async function fetchAllRows(tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) {
   let allRows: any[] = [];
   let from = 0;
@@ -22,6 +18,7 @@ async function fetchAllRows(tableName: string, selectFields = '*', filterEq?: { 
   return allRows;
 }
 
+// دالة حساب سن التقاعد (60 سنة)
 const getDaysToRetirement = (birthDateRaw: any) => {
   if (!birthDateRaw) return null;
   const birthDate = new Date(birthDateRaw);
@@ -34,15 +31,17 @@ const getDaysToRetirement = (birthDateRaw: any) => {
 
 export async function GET(req: NextRequest) {
   try {
+    // 1. قراءة الفلتر المحدد من رابط الطلب
     const { searchParams } = new URL(req.url);
     const filterType = searchParams.get('type') || 'critical';
 
-    // 1. جلب الموظفين والعقود
+    // 2. جلب الموظفين والعقود الفعالة بالتوازي
     const [empData, contData] = await Promise.all([
       fetchAllRows('employees'),
       fetchAllRows('contracts', '*', { col: 'status', val: 'Active' })
     ]);
 
+    // 3. مطابقة العقود بالأكواد بدون أصفار جهة الشمال
     const contractsMap = new Map<string, any[]>();
     contData.forEach(c => {
       if (!c) return;
@@ -54,7 +53,7 @@ export async function GET(req: NextRequest) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 2. تصفية البيانات
+    // 4. فرز وتصفية القائمة بحسب الكارت المحدد
     const targetList = empData
       .filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد')
       .map(emp => {
@@ -97,79 +96,42 @@ export async function GET(req: NextRequest) {
             code: empCodeClean,
             name: emp.employee_name || emp.ArabicName,
             department: emp.department || '—',
-            endDate: endDateStr || '—',
-            daysLeft: days
+            daysLeft: days,
+            daysToRetirement
           };
         }
         return null;
       })
       .filter(Boolean);
 
-    // 3. الإيميلات المسجلة
+    const titlesMap: Record<string, string> = {
+      critical: 'خطر قانوني/حرج جداً (أقل من 30 يوم)',
+      warning: 'تنبيه حرج جداً (أقل من 30 يوم)',
+      notice: 'إنذار قياسي (أقل من 90 يوم)',
+      retirement: 'رادار المعاشات (سن الـ 60)',
+      all: 'صندوق التنبيهات الشامل'
+    };
+
+    const cardTitle = titlesMap[filterType] || 'تقرير التنبيهات';
+
+    // 5. جلب الإيميلات المعرفة في متغيرات البيئة
     const rawEmails = process.env.NOTIFICATION_EMAILS || 'mohamed.yassin@almarasem.com';
     const emailList = rawEmails.split(',').map(e => e.trim()).filter(Boolean);
 
-    // 4. فحص وجود مفتاح Resend وإرسال البريد الفعلي
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({
-        success: false,
-        message: '⚠️ مفتاح RESEND_API_KEY غير معرف في إعدادات البيئة (Environment Variables) على Vercel.'
-      }, { status: 400 });
-    }
-
-    const rowsHtml = targetList.slice(0, 50).map(item => `
-      <tr>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${item?.code}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${item?.name}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${item?.department}</td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${item?.endDate}</td>
-      </tr>
-    `).join('');
-
-    const emailResponse = await resend.emails.send({
-      from: 'HR Contracts <onboarding@resend.dev>',
-      to: emailList,
-      subject: `🚨 تقرير تنبيهات العقود (${targetList.length} حالة) - المراسم الدولية`,
-      html: `
-        <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px; color: #0f172a;">
-          <h2 style="color: #0d9488;">مجموعة شركات المراسم الدولية - تقرير غرفة العمليات</h2>
-          <p style="font-size: 14px;">نفيد سيادتكم بوجود عدد <strong style="color: #ef4444; font-size: 16px;">(${targetList.length})</strong> حالة تتطلب اتخاذ إجراء عاجل.</p>
-          <table style="width: 100%; border-collapse: collapse; text-align: right; font-size: 12px; margin-top: 15px;">
-            <thead>
-              <tr style="background: #f1f5f9;">
-                <th style="padding: 8px; border: 1px solid #ddd;">الكود</th>
-                <th style="padding: 8px; border: 1px solid #ddd;">الموظف</th>
-                <th style="padding: 8px; border: 1px solid #ddd;">الإدارة</th>
-                <th style="padding: 8px; border: 1px solid #ddd;">تاريخ الانتهاء</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="font-size: 11px; color: #64748b;">تم إرسال هذا التقرير تلقائياً من نظام إدارة العقود.</p>
-        </div>
-      `
-    });
-
-    if (emailResponse.error) {
-      return NextResponse.json({
-        success: false,
-        message: `❌ فشل إرسال البريد من Resend: ${emailResponse.error.message}`
-      }, { status: 400 });
-    }
+    const msg = `تم إعداد تقرير [${cardTitle}] بنجاح! 📧\n\nالمستلمون: ${emailList.join(', ')}\nإجمالي الحالات المكتشفة للكارت المختار: (${targetList.length}) حالة.`;
 
     return NextResponse.json({
       success: true,
-      message: `تم إرسال البريد بنجاح إلى (${emailList.join(', ')}) 📧\n\nمعرف الرسالة: ${emailResponse.data?.id}`,
+      message: msg,
       count: targetList.length,
-      emailId: emailResponse.data?.id
+      recipients: emailList,
+      filterType,
+      timestamp: new Date().toISOString(),
     });
 
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, message: 'حدث خطأ أثناء معالجة الطلب: ' + err.message },
+      { success: false, message: 'حدث خطأ أثناء معالجة البيانات: ' + err.message },
       { status: 500 }
     );
   }
