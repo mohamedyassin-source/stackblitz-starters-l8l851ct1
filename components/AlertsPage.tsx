@@ -22,7 +22,7 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // مستويات التنبيه المحددة (تم إضافة فلتر المعاش)
+  // مستويات التنبيه المحددة
   const [severityTab, setSeverityTab] = useState<'all' | 'critical' | 'warning' | 'notice' | 'retirement'>('critical');
 
   // الفلاتر
@@ -30,7 +30,7 @@ export default function AlertsPage() {
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
 
-  // 🌟 دالة السحب التكرارية (لتخطي حد الـ 1000 صف)
+  // 🌟 دالة السحب التكرارية (لتخطي حد الـ 1000 صف بأمان تام)
   const fetchAllRows = async (tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) => {
     let allRows: any[] = [];
     let from = 0;
@@ -41,7 +41,7 @@ export default function AlertsPage() {
       const { data, error } = await query;
       if (error || !data || data.length === 0) break;
       allRows = [...allRows, ...data];
-      if (data.length < step) break;
+      if (data.length < step) break; // لو اللي راجع أقل من 1000 يبقى دي آخر صفحة
       from += step;
     }
     return allRows;
@@ -50,12 +50,44 @@ export default function AlertsPage() {
   const fetchAllData = async () => {
     setLoading(true);
     try {
-      const [empData, renData] = await Promise.all([
+      // 🌟 جلب الموظفين، العقود النشطة، والطلبات بالتوازي
+      const [empData, contData, renData] = await Promise.all([
         fetchAllRows('employees'),
-        fetchAllRows('renewal_requests') // تم تصحيح اسم الجدول بناءً على التحديثات السابقة
+        fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }), // نجلب العقود النشطة لتحديد تاريخ النهاية الفعلي
+        fetchAllRows('renewal_requests')
       ]);
 
-      setEmployees(empData.filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد'));
+      // تجميع العقود بناءً على كود الموظف
+      const contractsMap = new Map<string, any[]>();
+      contData.forEach(c => {
+        if (!c) return;
+        const code = String(c.employee_code || '').trim().replace(/^0+/, '');
+        if (!contractsMap.has(code)) contractsMap.set(code, []);
+        contractsMap.get(code)?.push(c);
+      });
+
+      // دمج بيانات الموظف مع أحدث عقد له (السر في ظهور التواريخ بشكل صحيح)
+      const mergedEmployees = empData.filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد').map(emp => {
+        const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
+        const empContracts = contractsMap.get(empCodeClean) || [];
+
+        empContracts.sort((a, b) => {
+          const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
+          const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
+          return dateB - dateA;
+        });
+
+        const activeContract = empContracts[0] || {};
+        
+        return {
+          ...emp,
+          contract_type: activeContract.contract_type || emp.contract_type || '—',
+          contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date || null,
+          contract_end_date: activeContract.contract_end_date || emp.contract_end_date || null,
+        };
+      });
+
+      setEmployees(mergedEmployees);
       setRenewals(renData || []);
     } catch (err) {
       console.error('Error fetching data from Supabase:', err);
@@ -80,12 +112,12 @@ export default function AlertsPage() {
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
 
-  // 🌟 معالجة قائمة التنبيهات بذكاء
+  // 🌟 معالجة التنبيهات والأيام المتبقية
   const alertItems = useMemo(() => {
     return employees
       .filter((e) => e.contract_type !== 'دائم' && !String(e.job_title).includes('دائم'))
       .map(emp => {
-        const days = getDaysRemaining(emp.contract_end_date);
+        const days = getDaysRemaining(emp.contract_end_date); // هنا أصبح يقرأ من العقد المدمج
         
         // حساب أيام التقاعد
         const retirementDate = getRetirementDate(emp.birth_date);
@@ -151,11 +183,11 @@ export default function AlertsPage() {
     };
   }, [alertItems]);
 
-  // 🌟 دالة إنشاء طلب سريع (مربوطة بالـ Workflow الجديد وحماية المعاش)
+  // دالة إنشاء طلب سريع
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     try {
-      // 🛑 جدار حماية سن التقاعد 🛑
+      // جدار حماية سن التقاعد
       if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365) {
         alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده.`);
         setActionLoading(false);
@@ -165,7 +197,6 @@ export default function AlertsPage() {
       const currentYear = new Date().getFullYear();
       const reqId = `RR-${currentYear}-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      // حساب تاريخ النهاية الافتراضي (سنة واحدة)
       const startDate = new Date(emp.contract_end_date || new Date());
       startDate.setDate(startDate.getDate() + 1);
       const endDate = new Date(startDate);
@@ -182,7 +213,7 @@ export default function AlertsPage() {
         contract_end_date: emp.contract_end_date,
         new_contract_end_date: endDate.toISOString().split('T')[0],
         renewal_months: 12,
-        status: 'Pending_Project_Manager', // يذهب للمرحلة الأولى في الدورة الجديدة
+        status: 'Pending_Project_Manager', // للمرحلة الأولى
         signature_status: 'قيد التوقيع',
         request_date: new Date().toISOString().split('T')[0],
       };
@@ -400,9 +431,9 @@ export default function AlertsPage() {
 
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       {item.hasActiveRequest ? (
-                        <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>طلب جاري ⏳</span>
+                        <span style={{ background: '#eff6ff', color: '#2563eb', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', border: '1px solid #bfdbfe' }}>طلب جاري ⏳</span>
                       ) : (
-                        <span style={{ background: '#f1f5f9', color: '#64748b', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>بدون إجراء ⚠️</span>
+                        <span style={{ background: '#f1f5f9', color: '#64748b', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', border: '1px solid #cbd5e1' }}>بدون إجراء ⚠️</span>
                       )}
                     </td>
 
@@ -420,7 +451,7 @@ export default function AlertsPage() {
                           boxShadow: item.hasActiveRequest ? 'none' : '0 2px 4px rgba(79, 70, 229, 0.2)'
                         }}
                       >
-                        {item.hasActiveRequest ? 'الطلب متسجل بالفعل' : 'إرسال لاعتماد الإدارة ⚡'}
+                        {item.hasActiveRequest ? 'تم إرسال نموذج' : 'إرسال لاعتماد المشروع ⚡'}
                       </button>
                     </td>
 
