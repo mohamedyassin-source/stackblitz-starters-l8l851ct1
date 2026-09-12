@@ -1,13 +1,7 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import * as XLSX from 'xlsx';
-import { createClient } from '@supabase/supabase-js';
-
-// تهيئة الاتصال المباشر بـ Supabase
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 const STANDARD_CONTRACT_TYPES = [
   'محدد المدة',
