@@ -407,7 +407,7 @@ export default function ContractsPage() {
     alert('تم الحذف بنجاح ✅'); setSelectedEmpCodes([]); fetchData(); setIsDeleting(false);
   };
 
-  // 🌟 دالة الحذف الفردي الجديدة
+  // دالة الحذف الفردي
   const handleDeleteSingleContract = async (emp: any) => {
     if (!window.confirm(`هل أنت متأكد من حذف الموظف (${emp.employee_name}) وعقده نهائياً من قاعدة البيانات؟\nهذا الإجراء لا يمكن التراجع عنه.`)) return;
     
@@ -450,54 +450,42 @@ export default function ContractsPage() {
 
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
-      {/* 🌟 تصميم Enterprise Cards الجديد */}
+      {/* 🌟 تصميم Border Accent Cards */}
       <style>{`
-        .enterprise-card {
+        .modern-stat-card {
           background: #ffffff;
-          border-radius: 12px;
+          border-radius: 8px; /* مستطيل */
           border: 1px solid #e2e8f0;
-          padding: 20px;
+          border-right: 4px solid var(--theme-color); /* خط جانبي */
+          border-bottom: 4px solid var(--theme-color); /* خط سفلي */
+          padding: 16px 20px;
           cursor: pointer;
-          transition: all 0.2s ease-in-out;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+          transition: transform 0.2s ease, box-shadow 0.2s ease;
           display: flex;
           flex-direction: column;
           gap: 12px;
-          position: relative;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
-        .enterprise-card:hover {
+        .modern-stat-card:hover {
+          transform: translateY(-3px);
           box-shadow: 0 10px 15px -3px rgba(0,0,0,0.08);
-          border-color: #cbd5e1;
-          transform: translateY(-2px);
         }
-        .enterprise-card.active {
+        .modern-stat-card.active {
+          background: #f8fafc;
           border-color: var(--theme-color);
-          box-shadow: 0 0 0 1px var(--theme-color), 0 4px 6px -1px rgba(0,0,0,0.05);
         }
-        .card-header {
+        .card-header-row {
           display: flex;
           justify-content: space-between;
           align-items: center;
         }
-        .card-icon {
-          width: 36px; height: 36px;
+        .card-icon-box {
+          width: 34px; height: 34px;
           border-radius: 8px;
           display: flex; align-items: center; justify-content: center;
           font-size: 18px;
           background: var(--icon-bg);
           color: var(--theme-color);
-        }
-        .card-title {
-          font-size: 13px; font-weight: 700; color: #64748b;
-        }
-        .card-value {
-          font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1;
-        }
-        .card-footer {
-          font-size: 12px; font-weight: 600; color: #94a3b8; display: flex; align-items: center; gap: 6px;
-        }
-        .trend-up {
-          color: var(--theme-color); background: var(--icon-bg); padding: 2px 6px; border-radius: 4px; font-size: 11px;
         }
         .db-action-bar { background: #0f172a; color: #fff; padding: 12px 20px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; animation: fadeIn 0.3s; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.2); }
       `}</style>
@@ -514,43 +502,58 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 📊 إحصائيات العقود الأساسية (Enterprise Cards) */}
+      {/* 📊 الكروت العلوية بالتصميم الجديد */}
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
           
-          {/* كارت 1 */}
-          <div className={`enterprise-card ${activeFilterCard === 'all' ? 'active' : ''}`} style={{ '--theme-color': '#3b82f6', '--icon-bg': '#eff6ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('all')}>
-            <div className="card-header"><span className="card-title">إجمالي العقود السارية</span><div className="card-icon">🌍</div></div>
-            <div className="card-value">{totalAll.toLocaleString()}</div>
-            <div className="card-footer"><span className="trend-up">100%</span><span>القوة الفعالة</span></div>
+          {/* كارت 1 (أزرق) */}
+          <div className={`modern-stat-card ${activeFilterCard === 'all' ? 'active' : ''}`} style={{ '--theme-color': '#3b82f6', '--icon-bg': '#eff6ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('all')}>
+            <div className="card-header-row">
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>إجمالي العقود</span>
+              <div className="card-icon-box">🌍</div>
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a' }}>{totalAll.toLocaleString()}</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>100% (القوة الفعالة)</div>
           </div>
 
-          {/* كارت 2 */}
-          <div className={`enterprise-card ${activeFilterCard === 'fixed' ? 'active' : ''}`} style={{ '--theme-color': '#6366f1', '--icon-bg': '#eef2ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('fixed')}>
-            <div className="card-header"><span className="card-title">عقود محددة المدة</span><div className="card-icon">📂</div></div>
-            <div className="card-value">{totalFixedContracts.toLocaleString()}</div>
-            <div className="card-footer"><span className="trend-up">{calcPct(totalFixedContracts)}%</span><span>من الإجمالي</span></div>
+          {/* كارت 2 (أخضر) */}
+          <div className={`modern-stat-card ${activeFilterCard === 'fixed' ? 'active' : ''}`} style={{ '--theme-color': '#10b981', '--icon-bg': '#ecfdf5' } as React.CSSProperties} onClick={() => setActiveFilterCard('fixed')}>
+            <div className="card-header-row">
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>عقود محددة المدة</span>
+              <div className="card-icon-box">📂</div>
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a' }}>{totalFixedContracts.toLocaleString()}</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>{calcPct(totalFixedContracts)}% من الإجمالي</div>
           </div>
 
-          {/* كارت 3 */}
-          <div className={`enterprise-card ${activeFilterCard === 'overage' ? 'active' : ''}`} style={{ '--theme-color': '#a855f7', '--icon-bg': '#faf5ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('overage')}>
-            <div className="card-header"><span className="card-title">عقود فوق السن</span><div className="card-icon">💼</div></div>
-            <div className="card-value">{overAgeContracts.toLocaleString()}</div>
-            <div className="card-footer"><span className="trend-up">{calcPct(overAgeContracts)}%</span><span>من الإجمالي</span></div>
+          {/* كارت 3 (برتقالي) */}
+          <div className={`modern-stat-card ${activeFilterCard === 'overage' ? 'active' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setActiveFilterCard('overage')}>
+            <div className="card-header-row">
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>عقود فوق السن</span>
+              <div className="card-icon-box">💼</div>
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a' }}>{overAgeContracts.toLocaleString()}</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>{calcPct(overAgeContracts)}% من الإجمالي</div>
           </div>
 
-          {/* كارت 4 */}
-          <div className={`enterprise-card ${activeFilterCard === 'expiring' ? 'active' : ''}`} style={{ '--theme-color': '#f59e0b', '--icon-bg': '#fffbeb' } as React.CSSProperties} onClick={() => setActiveFilterCard('expiring')}>
-            <div className="card-header"><span className="card-title">ينتهي قريباً</span><div className="card-icon">⏳</div></div>
-            <div className="card-value">{expiringSoonCount.toLocaleString()}</div>
-            <div className="card-footer"><span className="trend-up">{calcPct(expiringSoonCount)}%</span><span>خلال 60 يوم</span></div>
+          {/* كارت 4 (بنفسجي) */}
+          <div className={`modern-stat-card ${activeFilterCard === 'expiring' ? 'active' : ''}`} style={{ '--theme-color': '#8b5cf6', '--icon-bg': '#f3e8ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('expiring')}>
+            <div className="card-header-row">
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>ينتهي قريباً</span>
+              <div className="card-icon-box">⏳</div>
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a' }}>{expiringSoonCount.toLocaleString()}</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>{calcPct(expiringSoonCount)}% (خلال 60 يوم)</div>
           </div>
 
-          {/* كارت 5 */}
-          <div className={`enterprise-card ${activeFilterCard === 'expired' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setActiveFilterCard('expired')}>
-            <div className="card-header"><span className="card-title">منتهي المدة</span><div className="card-icon">🚨</div></div>
-            <div className="card-value">{expiredCount.toLocaleString()}</div>
-            <div className="card-footer"><span className="trend-up">{calcPct(expiredCount)}%</span><span>تجاوز التاريخ</span></div>
+          {/* كارت 5 (أحمر) */}
+          <div className={`modern-stat-card ${activeFilterCard === 'expired' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setActiveFilterCard('expired')}>
+            <div className="card-header-row">
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>منتهي المدة</span>
+              <div className="card-icon-box">🚨</div>
+            </div>
+            <div style={{ fontSize: '28px', fontWeight: '900', color: '#0f172a' }}>{expiredCount.toLocaleString()}</div>
+            <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>{calcPct(expiredCount)}% (تجاوز التاريخ)</div>
           </div>
 
         </div>
@@ -688,15 +691,15 @@ export default function ContractsPage() {
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                         
                         {(!reqInfo.locked && !reqInfo.text.includes('تم توقيع')) ? (
-                          <button onClick={() => openSingleRenewal(emp)} disabled={isInactiveVisual} style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: isInactiveVisual ? 'not-allowed' : 'pointer' }}>
+                          <button onClick={() => openSingleRenewal(emp)} disabled={isInactiveVisual} title="إنشاء نموذج تجديد" style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: isInactiveVisual ? 'not-allowed' : 'pointer' }}>
                             + نموذج
                           </button>
                         ) : (
-                          <button onClick={() => setWorkflowModal({ isOpen: true, emp })} style={{ background: '#4f46e5', color: '#ffffff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)' }}>
+                          <button onClick={() => setWorkflowModal({ isOpen: true, emp })} title="متابعة النموذج" style={{ background: '#4f46e5', color: '#ffffff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 4px rgba(79, 70, 229, 0.2)' }}>
                             🔄 متابعة
                           </button>
                         )}
-                        <button onClick={() => openEditModal(emp)} disabled={actionLoading || isInactiveVisual} style={{ background: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading || isInactiveVisual ? 'not-allowed' : 'pointer' }}>
+                        <button onClick={() => openEditModal(emp)} disabled={actionLoading || isInactiveVisual} title="تعديل العقد" style={{ background: '#ffffff', color: '#64748b', border: '1px solid #e2e8f0', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading || isInactiveVisual ? 'not-allowed' : 'pointer' }}>
                           ✏️
                         </button>
                         {/* 🌟 زر الحذف الفردي الجديد */}
