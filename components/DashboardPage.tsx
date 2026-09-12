@@ -90,16 +90,14 @@ export default function DashboardPage() {
     };
   };
 
-  const companiesList = Array.from(new Set(allEmployees.map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
-  const deptsList = Array.from(new Set(allEmployees.map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
+  const companiesList = Array.from(new Set((allEmployees || []).map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
+  const deptsList = Array.from(new Set((allEmployees || []).map((e) => getField(e, 'department', 'Department')).filter(Boolean)));
 
   const dashboardData = useMemo(() => {
-    // 🌟 سنة العمل الحالية (2026)
     const currentYear = new Date().getFullYear();
-    // 🌟 سنة انتهاء العقود المستهدفة للتجديد (2027)
     const targetExpiryYear = currentYear + 1;
 
-    const activeEmployeesOnly = allEmployees.filter(emp => 
+    const activeEmployeesOnly = (allEmployees || []).filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
       !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
     );
@@ -113,7 +111,7 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    const filteredRens = allRenewals.filter((req) => {
+    const filteredRens = (allRenewals || []).filter((req) => {
       const reqComp = String(getField(req, 'company', 'Company') || '').toLowerCase();
       const reqDept = String(getField(req, 'department', 'Department') || '').toLowerCase();
 
@@ -173,7 +171,6 @@ export default function DashboardPage() {
         }
       }
 
-      // 🌟 تجميع العقود التي تنتهي في العام القادم (2027) لجدولة تجديدها في عام الشغل الحالي (2026)
       if (endDateStr && !type.includes('دائم')) {
         const endDate = new Date(endDateStr);
         if (!isNaN(endDate.getTime()) && endDate.getFullYear() === targetExpiryYear) {
@@ -426,7 +423,6 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 🌟 الرسم البياني: العنوان يظهر العام الحالي (2026) والحسابات تطابق عقود الانتهاء لـ (2027) */}
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
             <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>
