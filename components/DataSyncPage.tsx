@@ -13,128 +13,233 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
 
-  // دالة إنشاء وتحميل قالب Excel جاهز
+  // 🌟 دالة إنشاء وتحميل قالب Excel بالأسماء الجديدة للأعمدة
   const handleDownloadTemplate = () => {
     const templateData = [
       {
-        'كود الموظف': '1001',
-        'اسم الموظف': 'أحمد محمد علي',
-        'الرقم القومي': '29001010101234',
-        'الإدارة': 'الموارد البشرية',
-        'الوظيفة': 'أخصائي HR',
-        'الشركة': 'المراسم الدولية',
-        'تاريخ التعيين': '2024-01-01',
-        'الموبايل': '01012345678',
-        'البريد الإلكتروني': 'ahmed@company.com',
+        employee_code: '1001',
+        employee_name: 'أحمد محمد علي',
+        department: 'الموارد البشرية',
+        job_title: 'أخصائي HR',
+        company: 'المراسم الدولية',
+        hiring_date: '2024-01-01',
+        email: 'ahmed@company.com',
+        mobile: '01012345678',
+        manager: 'محمود حسن',
+        status: 'Active',
+        termination_date: '',
+        termination_reason: '',
+        created_at: '2024-01-01',
+        updated_at: '2024-01-01',
+        age: 30,
+        national_id: '29401010101234',
+        birth_date: '1994-01-01'
       },
       {
-        'كود الموظف': '1002',
-        'اسم الموظف': 'محمود إبراهيم',
-        'الرقم القومي': '29505050105678',
-        'الإدارة': 'تحويلات/تحت الاعتماد',
-        'الوظيفة': 'ايقاف راتب - اجازة بدون راتب',
-        'الشركة': 'المراسم الدولية',
-        'تاريخ التعيين': '2023-05-15',
-        'الموبايل': '01198765432',
-        'البريد الإلكتروني': 'mahmoud@company.com',
-      },
+        employee_code: '1002',
+        employee_name: 'إبراهيم السيد',
+        department: 'تحويلات/تحت الاعتماد',
+        job_title: 'ايقاف راتب - اجازة بدون راتب',
+        company: 'المراسم الدولية',
+        hiring_date: '2023-05-15',
+        email: 'ibrahim@company.com',
+        mobile: '01198765432',
+        manager: 'علي جابر',
+        status: 'Inactive',
+        termination_date: '2024-02-01',
+        termination_reason: 'إجازة بدون راتب',
+        created_at: '2023-05-15',
+        updated_at: '2024-02-01',
+        age: 35,
+        national_id: '28905050105678',
+        birth_date: '1989-05-05'
+      }
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(templateData);
+    
+    // ضبط عرض الأعمدة
+    worksheet['!cols'] = [
+      { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 20 },
+      { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 12 },
+      { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 10 },
+      { wch: 18 }, { wch: 15 }
+    ];
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'قالب_الموظفين');
-
-    // تصدير وتحميل الملف
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
-  // دالة المزامنة المباشرة مع Supabase
+  // 🌟 دالة معالجة التواريخ لتنسيق ISO (YYYY-MM-DD)
+  const parseExcelDate = (excelDate: any) => {
+    if (!excelDate) return null;
+    if (typeof excelDate === 'number') {
+      const d = new Date((excelDate - (25567 + 2)) * 86400 * 1000);
+      return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+    }
+    const d = new Date(excelDate);
+    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+  };
+
+  // 🌟 دالة حساب "سنة إلا يوم"
+  const calculateYearMinusOneDay = (startDateStr: string | null) => {
+    if (!startDateStr) return null;
+    const parts = startDateStr.split('-');
+    if (parts.length < 3) return null;
+    const start = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+    if (isNaN(start.getTime())) return null;
+
+    const end = new Date(start);
+    end.setFullYear(end.getFullYear() + 1);
+    end.setDate(end.getDate() - 1);
+
+    return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+  };
+
+  // 🌟 دالة تخطي حاجز الـ 1000 صف من Supabase
+  const fetchAllRows = async (tableName: string, selectFields = '*') => {
+    let allRows: any[] = [];
+    let from = 0;
+    const step = 1000;
+    while (true) {
+      const { data, error } = await supabase.from(tableName).select(selectFields).range(from, from + step - 1);
+      if (error || !data || data.length === 0) break;
+      allRows = [...allRows, ...data];
+      if (data.length < step) break;
+      from += step;
+    }
+    return allRows;
+  };
+
+  // 🌟 دالة القراءة والمزامنة المباشرة والجراحية
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLoading(true);
-    setStatusMsg('جاري قراءة واستخراج البيانات من ملف Excel... ⏳');
+    setStatusMsg('جاري قراءة الملف وتحليل الأعمدة... ⏳');
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
         const wsName = wb.SheetNames[0];
         const ws = wb.Sheets[wsName];
         const rows: any[] = XLSX.utils.sheet_to_json(ws);
 
-        if (rows.length === 0) {
-          throw new Error('ملف Excel فارغ أو غير صالح.');
-        }
+        if (rows.length === 0) throw new Error('الملف المرفوع فارغ تماماً.');
 
-        setStatusMsg(`تم جلب ${rows.length} صف من الملف. جاري المعالجة والتحديث في Supabase... 🔍\nيرجى عدم إغلاق الصفحة.`);
+        setStatusMsg(`تم العثور على ${rows.length} صف. جاري فحص الأكواد وتطبيق قواعد المزامنة الجراحية... 🚀`);
 
-        let updatedCount = 0;
-        let newCount = 0;
+        // 1. جلب كافة الموظفين الحاليين لتصنيف القديم والجديد (يتخطى الـ 1000)
+        const existingEmps = await fetchAllRows('employees', 'employee_code');
+        const existingCodesSet = new Set(existingEmps.map(e => String(e.employee_code || '').trim().replace(/^0+/, '')));
 
-        // استخراج أرقام الموظفين الحالية للمقارنة السريعة
-        const { data: existingEmps, error: fetchError } = await supabase.from('employees').select('employee_code');
-        if (fetchError) throw fetchError;
-        
-        const existingCodes = new Set(existingEmps?.map(e => String(e.employee_code).trim()));
+        let updatedOldCount = 0;
+        let setInactiveCount = 0;
+        const newEmpsPayload: any[] = [];
+        const newContractsPayload: any[] = [];
 
-        // معالجة كل صف (يمكن تحسينها بـ Bulk Insert لاحقاً، ولكن نستخدم هذا للحفاظ على نفس المنطق الحالي)
+        // 2. معالجة الصفوف صفاً صفاً
         for (const row of rows) {
-          const code = String(row['كود الموظف'] || '').trim();
-          if (!code) continue;
+          // دمج متطور للكلمات بمختلف اللغات والمسميات (الكود هو المفتاح)
+          const rawCode = row['employee_code'] || row['كود الموظف'] || row['EmployeeCode'] || row['code'];
+          if (!rawCode) continue;
 
-          const employeeData = {
-            employee_name: row['اسم الموظف'] || '',
-            national_id: String(row['الرقم القومي'] || ''),
-            department: row['الإدارة'] || '',
-            job_title: row['الوظيفة'] || '',
-            company: row['الشركة'] || '',
-            hiring_date: row['تاريخ التعيين'] ? new Date(row['تاريخ التعيين']).toISOString() : null,
-            mobile: String(row['الموبايل'] || ''),
-            email: row['البريد الإلكتروني'] || '',
-            status: 'Active'
-          };
+          const cleanCode = String(rawCode).trim().replace(/^0+/, '');
+          const parsedCodeInt = parseInt(cleanCode, 10);
+          if (isNaN(parsedCodeInt)) continue;
 
-          if (existingCodes.has(code)) {
-            // تحديث بيانات موظف حالي
-            const { error: updateError } = await supabase
-              .from('employees')
-              .update({
-                department: employeeData.department,
-                job_title: employeeData.job_title,
-                company: employeeData.company
-              })
-              .eq('employee_code', parseInt(code));
-            
-            if (!updateError) updatedCount++;
-          } else {
-            // إضافة موظف جديد
-            const { error: insertEmpError } = await supabase
-              .from('employees')
-              .insert([{ employee_code: parseInt(code), ...employeeData }]);
-            
-            if (!insertEmpError) {
-              // إنشاء عقد افتراضي للموظف الجديد
-              await supabase.from('contracts').insert([{
-                employee_code: parseInt(code),
-                contract_type: 'محدد المدة',
-                contract_start_date: employeeData.hiring_date,
-                status: 'Active'
-              }]);
-              newCount++;
+          // استخراج الإدارة والوظيفة
+          const deptVal = row['department'] || row['الإدارة'] || row['Department'] || null;
+          const jobVal = row['job_title'] || row['الوظيفة'] || row['JobTitle'] || null;
+
+          // فحص التحويلات وإيقاف الراتب
+          const deptStr = String(deptVal || '');
+          const jobStr = String(jobVal || '');
+          const isTransferDept = deptStr.includes('تحويلات/تحت الاعتماد') || deptStr.includes('تحويلات تحت الاعتماد') || deptStr.includes('تحويلات');
+          const isSalaryStop = jobStr.includes('ايقاف راتب');
+
+          const isOldEmployee = existingCodesSet.has(cleanCode);
+
+          if (isOldEmployee) {
+            // 🌟 سيناريو الموظف القديم:
+            if (isTransferDept || isSalaryStop) {
+              // تغيير حالته لـ inactive فوراً
+              await supabase.from('employees').update({ status: 'Inactive' }).eq('employee_code', parsedCodeInt);
+              setInactiveCount++;
+            } else {
+              // تحديث الوظيفة والإدارة حصراً وقصراً (حسب الأعمدة المرفوعة فقط)
+              const updateData: any = {};
+              if (deptVal !== null && deptVal !== undefined) updateData.department = deptVal;
+              if (jobVal !== null && jobVal !== undefined) updateData.job_title = jobVal;
+
+              if (Object.keys(updateData).length > 0) {
+                await supabase.from('employees').update(updateData).eq('employee_code', parsedCodeInt);
+                updatedOldCount++;
+              }
             }
+          } else {
+            // 🌟 سيناريو الموظف الجديد: (إدخال كامل البيانات المرفوعة)
+            const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
+            const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
+
+            const newEmpObj: any = {
+              employee_code: parsedCodeInt,
+              employee_name: row['employee_name'] || row['اسم الموظف'] || 'غير مسجل',
+              department: deptVal,
+              job_title: jobVal,
+              company: row['company'] || row['الشركة'] || null,
+              hiring_date: hiringDateFormatted,
+              contract_start_date: hiringDateFormatted,
+              contract_end_date: contractEndFormatted,
+              email: row['email'] || row['البريد الإلكتروني'] || null,
+              mobile: row['mobile'] || row['الموبايل'] || null,
+              manager: row['manager'] || row['المدير'] || null,
+              status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active',
+              contract_type: 'محدد المدة', // تلقائي للجدد
+              national_id: row['national_id'] ? String(row['national_id']) : null,
+              birth_date: parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']),
+              age: row['age'] ? parseInt(row['age'], 10) : null,
+              termination_date: parseExcelDate(row['termination_date']),
+              termination_reason: row['termination_reason'] || null,
+            };
+
+            newEmpsPayload.push(newEmpObj);
+
+            // تجهيز سطر العقد الجديد المربوط
+            newContractsPayload.push({
+              employee_code: parsedCodeInt,
+              contract_type: 'محدد المدة',
+              contract_start_date: hiringDateFormatted,
+              contract_end_date: contractEndFormatted,
+              status: 'Active'
+            });
           }
         }
 
-        const successMsg = `تمت المعالجة بنجاح! ✅\n\nتحديث الموظفين الحاليين: ${updatedCount}\nإضافة موظفين وعقود جديدة: ${newCount}`;
-        setStatusMsg(successMsg);
-        alert(successMsg);
-        
+        // 3. رفع الموظفين الجدد وعقودهم دفعة واحدة (Batch Operations)
+        let insertedNewEmpsCount = 0;
+        if (newEmpsPayload.length > 0) {
+          const { error: empInsertErr } = await supabase.from('employees').insert(newEmpsPayload);
+          if (empInsertErr) throw empInsertErr;
+          insertedNewEmpsCount = newEmpsPayload.length;
+
+          if (newContractsPayload.length > 0) {
+            await supabase.from('contracts').insert(newContractsPayload);
+          }
+        }
+
+        const msg = `تمت العملية بنجاح كامل! 🎉\n\n- موظفين قدامى تم تحديث (إدارتهم ووظيفتهم): ${updatedOldCount}\n- موظفين تم تحويلهم لـ Inactive (بسبب التحويلات/إيقاف الراتب): ${setInactiveCount}\n- موظفين وعقود جديدة تم إنشاؤهم بمدة (سنة إلا يوم): ${insertedNewEmpsCount}`;
+        setStatusMsg(msg);
+        alert(msg);
+        e.target.value = '';
+
       } catch (err: any) {
         console.error(err);
-        setStatusMsg('❌ حدث خطأ أثناء معالجة الملف: ' + err.message);
+        setStatusMsg('❌ حدث خطأ أثناء المزامنة: ' + err.message);
         alert('خطأ: ' + err.message);
       } finally {
         setLoading(false);
@@ -146,39 +251,73 @@ export default function DataSyncPage() {
 
   return (
     <div style={{ padding: '24px', direction: 'rtl' }}>
-      <div style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '24px', borderRadius: '16px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+      
+      <style>{`
+        .upload-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          padding: 32px;
+          border-radius: 16px;
+          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+          max-width: 850px;
+          margin: 0 auto;
+        }
+        .upload-area {
+          border: 2px dashed #94a3b8;
+          border-radius: 12px;
+          padding: 40px;
+          text-align: center;
+          background: #f8fafc;
+          transition: all 0.2s ease;
+          margin-bottom: 24px;
+        }
+        .upload-area:hover {
+          border-color: #3b82f6;
+          background: #eff6ff;
+        }
+        .custom-file-upload {
+          background: #3b82f6;
+          color: #ffffff;
+          padding: 12px 32px;
+          border-radius: 8px;
+          font-weight: 800;
+          font-size: 14px;
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+        }
+        .custom-file-upload.disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; }
+      `}</style>
+
+      <div className="upload-card">
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <h3 style={{ margin: '0 0 4px', fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>
-              📊 تحديث واستيراد بيانات الموظفين والعقود عبر Excel (Supabase)
+            <h3 style={{ margin: '0 0 8px', fontSize: '22px', color: '#0f172a', fontWeight: '900' }}>
+              📊 مركز مزامنة ورفع البيانات (Data Sync Tool)
             </h3>
-            <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-              تحديث الإدارة والوظيفة للموجودين، وإضافة الجدد مع إنشاء عقد محدد تلقائياً في قاعدة البيانات المباشرة.
+            <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
+              تحديث جراحي حصري للإدارة والوظيفة للموجودين (أو تحويلهم لـ Inactive للتحويلات). 
+              <br/>إدخال الموظفين الجدد مع إنشاء عقد آلي (محدد المدة - سنة إلا يوم) بجدول العقود.
             </p>
           </div>
 
-          {/* زر تحميل القالب */}
           <button
             onClick={handleDownloadTemplate}
-            style={{
-              background: '#10b981',
-              color: '#fff',
-              border: 0,
-              padding: '10px 18px',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              fontSize: '12px',
-              cursor: 'pointer',
-              boxShadow: '0 2px 6px rgba(16,185,129,0.2)',
-            }}
+            style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 2px 6px rgba(16,185,129,0.2)', display: 'flex', alignItems: 'center', gap: '8px' }}
           >
-            📥 تحميل قالب Excel الاسترشادي
+            <span style={{ fontSize: '16px' }}>📥</span> تحميل القالب المعتمد
           </button>
         </div>
 
         {/* منطقة رفع الملف */}
-        <div style={{ border: '2px dashed #cbd5e1', borderRadius: '12px', padding: '32px', textAlign: 'center', background: '#f8fafc', marginBottom: '20px' }}>
+        <div className="upload-area">
+          <div style={{ fontSize: '40px', marginBottom: '16px' }}>📂</div>
+          <h4 style={{ margin: '0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>ارفع ملف الإكسيل المعبأ هنا</h4>
+          <p style={{ margin: '0 0 24px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>يمكنك رفع كود الموظف والإدارة والوظيفة فقط، أو شيت كامل بكل البيانات</p>
+
           <input
             type="file"
             accept=".xlsx, .xls"
@@ -187,29 +326,27 @@ export default function DataSyncPage() {
             id="excel-upload-input"
             style={{ display: 'none' }}
           />
-          <label
-            htmlFor="excel-upload-input"
-            style={{
-              background: loading ? '#64748b' : '#2563eb',
-              color: '#fff',
-              padding: '12px 24px',
-              borderRadius: '8px',
-              fontWeight: 'bold',
-              fontSize: '13px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'inline-block'
-            }}
-          >
-            {loading ? 'جاري المعالجة والحفظ...' : '📁 اختر ملف Excel المعبأ للاستيراد والتحديث'}
+          <label htmlFor="excel-upload-input" className={`custom-file-upload ${loading ? 'disabled' : ''}`}>
+            {loading ? (
+              <>⏳ جاري المزامنة والحفظ...</>
+            ) : (
+              <>🚀 اختر الملف للرفع والتحديث</>
+            )}
           </label>
         </div>
 
-        {/* رسالة الحالة والتفاصيل */}
-        {statusMsg && (
-          <div style={{ padding: '16px', borderRadius: '10px', background: '#f1f5f9', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 'bold', whiteSpace: 'pre-line', color: '#0f172a' }}>
-            {statusMsg}
+        {/* شاشة الكونسول الذكية */}
+        <div style={{ background: '#0f172a', padding: '18px', borderRadius: '12px', minHeight: '130px', border: '1px solid #334155' }}>
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', background: loading ? '#f59e0b' : '#10b981', borderRadius: '50%' }}></span>
+            مراقبة تنفيذ العمليات الجراحية (Terminal Logs):
           </div>
-        )}
+          
+          <div style={{ fontSize: '13px', fontWeight: 'bold', whiteSpace: 'pre-line', color: statusMsg.includes('❌') ? '#fca5a5' : '#6ee7b7', fontFamily: 'monospace', lineHeight: '1.6' }}>
+            {statusMsg || 'المنظومة في وضع الاستعداد.. اضغط على الزر أعلاه وابدأ المزامنة.'}
+          </div>
+        </div>
+
       </div>
     </div>
   );
