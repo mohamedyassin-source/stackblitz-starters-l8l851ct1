@@ -1,8 +1,8 @@
-''use client';
+'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-
+import { useAppData } from '@/lib/DataContext';
 
 // أسماء أيام الأسبوع بالعربي
 const ARABIC_WEEKDAYS = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
@@ -31,14 +31,14 @@ export default function SignaturesPage() {
   
   // 🌟 سحب الطلبات المعتمدة فقط (التي وصلت لهذه المرحلة)
   const requests = useMemo(() => {
-    return renewals
+    return (renewals || [])
       .filter((r) => r.status === 'Approved')
       .sort((a, b) => String(b.request_id).localeCompare(String(a.request_id)));
   }, [renewals]);
   
   const [actionLoading, setActionLoading] = useState(false);
   
-  // 🗂️ فلتر الكروت العلوية (بدلاً من الأزرار القديمة)
+  // 🗂️ فلتر الكروت العلوية
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'pending_signature' | 'signed'>('pending_signature');
 
   // 🔃 حالات الترتيب
@@ -50,18 +50,16 @@ export default function SignaturesPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const getEmployeeRecord = (req: any) =>
-    employees.find((e: any) => (req.employee_id && (e.id === req.employee_id || e.employee_id === req.employee_id)) || String(e.employee_code) === String(req.employee_code));
+    (employees || []).find((e: any) => (req.employee_id && (e.id === req.employee_id || e.employee_id === req.employee_id)) || String(e.employee_code) === String(req.employee_code));
 
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
 
   // 🌟 نظام الفلترة الذكي
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
-      // فلتر الكروت
       if (activeFilterCard === 'pending_signature' && req.signature_status === 'تم التوقيع') return false;
       if (activeFilterCard === 'signed' && req.signature_status !== 'تم التوقيع') return false;
       
-      // فلتر البحث
       const term = searchTerm.toLowerCase();
       const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
       const matchesDept = !selectedDept || req.department === selectedDept;
@@ -112,10 +110,8 @@ export default function SignaturesPage() {
     setActionLoading(true);
     try {
       const updatePromises = idsToSign.map(async (id) => {
-        // تحديث حالة التوقيع
         await supabase.from('renewal_requests').update({ signature_status: 'تم التوقيع' }).eq('request_id', id);
         
-        // جلب بيانات الطلب لتحديث سجل الموظف والعقد
         const req = requests.find(r => r.request_id === id);
         if (req && req.new_contract_end_date) {
           await supabase.from('employees').update({ contract_end_date: req.new_contract_end_date }).eq('employee_code', req.employee_code);
@@ -410,19 +406,16 @@ export default function SignaturesPage() {
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                         
-                        {/* 🌟 زر التوقيع الفردي */}
                         {!isSigned && (
                           <button onClick={() => handleSign(req.request_id)} disabled={actionLoading} title="إثبات التوقيع وتحديث السجل" style={{ background: '#10b981', color: '#ffffff', border: 0, padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer', boxShadow: '0 2px 4px rgba(16, 185, 129, 0.2)' }}>
                             ✍️ توقيع
                           </button>
                         )}
 
-                        {/* 🌟 زر الطباعة والتصدير (محفوظ بدون تغيير لضمان عمل الإحداثيات) */}
                         <button onClick={() => handleGeneratePDF(req)} disabled={actionLoading} title="طباعة عقد جديد PDF" style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}>
                           🖨️ طباعة
                         </button>
                         
-                        {/* 🌟 زر الحذف الفردي */}
                         <button onClick={() => handleDelete(req.request_id)} disabled={actionLoading} title="حذف الطلب نهائياً" style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}>
                           🗑️
                         </button>
