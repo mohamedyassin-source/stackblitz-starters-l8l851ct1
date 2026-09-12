@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
@@ -45,7 +46,26 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [loadingRoles, setLoadingRoles] = useState(false);
   const [search, setSearch] = useState('');
 
-  const isAdmin = currentUser?.role === 'Admin' || true;
+  // فحص صلاحية الأدمن من المستخدم الحالي أو من الـ Session المخزنة
+  const [userRole, setUserRole] = useState<string>('');
+
+  useEffect(() => {
+    if (currentUser?.role) {
+      setUserRole(currentUser.role);
+    } else {
+      const savedUser = localStorage.getItem('session_user');
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          setUserRole(parsed.role || 'Admin');
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
+  }, [currentUser]);
+
+  const isAdmin = userRole.toLowerCase() === 'admin';
 
   useEffect(() => {
     const savedEmail = localStorage.getItem('cfg_recipientEmail');
@@ -138,7 +158,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 4. حذف مستخدم بدلالة employee_code أو username لعدم وجود عمود id
+  // 4. حذف مستخدم بدلالة employee_code أو username
   const handleDeleteAppUser = async (user: any) => {
     if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username}) نهائياً من app_users؟`)) return;
 
@@ -161,7 +181,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 🌟 5. تعديل صلاحية مستخدم بدلالة employee_code أو username
+  // 5. تعديل صلاحية مستخدم بدلالة employee_code أو username
   const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
       let query = supabase.from('app_users').update({ role: newRole });
@@ -219,7 +239,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
 
   if (!isAdmin) {
     return (
-      <div className="card text-center py-12 px-6" style={{ borderColor: 'var(--stamp-red)', background: 'var(--stamp-red-bg)' }}>
+      <div className="card text-center py-12 px-6" style={{ borderColor: 'var(--stamp-red)', background: 'var(--stamp-red-bg)', direction: 'rtl' }}>
         <h2 className="m-0 mb-2 text-lg font-extrabold" style={{ color: 'var(--stamp-red)' }}>🚨 محاولة وصول غير مصرح بها!</h2>
         <p className="font-bold" style={{ color: 'var(--stamp-red)' }}>ليس لديك صلاحيات مدير النظام للدخول لهذه الصفحة.</p>
       </div>
@@ -227,7 +247,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   }
 
   return (
-    <div style={{ paddingBottom: '40px' }}>
+    <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '18px', color: 'var(--navy-950)', fontWeight: '900' }}>إعدادات وتفضيلات النظام 👑</h3>
