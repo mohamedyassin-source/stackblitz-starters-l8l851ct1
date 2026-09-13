@@ -703,7 +703,7 @@ export default function EmployeesPage() {
           }}
         >
           <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>نواقص البيانات</div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>استكمال البيانات</div>
             <span style={{ fontSize: '14px' }}>⚠️</span>
           </div>
           <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '4px' }}>{kpiStats.missingData.toLocaleString('en-US')}</div>
