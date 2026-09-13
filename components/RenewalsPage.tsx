@@ -93,19 +93,22 @@ export default function RenewalsPage() {
     }
   }, [approvalModal, confirmedMonths]);
 
-  // دالة السحب المتطورة
+  // دالة السحب الآمنة (استدعاء كامل لمنع السفر والخطأ)
   const fetchRequests = async () => {
     setLoading(true);
-    
-    const { data: reqData, error: reqErr } = await supabase.from('renewal_requests').select('*');
-    if (reqErr) console.error("Error fetching requests:", reqErr.message);
-    
-    const { data: empData, error: empErr } = await supabase.from('employees').select('employee_code, birth_date, national_id, job_title, contract_type');
-    if (empErr) console.error("Error fetching employees:", empErr.message);
+    try {
+      const [reqRes, empRes] = await Promise.all([
+        supabase.from('renewal_requests').select('*'),
+        supabase.from('employees').select('*')
+      ]);
 
-    if (reqData && empData) {
+      const reqData = reqRes.data || [];
+      const empData = empRes.data || [];
+
       const mergedRequests = reqData.map(req => {
-        const emp = empData.find(e => String(e.employee_code) === String(req.employee_code));
+        const reqCodeClean = String(req.employee_code || '').trim().replace(/^0+/, '');
+        const emp = empData.find(e => String(e.employee_code || '').trim().replace(/^0+/, '') === reqCodeClean);
+        
         return {
           ...req,
           job_title: req.job_title || emp?.job_title || '—',
@@ -114,9 +117,13 @@ export default function RenewalsPage() {
           national_id: emp?.national_id || null
         };
       });
+
       setRequests(mergedRequests);
+    } catch (err) {
+      console.error('Error fetching renewals:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const getDaysRemaining = (endDateStr: string) => {
@@ -143,10 +150,10 @@ export default function RenewalsPage() {
 
       const term = searchTerm.toLowerCase();
       const matchesSearch = !term || 
-        String(req.employee_code).toLowerCase().includes(term) || 
-        String(req.employee_name).toLowerCase().includes(term) || 
-        String(req.request_id).toLowerCase().includes(term) ||
-        String(req.job_title).toLowerCase().includes(term);
+        String(req.employee_code || '').toLowerCase().includes(term) || 
+        String(req.employee_name || '').toLowerCase().includes(term) || 
+        String(req.request_id || '').toLowerCase().includes(term) ||
+        String(req.job_title || '').toLowerCase().includes(term);
 
       const matchesDept = !selectedDept || req.department === selectedDept;
       const matchesComp = !selectedCompany || req.company === selectedCompany;
@@ -161,7 +168,7 @@ export default function RenewalsPage() {
     });
   }, [requests, activeTab, searchTerm, selectedDept, selectedCompany, selectedMonth]);
 
-  // 🔃 ترتيب الطلبات شامل لجميع الأعمدة
+  // 🔃 ترتيب الطلبات
   const sortedRequests = useMemo(() => {
     return [...filteredRequests].sort((a, b) => {
       if (!a) return 1;
@@ -187,7 +194,6 @@ export default function RenewalsPage() {
     });
   }, [filteredRequests, sortColumn, sortDirection]);
 
-  // دالة تغيير اتجاه الترتيب
   const handleSort = (col: string) => {
     setSortDirection(sortColumn === col && sortDirection === 'asc' ? 'desc' : 'asc');
     setSortColumn(col);
@@ -228,7 +234,7 @@ export default function RenewalsPage() {
           setActionLoading(false); return alert('يرجى التأكد من التواريخ.');
         }
 
-        // 🌟 جدار الحماية المعدل الذكي
+        // 🌟 جدار الحماية المعدل الذكي: استثناء عقود فوق السن والذين بلغوا 60 مسبقاً
         const age = calculateAge(req.birth_date);
         const isOverAgeContract = String(req.contract_type || '').includes('فوق السن');
         const isAlreadyOver60 = age !== null && age >= 60;
