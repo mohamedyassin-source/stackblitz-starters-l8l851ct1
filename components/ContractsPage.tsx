@@ -365,11 +365,18 @@ export default function ContractsPage() {
       const emp = modalState.emp;
       const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
       
-      const retirementDateStr = calculateRetirementDate(emp.birth_date);
-      if (retirementDateStr && new Date(targetEndDate) > new Date(retirementDateStr)) {
-        alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\nتاريخ انتهاء العقد المقترح: ${targetEndDate}\n\nيُمنع النظام استكمال الطلب. يرجى اختيار "تاريخ انتهاء مخصص" بحيث لا يتجاوز تاريخ بلوغ السن أعلاه.`);
-        setActionLoading(false);
-        return;
+      // 🌟 جدار الحماية المعدل الذكي
+      const age = calculateAge(emp.birth_date);
+      const isOverAgeContract = String(emp.contract_type || '').includes('فوق السن');
+      const isAlreadyOver60 = age !== null && age >= 60;
+
+      if (!isOverAgeContract && !isAlreadyOver60) {
+        const retirementDateStr = calculateRetirementDate(emp.birth_date);
+        if (retirementDateStr && new Date(targetEndDate) > new Date(retirementDateStr)) {
+          alert(`🚨 توقف - الموظف سيتجاوز سن التقاعد (60) خلال فترة التجديد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\nتاريخ انتهاء العقد المقترح: ${targetEndDate}\n\nيرجى اختيار "تاريخ انتهاء مخصص" بحيث ينتهي العقد عند تاريخ بلوغ السن، أو تعديل نوع العقد إلى "محدد المدة - فوق السن".`);
+          setActionLoading(false);
+          return;
+        }
       }
 
       const [reqId] = generateSequentialIds(1);
@@ -396,17 +403,24 @@ export default function ContractsPage() {
     } else if (modalState.type === 'bulk') {
       const selectedEmps = employees.filter(e => e && selectedEmpCodes.includes(String(e.employee_code)));
       
+      // 🌟 جدار الحماية الذكي للمجموعات
       const problematicEmps: string[] = [];
       selectedEmps.forEach(emp => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
-        const retDate = calculateRetirementDate(emp.birth_date);
-        if (retDate && new Date(targetEndDate) > new Date(retDate)) {
-          problematicEmps.push(`- ${emp.employee_name} (يبلغ السن في ${retDate})`);
+        const age = calculateAge(emp.birth_date);
+        const isOverAgeContract = String(emp.contract_type || '').includes('فوق السن');
+        const isAlreadyOver60 = age !== null && age >= 60;
+
+        if (!isOverAgeContract && !isAlreadyOver60) {
+          const retDate = calculateRetirementDate(emp.birth_date);
+          if (retDate && new Date(targetEndDate) > new Date(retDate)) {
+            problematicEmps.push(`- ${emp.employee_name} (يبلغ السن في ${retDate})`);
+          }
         }
       });
 
       if (problematicEmps.length > 0) {
-        alert(`🚨 توقف - يوجد موظفين سيتجاوزون سن التقاعد (60):\n\n${problematicEmps.join('\n')}\n\nيرجى إلغاء تحديدهم من القائمة، وتجديد عقودهم بشكل فردي بتاريخ لا يتجاوز سن تقاعدهم.`);
+        alert(`🚨 توقف - يوجد موظفين سيتجاوزون سن التقاعد (60) أثناء التجديد:\n\n${problematicEmps.join('\n')}\n\nيرجى إلغاء تحديدهم، وتجديد عقودهم بشكل فردي بتاريخ لا يتجاوز سن تقاعدهم أو تحويلهم لـ "فوق السن".`);
         setActionLoading(false);
         return;
       }
@@ -491,11 +505,18 @@ export default function ContractsPage() {
     setActionLoading(true);
     const emp = employees.find((e) => e && String(e.employee_code) === String(selectedEmployeeCode));
     
-    const retirementDateStr = calculateRetirementDate(emp?.birth_date);
-    if (retirementDateStr && new Date(newContractEndDate) > new Date(retirementDateStr)) {
-      alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\n\nيُرجى تعديل "نهاية العقد" ليكون بحد أقصى تاريخ بلوغ السن.`);
-      setActionLoading(false);
-      return;
+    // 🌟 جدار الحماية المعدل عند إنشاء عقد جديد
+    const age = calculateAge(emp?.birth_date);
+    const isOverAgeContract = newContractType.includes('فوق السن');
+    const isAlreadyOver60 = age !== null && age >= 60;
+
+    if (!isOverAgeContract && !isAlreadyOver60) {
+      const retirementDateStr = calculateRetirementDate(emp?.birth_date);
+      if (retirementDateStr && new Date(newContractEndDate) > new Date(retirementDateStr)) {
+        alert(`🚨 توقف - تجاوز سن التقاعد!\n\nالموظف: ${emp?.employee_name}\nتاريخ بلوغ السن (60): ${retirementDateStr}\n\nيُرجى تعديل "نهاية العقد" ليكون بحد أقصى تاريخ بلوغ السن، أو اختيار نوع عقد "فوق السن".`);
+        setActionLoading(false);
+        return;
+      }
     }
 
     const [reqId] = generateSequentialIds(1);
@@ -676,7 +697,7 @@ export default function ContractsPage() {
         </div>
       </div>
 
-      {/* 🚀 الجدول الرئيسي بعد ترتيب الأعمدة */}
+      {/* 🚀 الجدول الرئيسي */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات العقود والطلبات... ⏳</div>
@@ -693,7 +714,7 @@ export default function ContractsPage() {
                 <th onClick={() => handleSort('job_title')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
                 <th onClick={() => handleSort('contract_type')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>النوع {renderSortArrow('contract_type')}</th>
                 
-                {/* 🎂 رأس عمود السن في مكانه الجديد (بعد النوع وقبل الانتهاء) */}
+                {/* 🎂 رأس عمود السن بعد نوع العقد */}
                 <th onClick={() => handleSort('age')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>السن {renderSortArrow('age')}</th>
                 
                 <th onClick={() => handleSort('contract_end_date')} style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الانتهاء {renderSortArrow('contract_end_date')}</th>
@@ -753,7 +774,7 @@ export default function ContractsPage() {
                       {isTerminated ? 'إنهاء تعاقد' : empType}
                     </td>
 
-                    {/* 🎂 خلايا عمود السن في مكانها الجديد (بعد نوع العقد وقبل الانتهاء) */}
+                    {/* 🎂 خلايا عمود السن بعد نوع العقد */}
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
                       {age !== null ? (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
