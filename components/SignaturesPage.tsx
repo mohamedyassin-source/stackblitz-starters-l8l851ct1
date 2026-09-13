@@ -29,7 +29,7 @@ function formatDate(dateStr?: string | null) {
 export default function SignaturesPage() {
   const { renewals, employees, loading, refresh: fetchApprovedRequests } = useAppData();
   
-  // 🌟 سحب الطلبات المعتمدة فقط (التي وصلت لهذه المرحلة)
+  // 🌟 سحب الطلبات المعتمدة فقط
   const requests = useMemo(() => {
     return (renewals || [])
       .filter((r) => r.status === 'Approved')
@@ -48,6 +48,10 @@ export default function SignaturesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // 📝 حالة نافذة تعديل العقد
+  const [editModal, setEditModal] = useState<{ isOpen: boolean; req?: any }>({ isOpen: false });
+  const [editEndDate, setEditEndDate] = useState<string>('');
 
   const getEmployeeRecord = (req: any) =>
     (employees || []).find((e: any) => (req.employee_id && (e.id === req.employee_id || e.employee_id === req.employee_id)) || String(e.employee_code) === String(req.employee_code));
@@ -99,6 +103,77 @@ export default function SignaturesPage() {
     return sortDirection === 'asc' ? <span style={{ color: '#4f46e5', marginRight: '4px' }}>▲</span> : <span style={{ color: '#4f46e5', marginRight: '4px' }}>▼</span>;
   };
 
+  // 🎯 دالة المحاذاة التلقائية لشهر التعيين الأصلي
+  const handleAlignToAnniversary = () => {
+    if (!editModal.req) return;
+    const emp = getEmployeeRecord(editModal.req);
+    const hiringDateRaw = emp?.hiring_date || emp?.contract_start_date;
+    
+    if (!hiringDateRaw) {
+      return alert('عذراً، تاريخ تعيين هذا الموظف غير محدد في السجل.');
+    }
+
+    const hiringDate = new Date(hiringDateRaw);
+    if (isNaN(hiringDate.getTime())) return alert('تاريخ التعيين المتاح غير صالح.');
+
+    // الشهر اليومي للتعيين
+    const hireMonth = hiringDate.getMonth(); // 0-11
+    const today = new Date();
+    let targetYear = today.getFullYear();
+
+    // تاريخ نهاية العقد يوافق آخر يوم في شهر التعيين
+    const lastDayOfAnniversaryMonth = new Date(targetYear, hireMonth + 1, 0);
+
+    // إذا كان التاريخ المحسوب قد مضى هذا العام، نجعله للعام القادم
+    if (lastDayOfAnniversaryMonth < today) {
+      lastDayOfAnniversaryMonth.setFullYear(targetYear + 1);
+    }
+
+    const alignedEndDateStr = lastDayOfAnniversaryMonth.toISOString().split('T')[0];
+    setEditEndDate(alignedEndDateStr);
+  };
+
+  // ✏️ فتح نافذة تعديل التاريخ
+  const openEditModal = (req: any) => {
+    setEditEndDate(req.new_contract_end_date || '');
+    setEditModal({ isOpen: true, req });
+  };
+
+  // 💾 حفظ تعديل التاريخ والتسميع بجدول العقود المباشر
+  const handleSaveContractEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editModal.req || !editEndDate) return;
+
+    setActionLoading(true);
+    try {
+      const req = editModal.req;
+      const parsedCode = parseInt(req.employee_code, 10);
+
+      // 1. تحديث جدول طلبات التجديد
+      const { error: reqErr } = await supabase
+        .from('renewal_requests')
+        .update({ new_contract_end_date: editEndDate })
+        .eq('request_id', req.request_id);
+
+      if (reqErr) throw reqErr;
+
+      // 2. التسميع الفوري المباشر بجدول العقود السارية
+      await supabase
+        .from('contracts')
+        .update({ contract_end_date: editEndDate })
+        .eq('employee_code', parsedCode)
+        .eq('status', 'Active');
+
+      alert('تم تحديث تاريخ نهاية العقد والتسميع بجدول العقود السارية بنجاح ✅');
+      setEditModal({ isOpen: false });
+      await fetchApprovedRequests();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء حفظ التعديل: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // ✍️ دالة التوقيع (فردي ومجمع)
   const handleSign = async (reqId?: string) => {
     const idsToSign = reqId ? [reqId] : selectedIds;
@@ -114,13 +189,13 @@ export default function SignaturesPage() {
         
         const req = requests.find(r => r.request_id === id);
         if (req && req.new_contract_end_date) {
-          await supabase.from('employees').update({ contract_end_date: req.new_contract_end_date }).eq('employee_code', req.employee_code);
-          await supabase.from('contracts').update({ contract_end_date: req.new_contract_end_date }).eq('employee_code', req.employee_code).eq('status', 'Active');
+          const parsedCode = parseInt(req.employee_code, 10);
+          await supabase.from('contracts').update({ contract_end_date: req.new_contract_end_date }).eq('employee_code', parsedCode).eq('status', 'Active');
         }
       });
 
       await Promise.all(updatePromises);
-      alert('تم تسجيل التوقيع وتحديث تواريخ الموظفين بنجاح ✍️✅');
+      alert('تم تسجيل التوقيع وتحديث تواريخ العقود بنجاح ✍️✅');
       
       setSelectedIds([]);
       await fetchApprovedRequests();
@@ -220,7 +295,6 @@ export default function SignaturesPage() {
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       
-      {/* 🌟 تصميم Enterprise Cards */}
       <style>{`
         .modern-stat-card {
           background: #ffffff;
@@ -262,15 +336,14 @@ export default function SignaturesPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>📄 توقيعات العقود وأرشفتها</h3>
-          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة النماذج المعتمدة لطباعتها وتوثيق استلام توقيع الموظف عليها</p>
+          <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة النماذج المعتمدة لطباعتها وتعديل تواريخ نهايتها وتوثيق التوقيعات</p>
         </div>
       </div>
 
-      {/* 📊 الكروت العلوية بالتصميم المستطيل (Enterprise) */}
+      {/* 📊 الكروت العلوية */}
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           
-          {/* كارت 1 (أزرق) */}
           <div className={`modern-stat-card ${activeFilterCard === 'all' ? 'active' : ''}`} style={{ '--theme-color': '#3b82f6', '--icon-bg': '#eff6ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('all')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جميع النماذج المعتمدة</span>
@@ -282,7 +355,6 @@ export default function SignaturesPage() {
             </div>
           </div>
 
-          {/* كارت 2 (برتقالي) */}
           <div className={`modern-stat-card ${activeFilterCard === 'pending_signature' ? 'active' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setActiveFilterCard('pending_signature')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>بانتظار التوقيع والطباعة</span>
@@ -294,7 +366,6 @@ export default function SignaturesPage() {
             </div>
           </div>
 
-          {/* كارت 3 (أخضر) */}
           <div className={`modern-stat-card ${activeFilterCard === 'signed' ? 'active' : ''}`} style={{ '--theme-color': '#10b981', '--icon-bg': '#ecfdf5' } as React.CSSProperties} onClick={() => setActiveFilterCard('signed')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>تم التوقيع والتحديث</span>
@@ -348,7 +419,7 @@ export default function SignaturesPage() {
         </div>
       </div>
 
-      {/* 🚀 الجدول الرئيسي مع الترتيب */}
+      {/* 🚀 الجدول الرئيسي */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب النماذج المعتمدة... ⏳</div>
@@ -412,6 +483,11 @@ export default function SignaturesPage() {
                           </button>
                         )}
 
+                        {/* ✏️ زر تعديل تاريخ نهاية العقد الجديد والمحاذاة */}
+                        <button onClick={() => openEditModal(req)} disabled={actionLoading} title="تعديل تاريخ انتهاء العقد" style={{ background: '#ffffff', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}>
+                          ✏️ تعديل
+                        </button>
+
                         <button onClick={() => handleGeneratePDF(req)} disabled={actionLoading} title="طباعة عقد جديد PDF" style={{ background: '#f8fafc', color: '#4f46e5', border: '1px solid #c7d2fe', padding: '6px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: actionLoading ? 'wait' : 'pointer' }}>
                           🖨️ طباعة
                         </button>
@@ -429,6 +505,43 @@ export default function SignaturesPage() {
           </table>
         )}
       </div>
+
+      {/* 🚀 نافذة تعديل تاريخ نهاية العقد الذكية */}
+      {editModal.isOpen && editModal.req && (
+        <div className="no-print" style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '480px', background: '#ffffff', borderRadius: '20px', padding: '28px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)', direction: 'rtl' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '16px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '18px', color: '#4f46e5', fontWeight: '900' }}>✏️ تعديل تاريخ العقد الجديد</h3>
+              <button onClick={() => setEditModal({ isOpen: false })} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+
+            <form onSubmit={handleSaveContractEdit}>
+              <div style={{ marginBottom: '16px', background: '#f8fafc', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#0f172a', marginBottom: '4px' }}>الموظف: {editModal.req.employee_name}</div>
+                <div style={{ fontSize: '11px', color: '#64748b' }}>الكود: {editModal.req.employee_code} | رقم الطلب: {editModal.req.request_id}</div>
+              </div>
+
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>تاريخ نهاية العقد الجديد *</label>
+                <input type="date" required value={editEndDate} onChange={(e) => setEditEndDate(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
+              </div>
+
+              {/* 🎯 زر المحاذاة الذكية لشهر التعيين الاصلي */}
+              <button type="button" onClick={handleAlignToAnniversary} style={{ width: '100%', background: '#eff6ff', color: '#2563eb', border: '1px dashed #93c5fd', padding: '10px', borderRadius: '8px', fontSize: '11.5px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                🎯 محاذاة تلقائية لشهر التعيين الأصلي للموظف
+              </button>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                <button type="button" onClick={() => setEditModal({ isOpen: false })} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
+                <button type="submit" disabled={actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>
+                  {actionLoading ? 'جاري الحفظ والتسميع...' : 'تحديث وتسميع بجدول العقود 💾'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
