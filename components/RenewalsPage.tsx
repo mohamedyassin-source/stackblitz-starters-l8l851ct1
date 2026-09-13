@@ -28,7 +28,20 @@ const calculateNewEndDateFromStart = (startDateStr: string | null, monthsToAdd: 
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-// 🌟 حاسبة سن التقاعد (60 سنة)
+// 🌟 حاسبة السن والتقاعد
+const calculateAge = (birthDateRaw: string | null | undefined) => {
+  if (!birthDateRaw) return null;
+  const birthDate = new Date(birthDateRaw);
+  if (isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
+
 const calculateRetirementDate = (birthDate: string | null | undefined) => {
   if (!birthDate) return null;
   const date = new Date(birthDate);
@@ -87,7 +100,7 @@ export default function RenewalsPage() {
     const { data: reqData, error: reqErr } = await supabase.from('renewal_requests').select('*');
     if (reqErr) console.error("Error fetching requests:", reqErr.message);
     
-    const { data: empData, error: empErr } = await supabase.from('employees').select('employee_code, birth_date, national_id, job_title');
+    const { data: empData, error: empErr } = await supabase.from('employees').select('employee_code, birth_date, national_id, job_title, contract_type');
     if (empErr) console.error("Error fetching employees:", empErr.message);
 
     if (reqData && empData) {
@@ -96,6 +109,7 @@ export default function RenewalsPage() {
         return {
           ...req,
           job_title: req.job_title || emp?.job_title || '—',
+          contract_type: req.contract_type || emp?.contract_type || '—',
           birth_date: emp?.birth_date || null,
           national_id: emp?.national_id || null
         };
@@ -214,12 +228,18 @@ export default function RenewalsPage() {
           setActionLoading(false); return alert('يرجى التأكد من التواريخ.');
         }
 
-        // جدار حماية سن التقاعد
-        const retirementDateStr = calculateRetirementDate(req.birth_date);
-        if (retirementDateStr && new Date(newEndDate) > new Date(retirementDateStr)) {
-          alert(`🚨 توقف - الموظف سيتجاوز سن التقاعد (60)!\n\nتاريخ بلوغ السن: ${retirementDateStr}\nتاريخ انتهاء العقد المُدخل: ${newEndDate}\n\nيُرجى تعديل تاريخ النهاية المتوقع بحيث لا يتجاوز تاريخ التقاعد.`);
-          setActionLoading(false);
-          return;
+        // 🌟 جدار الحماية المعدل الذكي
+        const age = calculateAge(req.birth_date);
+        const isOverAgeContract = String(req.contract_type || '').includes('فوق السن');
+        const isAlreadyOver60 = age !== null && age >= 60;
+
+        if (!isOverAgeContract && !isAlreadyOver60) {
+          const retirementDateStr = calculateRetirementDate(req.birth_date);
+          if (retirementDateStr && new Date(newEndDate) > new Date(retirementDateStr)) {
+            alert(`🚨 توقف - الموظف سيتجاوز سن التقاعد (60) خلال فترة التجديد!\n\nتاريخ بلوغ السن: ${retirementDateStr}\nتاريخ انتهاء العقد المُدخل: ${newEndDate}\n\nيُرجى تعديل تاريخ النهاية المتوقع بحيث لا يتجاوز تاريخ التقاعد، أو تعديل نوع عقد الموظف إلى "فوق السن".`);
+            setActionLoading(false);
+            return;
+          }
         }
 
         const { error: reqError } = await supabase.from('renewal_requests').update({
@@ -243,18 +263,25 @@ export default function RenewalsPage() {
       } else if (approvalModal.type === 'bulk') {
         const reqsToApprove = requests.filter(r => selectedIds.includes(r.request_id));
         
+        // 🌟 جدار الحماية الذكي للمجموعات
         const problematicEmps: string[] = [];
         reqsToApprove.forEach(req => {
           const newStartDate = calculateNewStartDate(req.contract_end_date);
           const newEndDate = calculateNewEndDateFromStart(newStartDate, confirmedMonths);
-          const retDate = calculateRetirementDate(req.birth_date);
-          if (retDate && newEndDate && new Date(newEndDate) > new Date(retDate)) {
-            problematicEmps.push(`- ${req.employee_name} (يبلغ السن في ${retDate})`);
+          const age = calculateAge(req.birth_date);
+          const isOverAgeContract = String(req.contract_type || '').includes('فوق السن');
+          const isAlreadyOver60 = age !== null && age >= 60;
+
+          if (!isOverAgeContract && !isAlreadyOver60) {
+            const retDate = calculateRetirementDate(req.birth_date);
+            if (retDate && newEndDate && new Date(newEndDate) > new Date(retDate)) {
+              problematicEmps.push(`- ${req.employee_name} (يبلغ السن في ${retDate})`);
+            }
           }
         });
 
         if (problematicEmps.length > 0) {
-          alert(`🚨 توقف - يوجد موظفين سيتجاوزون سن التقاعد (60):\n\n${problematicEmps.join('\n')}\n\nيرجى إلغاء تحديدهم من القائمة، واعتمادهم بشكل فردي بتاريخ مخصص.`);
+          alert(`🚨 توقف - يوجد موظفين سيتجاوزون سن التقاعد (60) أثناء التجديد:\n\n${problematicEmps.join('\n')}\n\nيرجى إلغاء تحديدهم من القائمة، واعتمادهم بشكل فردي بتاريخ مخصص أو تحويلهم لـ "فوق السن".`);
           setActionLoading(false); return;
         }
 
@@ -552,7 +579,7 @@ export default function RenewalsPage() {
         </div>
       </div>
 
-      {/* الجدول الرئيسي المحدث بجميع السورت وعمود الوظيفة */}
+      {/* الجدول الرئيسي */}
       <div className="table-responsive no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '40px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري تحميل الطلبات وترتيبها...</div>
@@ -567,10 +594,7 @@ export default function RenewalsPage() {
                 <th onClick={() => handleSort('employee_code')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
                 <th onClick={() => handleSort('employee_name')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الموظف {renderSortArrow('employee_name')}</th>
                 <th onClick={() => handleSort('department')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
-                
-                {/* 👔 عمود الوظيفة المضاف حديثاً مع السورت */}
                 <th onClick={() => handleSort('job_title')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
-                
                 <th onClick={() => handleSort('contract_end_date')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>انتهاء العقد {renderSortArrow('contract_end_date')}</th>
                 <th onClick={() => handleSort('days_left')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none' }}>المتبقي {renderSortArrow('days_left')}</th>
                 <th onClick={() => handleSort('renewal_months')} style={{ padding: '14px 12px', borderBottom: '1px solid #e2e8f0', color: '#64748b', cursor: 'pointer', userSelect: 'none', textAlign: 'center' }}>مدة التجديد {renderSortArrow('renewal_months')}</th>
@@ -592,10 +616,7 @@ export default function RenewalsPage() {
                     <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace', color: '#4f46e5' }}>{req.employee_code}</td>
                     <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{req.employee_name}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{req.department || '—'}</td>
-                    
-                    {/* 👔 خلية الوظيفة */}
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{req.job_title || '—'}</td>
-
                     <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{req.contract_end_date || '—'}</td>
                     <td style={{ padding: '12px' }}>
                       {days !== null ? (
