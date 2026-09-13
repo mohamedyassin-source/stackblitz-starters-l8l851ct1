@@ -139,7 +139,7 @@ export default function SignaturesPage() {
     setEditModal({ isOpen: true, req });
   };
 
-  // 💾 حفظ تعديل التاريخ والتسميع بجدول العقود المباشر
+  // 💾 حفظ تعديل التاريخ بجدول العقود 
   const handleSaveContractEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModal.req || !editEndDate) return;
@@ -157,14 +157,14 @@ export default function SignaturesPage() {
 
       if (reqErr) throw reqErr;
 
-      // 2. التسميع الفوري المباشر بجدول العقود السارية
+      // 2. التعديل الفوري المباشر بجدول العقود السارية
       await supabase
         .from('contracts')
         .update({ contract_end_date: editEndDate })
         .eq('employee_code', parsedCode)
         .eq('status', 'Active');
 
-      alert('تم تحديث تاريخ نهاية العقد والتسميع بجدول العقود السارية بنجاح ✅');
+      alert('تم تحديث تاريخ نهاية العقد وتعديل جدول العقود السارية بنجاح ✅');
       setEditModal({ isOpen: false });
       await fetchApprovedRequests();
     } catch (err: any) {
@@ -534,7 +534,7 @@ export default function SignaturesPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" onClick={() => setEditModal({ isOpen: false })} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', color: '#334155', padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
                 <button type="submit" disabled={actionLoading} style={{ background: '#4f46e5', color: '#fff', border: 0, padding: '12px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: actionLoading ? 'not-allowed' : 'pointer' }}>
-                  {actionLoading ? 'جاري الحفظ والتسميع...' : 'تحديث وتسميع بجدول العقود 💾'}
+                  {actionLoading ? 'جاري الحفظ والتعديل...' : 'تحديث وتعديل بجدول العقود 💾'}
                 </button>
               </div>
             </form>
