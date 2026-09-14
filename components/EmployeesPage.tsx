@@ -135,7 +135,7 @@ export default function EmployeesPage() {
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const compsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
 
-  // التصفية الأولية
+  // التصفية الأولية بناءً على خيارات البحث والشروط
   const baseFilteredEmployees = useMemo(() => {
     return employees.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -337,10 +337,8 @@ export default function EmployeesPage() {
       const contractType = getField(editData.emp, 'contract_type', 'ContractType');
       const status = getField(editData.emp, 'status', 'Status') || 'Active';
       
-      // جلب ID العقد لو موجود في بيانات الموظف
       const contractId = getField(editData.emp, 'contract_id', 'ContractID'); 
 
-      // حساب تاريخ النهاية أوتوماتيكياً لو العقد محدد ومفيش تاريخ نهاية
       if (contractType.includes('محدد') && (!rawEnd || rawEnd.trim() === '') && rawHiring) {
         rawEnd = calculateInitialEndDate(rawHiring);
       } else if (contractType === 'دائم') {
@@ -349,19 +347,20 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(empCode, 10);
 
-      // 1. تحديث بيانات الموظف الأساسية
+      // 1. تحديث بيانات الموظف الأساسية الشاملة
       const employeeUpdateData = {
         employee_code: parsedCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
         national_id: getField(editData.emp, 'national_id', 'NationalID'),
-        age: editData.emp.age ? Number(editData.emp.age) : null,
+        birth_date: getField(editData.emp, 'birth_date', 'BirthDate') || null, // 👈 تمت إضافة تاريخ الميلاد
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
         status: status,
-        email: getField(editData.emp, 'email', 'Email'),
-        mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
+        email: getField(editData.emp, 'email', 'Email'), // 👈 الإيميل
+        mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE'),
+        manager: getField(editData.emp, 'manager', 'Manager') // 👈 تمت إضافة المدير
       };
 
       const { error: empError } = await supabase
@@ -374,7 +373,7 @@ export default function EmployeesPage() {
       // تجهيز بيانات العقد
       const contractData = {
         employee_code: parsedCode,
-        contract_type: contractType, // 👈 نوع العقد الذي تم تعديله
+        contract_type: contractType, 
         contract_start_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
         contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
         status: status
@@ -382,11 +381,9 @@ export default function EmployeesPage() {
 
       // 2. تحديث جدول العقود بذكاء
       if (contractId) {
-        // لو معانا الـ ID بتاع العقد نحدثه مباشرة
         const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', contractId);
         if (cErr) throw new Error("خطأ في تحديث العقد المباشر: " + cErr.message);
       } else {
-        // لو مفيش ID، نبحث عن أحدث عقد للموظف
         const { data: latestContracts, error: fetchErr } = await supabase
           .from('contracts')
           .select('contract_id')
@@ -400,7 +397,6 @@ export default function EmployeesPage() {
           const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', latestContracts[0].contract_id);
           if (cErr) throw new Error("خطأ في تحديث العقد: " + cErr.message);
         } else {
-          // لو ملوش أي عقد خالص، نكريتله واحد
           const { error: cErr } = await supabase.from('contracts').insert([contractData]);
           if (cErr) throw new Error("خطأ في إنشاء عقد جديد: " + cErr.message);
         }
@@ -415,7 +411,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 دالة الإنهاء الدقيقة لتحديث نوع العقد في جدول Contracts باستخدام parsedCode الرقمي
+  // 🌟 دالة الإنهاء الدقيقة
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -581,13 +577,6 @@ export default function EmployeesPage() {
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      let calculatedAge = null;
-      if (newEmp.birth_date) {
-        const birth = new Date(newEmp.birth_date);
-        const today = new Date();
-        calculatedAge = today.getFullYear() - birth.getFullYear();
-      }
-
       let finalEndDate = newEmp.contract_end_date;
       if (newEmp.contract_type.includes('محدد') && !finalEndDate && newEmp.hiring_date) {
         finalEndDate = calculateInitialEndDate(newEmp.hiring_date);
@@ -595,13 +584,12 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
-      // 1. إضافة الموظف الأساسي
+      // 1. إضافة الموظف الأساسي (بدون age)
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
         birth_date: newEmp.birth_date ? newEmp.birth_date : null,
-        age: calculatedAge,
         department: newEmp.department,
         company: newEmp.company,
         job_title: newEmp.job_title,
@@ -705,6 +693,7 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* 🌟 الزر الجديد لتنظيف التكرارات */}
           <button 
             onClick={handleCleanDuplicates}
             disabled={isDeleting}
@@ -1167,7 +1156,7 @@ export default function EmployeesPage() {
         </div>
       )}
 
-      {/* ✏️ نافذة التعديل الفردي */}
+      {/* ✏️ نافذة التعديل الفردي (الشاملة) */}
       {editData && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -1180,21 +1169,31 @@ export default function EmployeesPage() {
               <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
                 <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#0d9488', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', fontWeight: 'bold' }}>بيانات السجل الأساسي (Employees)</h4>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                  
+                  {/* الحقول النصية العادية */}
                   {[
                     { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
                     { label: 'الاسم العربي', key1: 'employee_name', key2: 'ArabicName' },
                     { label: 'الرقم القومي', key1: 'national_id', key2: 'NationalID' },
-                    { label: 'السن (Age)', key1: 'age', key2: 'Age' },
                     { label: 'الإدارة', key1: 'department', key2: 'Department' },
                     { label: 'الشركة', key1: 'company', key2: 'Company' },
                     { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
                     { label: 'الموبايل', key1: 'mobile', key2: 'Mobile' },
+                    { label: 'البريد الإلكتروني', key1: 'email', key2: 'Email' },
+                    { label: 'المدير المباشر', key1: 'manager', key2: 'Manager' },
                   ].map(field => (
                     <div key={field.label}>
                       <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
                       <input type="text" value={getField(editData.emp, field.key1, field.key2)} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, [field.key1]: e.target.value, [field.key2]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
                     </div>
                   ))}
+
+                  {/* حقل تاريخ الميلاد */}
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ الميلاد</label>
+                    <input type="date" value={getField(editData.emp, 'birth_date', 'BirthDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, birth_date: e.target.value, BirthDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
+                  </div>
+
                 </div>
               </div>
 
