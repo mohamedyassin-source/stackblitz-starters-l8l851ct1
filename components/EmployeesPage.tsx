@@ -150,7 +150,6 @@ export default function EmployeesPage() {
       const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
       const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
       
-      // مطابقة نوع العقد بدقة
       const matchesType = !selectedType || cType === selectedType || cType.includes(selectedType);
 
       let matchesAge = true;
@@ -163,7 +162,7 @@ export default function EmployeesPage() {
     });
   }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
 
-  // 📊 حسابات كروت الـ KPI الـ 6 (مع استبعاد تحويلات تحت الاعتماد وغير النشطين)
+  // 📊 حسابات كروت الـ KPI
   const kpiStats = useMemo(() => {
     const currentYear = new Date().getFullYear();
 
@@ -354,11 +353,10 @@ export default function EmployeesPage() {
       const contractType = getField(editData.emp, 'contract_type', 'ContractType');
       const status = getField(editData.emp, 'status', 'Status') || 'Active';
 
-      // 🌟 حساب تاريخ النهاية أوتوماتيكياً لو العقد محدد ومفيش تاريخ نهاية!
       if (contractType.includes('محدد') && (!rawEnd || rawEnd.trim() === '') && rawHiring) {
         rawEnd = calculateInitialEndDate(rawHiring);
       } else if (contractType === 'دائم') {
-        rawEnd = ''; // العقد الدائم ملوش نهاية
+        rawEnd = ''; 
       }
 
       const parsedCode = parseInt(empCode, 10);
@@ -377,21 +375,10 @@ export default function EmployeesPage() {
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
 
-      // 1. تحديث جدول الموظفين
-      const { error: empError } = await supabase
-        .from('employees')
-        .update(employeeUpdateData)
-        .eq('employee_code', parsedCode);
-
+      const { error: empError } = await supabase.from('employees').update(employeeUpdateData).eq('employee_code', parsedCode);
       if (empError) throw empError;
 
-      // 2. التحقق من وجود عقد ساري للموظف وتحديثه أو إنشاؤه (Upsert Logic)
-      const { data: existingContract } = await supabase
-        .from('contracts')
-        .select('contract_id')
-        .eq('employee_code', parsedCode)
-        .eq('status', 'Active')
-        .maybeSingle();
+      const { data: existingContract } = await supabase.from('contracts').select('contract_id').eq('employee_code', parsedCode).eq('status', 'Active').maybeSingle();
 
       const contractData = {
         employee_code: parsedCode,
@@ -402,10 +389,8 @@ export default function EmployeesPage() {
       };
 
       if (existingContract) {
-        // لو ليه عقد، نحدثه
         await supabase.from('contracts').update(contractData).eq('contract_id', existingContract.contract_id);
       } else {
-        // لو رافع داتا إكسيل ومفيش عقد، ننشئ ليه عقد فوراً
         await supabase.from('contracts').insert([contractData]);
       }
 
@@ -418,7 +403,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 تحديث الإنهاء لتحديث contract_type بالسبب المختار
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -434,7 +418,7 @@ export default function EmployeesPage() {
           status: 'Inactive',
           termination_reason: termReason,
           termination_date: termDate,
-          contract_type: termReason // 👈 التحديث هنا
+          contract_type: termReason 
         })
         .eq('employee_code', empCode);
 
@@ -445,7 +429,7 @@ export default function EmployeesPage() {
         .update({ 
           status: 'Inactive',
           contract_end_date: termDate,
-          contract_type: termReason // 👈 التحديث هنا أيضًا
+          contract_type: termReason 
         })
         .eq('employee_code', empCode)
         .eq('status', 'Active');
@@ -515,7 +499,72 @@ export default function EmployeesPage() {
     }
   };
 
-  // ➕ دالة الإضافة المحدثة (حساب أوتوماتيكي لتاريخ النهاية)
+  // 🧹 دالة تنظيف التكرارات (Deduplication)
+  const handleCleanDuplicates = async () => {
+    const confirmStr = window.prompt('🚨 تحذير: هذا الإجراء سيفحص قاعدة البيانات ويقوم بحذف السجلات المكررة للموظفين (الذين لديهم نفس الكود) مع الاحتفاظ بالنسخة الأكمل والأنشط فقط.\n\nاكتب كلمة "تأكيد" للاستمرار:');
+    if (confirmStr !== 'تأكيد') return;
+
+    setIsDeleting(true);
+    try {
+      // 1. تجميع كل الموظفين حسب الكود
+      const grouped = new Map<string, any[]>();
+      employees.forEach(emp => {
+        const code = String(getField(emp, 'employee_code', 'EmployeeCode')).trim();
+        if (code) {
+          if (!grouped.has(code)) grouped.set(code, []);
+          grouped.get(code)?.push(emp);
+        }
+      });
+
+      const idsToDelete: any[] = [];
+      let duplicateCount = 0;
+
+      // 2. البحث عن الكروت المكررة
+      grouped.forEach((records) => {
+        if (records.length > 1) {
+          duplicateCount += (records.length - 1);
+          
+          // ترتيبهم عشان نحتفظ بأفضل سجل (Active > معاه رقم قومي > معاه موبايل)
+          records.sort((a, b) => {
+            const aActive = getField(a, 'status', 'Status').toLowerCase() === 'active';
+            const bActive = getField(b, 'status', 'Status').toLowerCase() === 'active';
+            if (aActive && !bActive) return -1;
+            if (!aActive && bActive) return 1;
+
+            const aNat = getField(a, 'national_id', 'NationalID');
+            const bNat = getField(b, 'national_id', 'NationalID');
+            if (aNat && !bNat) return -1;
+            if (!aNat && bNat) return 1;
+
+            return 0;
+          });
+
+          // إضافة معرفات السجلات المكررة (عدا الأول الأفضل) لسلة الحذف
+          for (let i = 1; i < records.length; i++) {
+            if (records[i].id) idsToDelete.push(records[i].id);
+          }
+        }
+      });
+
+      if (idsToDelete.length === 0) {
+        alert('لم يتم العثور على أي سجلات مكررة بنفس الكود. قاعدة بياناتك نظيفة! ✨');
+        setIsDeleting(false);
+        return;
+      }
+
+      // 3. مسح السجلات الزائدة باستخدام الـ ID الداخلي لـ Supabase
+      const { error: delErr } = await supabase.from('employees').delete().in('id', idsToDelete);
+      if (delErr) throw delErr;
+
+      alert(`تم تنظيف قاعدة البيانات وحذف ${duplicateCount} سجل مكرر بنجاح! 🧹✨`);
+      await fetchEmployees();
+    } catch (err: any) {
+      alert('حدث خطأ أثناء تنظيف التكرارات: ' + err.message);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -526,7 +575,6 @@ export default function EmployeesPage() {
         calculatedAge = today.getFullYear() - birth.getFullYear();
       }
 
-      // 🌟 حساب النهاية أوتوماتيكياً
       let finalEndDate = newEmp.contract_end_date;
       if (newEmp.contract_type.includes('محدد') && !finalEndDate && newEmp.hiring_date) {
         finalEndDate = calculateInitialEndDate(newEmp.hiring_date);
@@ -643,6 +691,15 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* 🌟 الزر الجديد لتنظيف التكرارات */}
+          <button 
+            onClick={handleCleanDuplicates}
+            disabled={isDeleting}
+            style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: isDeleting ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
+          >
+            🧹 تنظيف التكرارات
+          </button>
+
           <button 
             onClick={() => handleExportToExcel(false)}
             style={{ background: '#10b981', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
@@ -795,7 +852,6 @@ export default function EmployeesPage() {
         <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
         <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-        {/* 🌟 قائمة أنواع العقود الـ 4 المحددة رسمياً */}
         <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
           <option value="">كل أنواع العقود</option>
           {STANDARD_CONTRACT_TYPES.map((t, i) => <option key={i} value={t}>{t}</option>)}
@@ -1216,4 +1272,3 @@ export default function EmployeesPage() {
     </div>
   );
 }
-ممكن زرار يمسح الريكوردز المزدوجة من جدول employees and contracts  او تدمجهم بطريقة لان انا عاندي الناس رافعه شيتات مكرر كتير فشوف حل مناسب
