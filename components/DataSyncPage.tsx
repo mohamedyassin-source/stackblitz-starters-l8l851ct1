@@ -25,9 +25,6 @@ export default function DataSyncPage() {
         status: 'Active',
         termination_date: '',
         termination_reason: '',
-        created_at: '2024-01-01',
-        updated_at: '2024-01-01',
-        age: 30,
         national_id: '29401010101234',
         birth_date: '1994-01-01'
       },
@@ -44,9 +41,6 @@ export default function DataSyncPage() {
         status: 'Inactive',
         termination_date: '2024-02-01',
         termination_reason: 'إجازة بدون راتب',
-        created_at: '2023-05-15',
-        updated_at: '2024-02-01',
-        age: 35,
         national_id: '28905050105678',
         birth_date: '1989-05-05'
       }
@@ -56,8 +50,7 @@ export default function DataSyncPage() {
     worksheet['!cols'] = [
       { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 20 },
       { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 12 },
-      { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 10 },
-      { wch: 18 }, { wch: 15 }
+      { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 15 }
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -89,7 +82,6 @@ export default function DataSyncPage() {
     return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
   };
 
-  // 🌟 دالة جلب كل الموظفين لتخطي حد الـ 1000
   const fetchAllRows = async (tableName: string, selectFields = '*') => {
     let allRows: any[] = [];
     let from = 0;
@@ -104,7 +96,6 @@ export default function DataSyncPage() {
     return allRows;
   };
 
-  // 🌟 دالة الرفع فائقة السرعة مع النسبة المئوية
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -127,7 +118,7 @@ export default function DataSyncPage() {
         setStatusMsg(`تم قراءة ${rows.length} صف. جاري فحص قاعدة البيانات... 🚀`);
         setProgress(15);
 
-        // 1. جلب أكواد الموظفين الموجودة حالياً بالكامل
+        // 1. جلب أكواد الموظفين الحالية (للتمييز بين القديم والجديد)
         const existingEmps = await fetchAllRows('employees', 'employee_code');
         const existingCodesSet = new Set(existingEmps.map(e => String(e.employee_code || '').trim().replace(/^0+/, '')));
 
@@ -136,7 +127,7 @@ export default function DataSyncPage() {
         const newEmpsPayload: any[] = [];
         const newContractsPayload: any[] = [];
 
-        // 2. تصنيف السجلات في الذاكرة (سريع جداً)
+        // 2. تصنيف السجلات بدقة
         for (const row of rows) {
           const rawCode = row['employee_code'] || row['كود الموظف'] || row['EmployeeCode'] || row['code'];
           if (!rawCode) continue;
@@ -156,6 +147,7 @@ export default function DataSyncPage() {
           const isOldEmployee = existingCodesSet.has(cleanCode);
 
           if (isOldEmployee) {
+            // الموظف القديم: نعدل حالته للإيقاف لو محول، أو نحدث إدارته ووظيفته فقط
             if (isTransferDept || isSalaryStop) {
               oldToSetInactiveCodes.push(parsedCodeInt);
             } else {
@@ -167,9 +159,12 @@ export default function DataSyncPage() {
               }
             }
           } else {
+            // الموظف الجديد
             const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
+            const birthDateFormatted = parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']);
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
+            // ❌ تم إزالة عمود (contract_type) و عمود (age) تماماً من جدول employees
             newEmpsPayload.push({
               employee_code: parsedCodeInt,
               employee_name: row['employee_name'] || row['اسم الموظف'] || 'غير مسجل',
@@ -177,20 +172,17 @@ export default function DataSyncPage() {
               job_title: jobVal,
               company: row['company'] || row['الشركة'] || null,
               hiring_date: hiringDateFormatted,
-              contract_start_date: hiringDateFormatted,
-              contract_end_date: contractEndFormatted,
+              status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active',
               email: row['email'] || row['البريد الإلكتروني'] || null,
               mobile: row['mobile'] || row['الموبايل'] || null,
               manager: row['manager'] || row['المدير'] || null,
-              status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active',
-              contract_type: 'محدد المدة',
               national_id: row['national_id'] ? String(row['national_id']) : null,
-              birth_date: parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']),
-              age: row['age'] ? parseInt(row['age'], 10) : null,
+              birth_date: birthDateFormatted,
               termination_date: parseExcelDate(row['termination_date']),
               termination_reason: row['termination_reason'] || null,
             });
 
+            // إضافة العقد الجديد في جدول العقود بـ "محدد المدة" كافتراضي للجميع
             newContractsPayload.push({
               employee_code: parsedCodeInt,
               contract_type: 'محدد المدة',
@@ -217,12 +209,19 @@ export default function DataSyncPage() {
 
         setProgress(45);
 
-        // ب) تحديث الموظفين القدامى باستخدام Upsert (سريع جداً بالدفعة)
+        // ب) تحديث الموظفين القدامى (تحديث حصري للأعمدة المحددة فقط بدلاً من Upsert)
         if (oldToUpdateDeptAndJob.length > 0) {
           setStatusMsg(`جاري تحديث الوظيفة والإدارة لـ ${oldToUpdateDeptAndJob.length} موظف قديم...`);
           for (let i = 0; i < oldToUpdateDeptAndJob.length; i += BATCH_SIZE) {
             const chunk = oldToUpdateDeptAndJob.slice(i, i + BATCH_SIZE);
-            await supabase.from('employees').upsert(chunk, { onConflict: 'employee_code' });
+            
+            // عمل تحديث دقيق لكل صف لتجنب مسح باقي البيانات أو طلب حقول إجبارية
+            const updatePromises = chunk.map(emp => 
+              supabase.from('employees')
+                .update({ department: emp.department, job_title: emp.job_title })
+                .eq('employee_code', emp.employee_code)
+            );
+            await Promise.all(updatePromises);
             
             const currentPct = Math.min(85, 45 + Math.round(((i + chunk.length) / oldToUpdateDeptAndJob.length) * 40));
             setProgress(currentPct);
@@ -323,7 +322,7 @@ export default function DataSyncPage() {
               📊 مركز مزامنة ورفع البيانات (Data Sync Tool)
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
-              تحديث جراحي سريع بنظام الدفعات (Batches). يدعم رفع الآلاف من الصفوف مع شريط تقدم حي ومتابعة مباشرة للعمليات.
+              تحديث جراحي سريع بنظام الدفعات (Batches). يدعم رفع الآلاف من الصفوف مع تحديث آمن للموظفين الحاليين.
             </p>
           </div>
 
