@@ -135,7 +135,7 @@ export default function EmployeesPage() {
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const compsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
 
-  // التصفية الأولية بناءً على خيارات البحث والشروط
+  // التصفية الأولية
   const baseFilteredEmployees = useMemo(() => {
     return employees.filter(emp => {
       const term = searchTerm.toLowerCase();
@@ -324,7 +324,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 💾 دالة الحفظ المحدثة 
+  // 💾 دالة الحفظ المحدثة (تحديث آمن يفصل Employees عن Contracts تماماً)
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -364,14 +364,12 @@ export default function EmployeesPage() {
       if (empError) throw empError;
 
       // 2. تحديث جدول العقود (Upsert Logic)
-      const { data: latestContracts } = await supabase
+      const { data: existingContract } = await supabase
         .from('contracts')
         .select('contract_id')
         .eq('employee_code', parsedCode)
-        .order('contract_id', { ascending: false })
-        .limit(1);
-
-      const existingContract = latestContracts && latestContracts.length > 0 ? latestContracts[0] : null;
+        .eq('status', 'Active')
+        .maybeSingle();
 
       const contractData = {
         employee_code: parsedCode,
@@ -382,11 +380,9 @@ export default function EmployeesPage() {
       };
 
       if (existingContract) {
-        const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', existingContract.contract_id);
-        if (cErr) throw cErr;
+        await supabase.from('contracts').update(contractData).eq('contract_id', existingContract.contract_id);
       } else {
-        const { error: cErr } = await supabase.from('contracts').insert([contractData]);
-        if (cErr) throw cErr;
+        await supabase.from('contracts').insert([contractData]);
       }
 
       alert('تم حفظ التعديلات وتسميع العقد بنجاح ✅');
@@ -398,7 +394,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 دالة الإنهاء الدقيقة لتحديث نوع العقد في جدول Contracts باستخدام parsedCode الرقمي
+  // 🌟 دالة الإنهاء (تم إضافة Upsert لضمان تسجيل نوع العقد حتى لو الموظف ملوش عقد قديم)
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -421,17 +417,28 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // 2. تحديث عقد الموظف ليأخذ سبب الإنهاء كـ (نوع عقد)
-      const { error: contractError } = await supabase
+      // 2. معالجة عقد الموظف (السر هنا عشان اللي مرفوعين إكسيل)
+      const { data: existingContract } = await supabase
         .from('contracts')
-        .update({ 
-          status: 'Inactive',
-          contract_end_date: termDate,
-          contract_type: termReason // 👈 التحديث هنا
-        })
-        .eq('employee_code', parsedCode); // 🔥 الاستهداف تم برقم الكود الصحيح لضمان التنفيذ
+        .select('contract_id')
+        .eq('employee_code', parsedCode)
+        .eq('status', 'Active')
+        .maybeSingle();
 
-      if (contractError) throw contractError;
+      const termContractData = {
+        employee_code: parsedCode,
+        contract_type: termReason, // نوع العقد بياخد سبب الإنهاء
+        contract_end_date: termDate,
+        status: 'Inactive'
+      };
+
+      if (existingContract) {
+        // لو ليه عقد نشط، هنحدثه
+        await supabase.from('contracts').update(termContractData).eq('contract_id', existingContract.contract_id);
+      } else {
+        // لو ملوش عقد أصلاً، هنكريت ليه عقد منتهي فوراً عشان يظهر في الإحصائيات
+        await supabase.from('contracts').insert([termContractData]);
+      }
 
       alert(`✅ تم تحويل الموظف وتحديث نوع العقد إلى (${termReason}) بنجاح.`);
       setShowTermModal(false);
