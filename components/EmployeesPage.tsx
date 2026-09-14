@@ -384,6 +384,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 تحديث الإنهاء لتحديث contract_type بالسبب المختار
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -398,7 +399,8 @@ export default function EmployeesPage() {
           department: 'تحويلات تحت الاعتماد',
           status: 'Inactive',
           termination_reason: termReason,
-          termination_date: termDate
+          termination_date: termDate,
+          contract_type: termReason // 👈 التحديث هنا
         })
         .eq('employee_code', empCode);
 
@@ -406,10 +408,15 @@ export default function EmployeesPage() {
 
       await supabase
         .from('contracts')
-        .update({ status: 'Inactive' })
-        .eq('employee_code', empCode);
+        .update({ 
+          status: 'Inactive',
+          contract_end_date: termDate,
+          contract_type: termReason // 👈 التحديث هنا أيضًا
+        })
+        .eq('employee_code', empCode)
+        .eq('status', 'Active');
 
-      alert(`✅ تم تحويل الموظف (${getField(selectedTermEmp, 'employee_name', 'ArabicName')}) إلى قسم (تحويلات تحت الاعتماد) بنجاح.`);
+      alert(`✅ تم تحويل الموظف وتحديث نوع العقد إلى (${termReason}) بنجاح.`);
       setShowTermModal(false);
       setSelectedTermEmp(null);
       setTermSearch('');
@@ -496,7 +503,8 @@ export default function EmployeesPage() {
         hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         status: newEmp.status,
         email: newEmp.email,
-        mobile: newEmp.mobile
+        mobile: newEmp.mobile,
+        contract_type: newEmp.contract_type
       }]);
 
       if (empError) throw empError;
@@ -713,7 +721,7 @@ export default function EmployeesPage() {
 
       {/* إجراءات المحددين المجمعة */}
       {selectedEmpIds.length > 0 && (
-        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', justifyBetween: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
           <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
             تم تحديد <span style={{ color: '#60a5fa' }}>{selectedEmpIds.length}</span> موظف
           </div>
