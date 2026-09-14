@@ -121,6 +121,16 @@ export default function EmployeesPage() {
     return null;
   };
 
+  // 🎯 دالة جديدة لحساب سنة ناقص يوم أوتوماتيكياً
+  const calculateInitialEndDate = (startDateStr: string | null | undefined) => {
+    if (!startDateStr) return '';
+    const d = new Date(startDateStr);
+    if (isNaN(d.getTime())) return '';
+    d.setFullYear(d.getFullYear() + 1);
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  };
+
   // قائمة الإدارات والشركات الفعالة للفلترة
   const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
   const compsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
@@ -331,6 +341,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // 💾 دالة الحفظ المحدثة (تعمل Upsert لجدول العقود + حساب أوتوماتيكي للنهاية)
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -338,11 +349,22 @@ export default function EmployeesPage() {
 
     try {
       const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
-      const rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
+      let rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(editData.emp, 'employee_code', 'EmployeeCode');
+      const contractType = getField(editData.emp, 'contract_type', 'ContractType');
+      const status = getField(editData.emp, 'status', 'Status') || 'Active';
+
+      // 🌟 حساب تاريخ النهاية أوتوماتيكياً لو العقد محدد ومفيش تاريخ نهاية!
+      if (contractType.includes('محدد') && (!rawEnd || rawEnd.trim() === '') && rawHiring) {
+        rawEnd = calculateInitialEndDate(rawHiring);
+      } else if (contractType === 'دائم') {
+        rawEnd = ''; // العقد الدائم ملوش نهاية
+      }
+
+      const parsedCode = parseInt(empCode, 10);
 
       const employeeUpdateData = {
-        employee_code: empCode,
+        employee_code: parsedCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
         national_id: getField(editData.emp, 'national_id', 'NationalID'),
         age: editData.emp.age ? Number(editData.emp.age) : null,
@@ -350,32 +372,44 @@ export default function EmployeesPage() {
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
-        status: getField(editData.emp, 'status', 'Status'),
+        status: status,
         email: getField(editData.emp, 'email', 'Email'),
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE')
       };
 
+      // 1. تحديث جدول الموظفين
       const { error: empError } = await supabase
         .from('employees')
         .update(employeeUpdateData)
-        .eq('employee_code', empCode);
+        .eq('employee_code', parsedCode);
 
       if (empError) throw empError;
 
-      const contractUpdateData = {
-        contract_type: getField(editData.emp, 'contract_type', 'ContractType'),
+      // 2. التحقق من وجود عقد ساري للموظف وتحديثه أو إنشاؤه (Upsert Logic)
+      const { data: existingContract } = await supabase
+        .from('contracts')
+        .select('contract_id')
+        .eq('employee_code', parsedCode)
+        .eq('status', 'Active')
+        .maybeSingle();
+
+      const contractData = {
+        employee_code: parsedCode,
+        contract_type: contractType,
+        contract_start_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
         contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
-        status: getField(editData.emp, 'status', 'Status')
+        status: status
       };
 
-      const { error: contractError } = await supabase
-        .from('contracts')
-        .update(contractUpdateData)
-        .eq('employee_code', empCode);
+      if (existingContract) {
+        // لو ليه عقد، نحدثه
+        await supabase.from('contracts').update(contractData).eq('contract_id', existingContract.contract_id);
+      } else {
+        // لو رافع داتا إكسيل ومفيش عقد، ننشئ ليه عقد فوراً
+        await supabase.from('contracts').insert([contractData]);
+      }
 
-      if (contractError) throw contractError;
-
-      alert('تم حفظ التعديلات بنجاح ✅');
+      alert('تم حفظ التعديلات وتسميع العقد بنجاح ✅');
       setEditData(null);
       await fetchEmployees(); 
     } catch (err: any) {
@@ -481,6 +515,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // ➕ دالة الإضافة المحدثة (حساب أوتوماتيكي لتاريخ النهاية)
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -491,8 +526,16 @@ export default function EmployeesPage() {
         calculatedAge = today.getFullYear() - birth.getFullYear();
       }
 
+      // 🌟 حساب النهاية أوتوماتيكياً
+      let finalEndDate = newEmp.contract_end_date;
+      if (newEmp.contract_type.includes('محدد') && !finalEndDate && newEmp.hiring_date) {
+        finalEndDate = calculateInitialEndDate(newEmp.hiring_date);
+      }
+
+      const parsedCode = parseInt(newEmp.employee_code, 10);
+
       const { error: empError } = await supabase.from('employees').insert([{
-        employee_code: newEmp.employee_code,
+        employee_code: parsedCode,
         employee_name: newEmp.employee_name,
         national_id: newEmp.national_id,
         birth_date: newEmp.birth_date ? newEmp.birth_date : null,
@@ -503,23 +546,22 @@ export default function EmployeesPage() {
         hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         status: newEmp.status,
         email: newEmp.email,
-        mobile: newEmp.mobile,
-        contract_type: newEmp.contract_type
+        mobile: newEmp.mobile
       }]);
 
       if (empError) throw empError;
 
       const { error: contractError } = await supabase.from('contracts').insert([{
-        employee_code: newEmp.employee_code,
+        employee_code: parsedCode,
         contract_type: newEmp.contract_type,
-        contract_end_date: (newEmp.contract_type === 'دائم' || !newEmp.contract_end_date) ? null : newEmp.contract_end_date,
         contract_start_date: newEmp.hiring_date ? newEmp.hiring_date : null,
+        contract_end_date: (newEmp.contract_type === 'دائم') ? null : (finalEndDate || null),
         status: newEmp.status
       }]);
 
       if (contractError) throw contractError;
 
-      alert('تم إضافة الموظف وعقده بنجاح ✅');
+      alert('تم إضافة الموظف وعقده وتواريخه بنجاح ✅');
       setShowAddModal(false);
       setNewEmp({
         employee_code: '', employee_name: '', national_id: '', birth_date: '',
