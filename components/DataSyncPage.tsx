@@ -123,7 +123,7 @@ export default function DataSyncPage() {
         const existingCodesSet = new Set(existingEmps.map(e => String(e.employee_code || '').trim().replace(/^0+/, '')));
 
         const oldToUpdateGeneral: any[] = [];
-        const oldToSetInactiveCodes: number[] = [];
+        const oldToSetInactive: any[] = [];
         const newEmpsPayload: any[] = [];
         const newContractsPayload: any[] = [];
 
@@ -145,8 +145,10 @@ export default function DataSyncPage() {
           const mobileVal = row['mobile'] || row['الموبايل'] || null;
           const managerVal = row['manager'] || row['المدير'] || null;
           const natIdVal = row['national_id'] ? String(row['national_id']) : null;
+          const termReasonVal = row['termination_reason'] || row['سبب الإنهاء'] || 'ايقاف راتب / تحويلات';
           const birthDateFormatted = parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']);
           const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
+          const terminationDateFormatted = parseExcelDate(row['termination_date'] || row['تاريخ الإنهاء']);
 
           const deptStr = String(deptVal || '');
           const jobStr = String(jobVal || '');
@@ -156,10 +158,15 @@ export default function DataSyncPage() {
           const isOldEmployee = existingCodesSet.has(cleanCode);
 
           if (isOldEmployee) {
-            // الموظف القديم: إما نوقفه، أو نحدث كل بياناته الأساسية (من غير ما نلمس عقده خالص)
+            // 🔥 الموظف القديم المُحوّل / المُوقف
             if (isTransferDept || isSalaryStop) {
-              oldToSetInactiveCodes.push(parsedCodeInt);
+              oldToSetInactive.push({
+                employee_code: parsedCodeInt,
+                termination_reason: termReasonVal,
+                termination_date: terminationDateFormatted || new Date().toISOString().split('T')[0]
+              });
             } else {
+              // 🔥 الموظف القديم العادي: تحديث بياناته الأساسية بالكامل (بدون لمس Contracts)
               const updateObj: any = { employee_code: parsedCodeInt };
               if (deptVal !== null) updateObj.department = deptVal;
               if (jobVal !== null) updateObj.job_title = jobVal;
@@ -177,7 +184,7 @@ export default function DataSyncPage() {
               }
             }
           } else {
-            // الموظف الجديد
+            // 🔥 الموظف الجديد
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
             newEmpsPayload.push({
@@ -193,16 +200,16 @@ export default function DataSyncPage() {
               manager: managerVal,
               national_id: natIdVal,
               birth_date: birthDateFormatted,
-              termination_date: parseExcelDate(row['termination_date']),
-              termination_reason: row['termination_reason'] || null,
+              termination_date: terminationDateFormatted,
+              termination_reason: termReasonVal,
             });
 
             newContractsPayload.push({
               employee_code: parsedCodeInt,
-              contract_type: 'محدد المدة',
+              contract_type: 'محدد المدة', // إجباري لأي حد جديد
               contract_start_date: hiringDateFormatted,
-              contract_end_date: contractEndFormatted,
-              status: 'Active'
+              contract_end_date: contractEndFormatted, // سنة ناقص يوم
+              status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active'
             });
           }
         }
@@ -212,24 +219,43 @@ export default function DataSyncPage() {
         // 3. معالجة الدفعات المجمعة (Batch Operations)
         const BATCH_SIZE = 300;
 
-        // أ) تحويل الموظفين المستبعدين لـ Inactive
-        if (oldToSetInactiveCodes.length > 0) {
-          setStatusMsg(`جاري تحويل ${oldToSetInactiveCodes.length} موظف لـ Inactive...`);
-          for (let i = 0; i < oldToSetInactiveCodes.length; i += BATCH_SIZE) {
-            const chunk = oldToSetInactiveCodes.slice(i, i + BATCH_SIZE);
-            await supabase.from('employees').update({ status: 'Inactive' }).in('employee_code', chunk);
+        // أ) تحويل الموظفين المستبعدين لـ Inactive وتغيير نوع العقد لسبب الإنهاء
+        if (oldToSetInactive.length > 0) {
+          setStatusMsg(`جاري إيقاف وتحويل ${oldToSetInactive.length} موظف قديم...`);
+          for (let i = 0; i < oldToSetInactive.length; i += BATCH_SIZE) {
+            const chunk = oldToSetInactive.slice(i, i + BATCH_SIZE);
+            
+            // 1. تحديث جدول الموظفين (الحالة والسبب)
+            const empUpdatePromises = chunk.map(emp => 
+              supabase.from('employees').update({ 
+                status: 'Inactive', 
+                department: 'تحويلات تحت الاعتماد',
+                termination_reason: emp.termination_reason,
+                termination_date: emp.termination_date
+              }).eq('employee_code', emp.employee_code)
+            );
+            await Promise.all(empUpdatePromises);
+
+            // 2. تحديث جدول العقود (الحالة وتغيير نوع العقد لسبب الإنهاء)
+            const contractUpdatePromises = chunk.map(emp => 
+              supabase.from('contracts').update({ 
+                status: 'Inactive',
+                contract_type: emp.termination_reason, // 👈 تغيير نوع العقد لسبب الإيقاف
+                contract_end_date: emp.termination_date
+              }).eq('employee_code', emp.employee_code).eq('status', 'Active')
+            );
+            await Promise.all(contractUpdatePromises);
           }
         }
 
         setProgress(45);
 
-        // ب) تحديث الموظفين القدامى (تحديث شامل لكل البيانات المتوفرة في الشيت ما عدا العقود)
+        // ب) تحديث الموظفين القدامى (تحديث شامل لجدول Employees فقط، دون المساس بـ Contracts)
         if (oldToUpdateGeneral.length > 0) {
           setStatusMsg(`جاري تحديث بيانات ${oldToUpdateGeneral.length} موظف قديم...`);
           for (let i = 0; i < oldToUpdateGeneral.length; i += BATCH_SIZE) {
             const chunk = oldToUpdateGeneral.slice(i, i + BATCH_SIZE);
             
-            // عمل تحديث دقيق لكل صف لتجنب مسح باقي البيانات أو طلب حقول إجبارية
             const updatePromises = chunk.map(emp => {
               const { employee_code, ...fieldsToUpdate } = emp;
               return supabase.from('employees')
@@ -246,7 +272,7 @@ export default function DataSyncPage() {
 
         // ج) إدخال الموظفين الجدد وعقودهم بالدفعة المجمعة
         if (newEmpsPayload.length > 0) {
-          setStatusMsg(`جاري إضافة ${newEmpsPayload.length} موظف جديد بجدول العقود...`);
+          setStatusMsg(`جاري إضافة ${newEmpsPayload.length} موظف جديد بعقودهم...`);
           for (let i = 0; i < newEmpsPayload.length; i += BATCH_SIZE) {
             const empChunk = newEmpsPayload.slice(i, i + BATCH_SIZE);
             const contChunk = newContractsPayload.slice(i, i + BATCH_SIZE);
@@ -257,7 +283,7 @@ export default function DataSyncPage() {
         }
 
         setProgress(100);
-        const finalMsg = `تمت المزامنة بنجاح 100%! 🎉\n\n- قدامى تم تحديث بياناتهم: ${oldToUpdateGeneral.length}\n- قدامى تم تحويلهم لـ Inactive: ${oldToSetInactiveCodes.length}\n- موظفين وعقود جديدة تم إنشاؤهم: ${newEmpsPayload.length}`;
+        const finalMsg = `تمت المزامنة بنجاح 100%! 🎉\n\n- قدامى تم تحديث بياناتهم الشخصية/الوظيفية: ${oldToUpdateGeneral.length}\n- قدامى تم إيقافهم وتحديث عقودهم: ${oldToSetInactive.length}\n- موظفين وعقود جديدة تم إنشاؤهم: ${newEmpsPayload.length}`;
         setStatusMsg(finalMsg);
         alert('تمت المزامنة بنجاح بنسبة 100%!');
         e.target.value = '';
@@ -337,7 +363,7 @@ export default function DataSyncPage() {
               📊 مركز مزامنة ورفع البيانات (Data Sync Tool)
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
-              تحديث جراحي سريع بنظام الدفعات (Batches). يدعم رفع الآلاف من الصفوف مع تحديث آمن للموظفين الحاليين.
+              تحديث شامل وآمن. لا يتم المساس بأنواع عقود القدامى إلا في حالات الإيقاف.
             </p>
           </div>
 
@@ -353,7 +379,7 @@ export default function DataSyncPage() {
         <div className="upload-area">
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>📂</div>
           <h4 style={{ margin: '0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>ارفع ملف الإكسيل المعبأ هنا</h4>
-          <p style={{ margin: '0 0 24px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>يمكنك رفع أي عدد من الصفوف وسيقوم النظام بتحديث الموظفين بسرعة وسلاسة</p>
+          <p style={{ margin: '0 0 24px', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>يمكنك رفع آلاف الصفوف وسيقوم النظام بتحديث الموظفين وإيقاف المحولين تلقائياً</p>
 
           <input
             type="file"
