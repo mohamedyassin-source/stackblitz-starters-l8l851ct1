@@ -324,7 +324,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 💾 دالة الحفظ المحدثة (تحديث آمن يفصل Employees عن Contracts تماماً)
+  // 💾 دالة الحفظ المحدثة 
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -345,7 +345,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(empCode, 10);
 
-      // 1. تحديث بيانات الموظف الأساسية فقط (بدون نوع العقد)
+      // 1. تحديث بيانات الموظف الأساسية فقط
       const employeeUpdateData = {
         employee_code: parsedCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -363,7 +363,7 @@ export default function EmployeesPage() {
       const { error: empError } = await supabase.from('employees').update(employeeUpdateData).eq('employee_code', parsedCode);
       if (empError) throw empError;
 
-      // 2. تحديث جدول العقود بالبيانات الصحيحة وتاريخ الانتهاء الأوتوماتيكي
+      // 2. تحديث جدول العقود (Upsert Logic)
       const { data: latestContracts } = await supabase
         .from('contracts')
         .select('contract_id')
@@ -382,9 +382,11 @@ export default function EmployeesPage() {
       };
 
       if (existingContract) {
-        await supabase.from('contracts').update(contractData).eq('contract_id', existingContract.contract_id);
+        const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', existingContract.contract_id);
+        if (cErr) throw cErr;
       } else {
-        await supabase.from('contracts').insert([contractData]);
+        const { error: cErr } = await supabase.from('contracts').insert([contractData]);
+        if (cErr) throw cErr;
       }
 
       alert('تم حفظ التعديلات وتسميع العقد بنجاح ✅');
@@ -396,7 +398,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🌟 دالة الإنهاء (تم حذف contract_type من التحديث الخاص بـ employees لعدم وجوده)
+  // 🌟 دالة الإنهاء الدقيقة لتحديث نوع العقد في جدول Contracts باستخدام parsedCode الرقمي
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -406,7 +408,7 @@ export default function EmployeesPage() {
       const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
       const parsedCode = parseInt(empCode, 10);
 
-      // 1. تحديث الموظف بالسبب فقط
+      // 1. تحديث الموظف
       const { error: empError } = await supabase
         .from('employees')
         .update({
@@ -419,16 +421,17 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // 2. تحديث عقد الموظف ليأخذ سبب الإنهاء كـ (نوع عقد) 
-      await supabase
+      // 2. تحديث عقد الموظف ليأخذ سبب الإنهاء كـ (نوع عقد)
+      const { error: contractError } = await supabase
         .from('contracts')
         .update({ 
           status: 'Inactive',
           contract_end_date: termDate,
-          contract_type: termReason 
+          contract_type: termReason // 👈 التحديث هنا
         })
-        .eq('employee_code', parsedCode)
-        .eq('status', 'Active');
+        .eq('employee_code', parsedCode); // 🔥 الاستهداف تم برقم الكود الصحيح لضمان التنفيذ
+
+      if (contractError) throw contractError;
 
       alert(`✅ تم تحويل الموظف وتحديث نوع العقد إلى (${termReason}) بنجاح.`);
       setShowTermModal(false);
@@ -557,7 +560,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // ➕ دالة الإضافة المحدثة (إزالة contract_type من جدول employees وحساب أوتوماتيكي لتاريخ النهاية)
+  // ➕ دالة الإضافة المحدثة
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -575,7 +578,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
-      // 1. إضافة الموظف الأساسي (من غير حقل العقد)
+      // 1. إضافة الموظف الأساسي
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
@@ -846,7 +849,6 @@ export default function EmployeesPage() {
         <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
         <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-        {/* 🌟 قائمة أنواع العقود الـ 4 المحددة رسمياً */}
         <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
           <option value="">كل أنواع العقود</option>
           {STANDARD_CONTRACT_TYPES.map((t, i) => <option key={i} value={t}>{t}</option>)}
@@ -942,7 +944,6 @@ export default function EmployeesPage() {
                         <button onClick={() => setProfileEmp(emp)} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
                         <button onClick={() => handleOpenEdit(emp)} style={{ background: '#ffffff', color: '#0d9488', border: '1px solid #99f6e4', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
                         
-                        {/* 🌟 زر إعادة التفعيل للموظفين المحولين */}
                         {isTransferredOrInactive && (
                           <button 
                             onClick={() => {
