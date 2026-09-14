@@ -122,7 +122,7 @@ export default function DataSyncPage() {
         const existingEmps = await fetchAllRows('employees', 'employee_code');
         const existingCodesSet = new Set(existingEmps.map(e => String(e.employee_code || '').trim().replace(/^0+/, '')));
 
-        const oldToUpdateDeptAndJob: any[] = [];
+        const oldToUpdateGeneral: any[] = [];
         const oldToSetInactiveCodes: number[] = [];
         const newEmpsPayload: any[] = [];
         const newContractsPayload: any[] = [];
@@ -136,8 +136,17 @@ export default function DataSyncPage() {
           const parsedCodeInt = parseInt(cleanCode, 10);
           if (isNaN(parsedCodeInt)) continue;
 
+          // سحب البيانات من الصف
           const deptVal = row['department'] || row['الإدارة'] || row['Department'] || null;
           const jobVal = row['job_title'] || row['الوظيفة'] || row['JobTitle'] || null;
+          const nameVal = row['employee_name'] || row['اسم الموظف'] || null;
+          const compVal = row['company'] || row['الشركة'] || null;
+          const emailVal = row['email'] || row['البريد الإلكتروني'] || null;
+          const mobileVal = row['mobile'] || row['الموبايل'] || null;
+          const managerVal = row['manager'] || row['المدير'] || null;
+          const natIdVal = row['national_id'] ? String(row['national_id']) : null;
+          const birthDateFormatted = parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']);
+          const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
 
           const deptStr = String(deptVal || '');
           const jobStr = String(jobVal || '');
@@ -147,42 +156,47 @@ export default function DataSyncPage() {
           const isOldEmployee = existingCodesSet.has(cleanCode);
 
           if (isOldEmployee) {
-            // الموظف القديم: نعدل حالته للإيقاف لو محول، أو نحدث إدارته ووظيفته فقط
+            // الموظف القديم: إما نوقفه، أو نحدث كل بياناته الأساسية (من غير ما نلمس عقده خالص)
             if (isTransferDept || isSalaryStop) {
               oldToSetInactiveCodes.push(parsedCodeInt);
             } else {
               const updateObj: any = { employee_code: parsedCodeInt };
               if (deptVal !== null) updateObj.department = deptVal;
               if (jobVal !== null) updateObj.job_title = jobVal;
+              if (nameVal !== null) updateObj.employee_name = nameVal;
+              if (compVal !== null) updateObj.company = compVal;
+              if (emailVal !== null) updateObj.email = emailVal;
+              if (mobileVal !== null) updateObj.mobile = mobileVal;
+              if (managerVal !== null) updateObj.manager = managerVal;
+              if (natIdVal !== null) updateObj.national_id = natIdVal;
+              if (birthDateFormatted !== null) updateObj.birth_date = birthDateFormatted;
+              if (hiringDateFormatted !== null) updateObj.hiring_date = hiringDateFormatted;
+
               if (Object.keys(updateObj).length > 1) {
-                oldToUpdateDeptAndJob.push(updateObj);
+                oldToUpdateGeneral.push(updateObj);
               }
             }
           } else {
             // الموظف الجديد
-            const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
-            const birthDateFormatted = parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']);
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
-            // ❌ تم إزالة عمود (contract_type) و عمود (age) تماماً من جدول employees
             newEmpsPayload.push({
               employee_code: parsedCodeInt,
-              employee_name: row['employee_name'] || row['اسم الموظف'] || 'غير مسجل',
+              employee_name: nameVal || 'غير مسجل',
               department: deptVal,
               job_title: jobVal,
-              company: row['company'] || row['الشركة'] || null,
+              company: compVal,
               hiring_date: hiringDateFormatted,
               status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active',
-              email: row['email'] || row['البريد الإلكتروني'] || null,
-              mobile: row['mobile'] || row['الموبايل'] || null,
-              manager: row['manager'] || row['المدير'] || null,
-              national_id: row['national_id'] ? String(row['national_id']) : null,
+              email: emailVal,
+              mobile: mobileVal,
+              manager: managerVal,
+              national_id: natIdVal,
               birth_date: birthDateFormatted,
               termination_date: parseExcelDate(row['termination_date']),
               termination_reason: row['termination_reason'] || null,
             });
 
-            // إضافة العقد الجديد في جدول العقود بـ "محدد المدة" كافتراضي للجميع
             newContractsPayload.push({
               employee_code: parsedCodeInt,
               contract_type: 'محدد المدة',
@@ -209,23 +223,24 @@ export default function DataSyncPage() {
 
         setProgress(45);
 
-        // ب) تحديث الموظفين القدامى (تحديث حصري للأعمدة المحددة فقط بدلاً من Upsert)
-        if (oldToUpdateDeptAndJob.length > 0) {
-          setStatusMsg(`جاري تحديث الوظيفة والإدارة لـ ${oldToUpdateDeptAndJob.length} موظف قديم...`);
-          for (let i = 0; i < oldToUpdateDeptAndJob.length; i += BATCH_SIZE) {
-            const chunk = oldToUpdateDeptAndJob.slice(i, i + BATCH_SIZE);
+        // ب) تحديث الموظفين القدامى (تحديث شامل لكل البيانات المتوفرة في الشيت ما عدا العقود)
+        if (oldToUpdateGeneral.length > 0) {
+          setStatusMsg(`جاري تحديث بيانات ${oldToUpdateGeneral.length} موظف قديم...`);
+          for (let i = 0; i < oldToUpdateGeneral.length; i += BATCH_SIZE) {
+            const chunk = oldToUpdateGeneral.slice(i, i + BATCH_SIZE);
             
             // عمل تحديث دقيق لكل صف لتجنب مسح باقي البيانات أو طلب حقول إجبارية
-            const updatePromises = chunk.map(emp => 
-              supabase.from('employees')
-                .update({ department: emp.department, job_title: emp.job_title })
-                .eq('employee_code', emp.employee_code)
-            );
+            const updatePromises = chunk.map(emp => {
+              const { employee_code, ...fieldsToUpdate } = emp;
+              return supabase.from('employees')
+                .update(fieldsToUpdate)
+                .eq('employee_code', employee_code);
+            });
             await Promise.all(updatePromises);
             
-            const currentPct = Math.min(85, 45 + Math.round(((i + chunk.length) / oldToUpdateDeptAndJob.length) * 40));
+            const currentPct = Math.min(85, 45 + Math.round(((i + chunk.length) / oldToUpdateGeneral.length) * 40));
             setProgress(currentPct);
-            setStatusMsg(`جاري تحديث الموظفين القدامى: ${currentPct}% (${Math.min(i + BATCH_SIZE, oldToUpdateDeptAndJob.length)} من ${oldToUpdateDeptAndJob.length})`);
+            setStatusMsg(`جاري تحديث الموظفين القدامى: ${currentPct}% (${Math.min(i + BATCH_SIZE, oldToUpdateGeneral.length)} من ${oldToUpdateGeneral.length})`);
           }
         }
 
@@ -242,7 +257,7 @@ export default function DataSyncPage() {
         }
 
         setProgress(100);
-        const finalMsg = `تمت المزامنة بنجاح 100%! 🎉\n\n- قدامى تم تحديث (وظيفتهم وإدارتهم): ${oldToUpdateDeptAndJob.length}\n- قدامى تم تحويلهم لـ Inactive: ${oldToSetInactiveCodes.length}\n- موظفين وعقود جديدة تم إنشاؤهم: ${newEmpsPayload.length}`;
+        const finalMsg = `تمت المزامنة بنجاح 100%! 🎉\n\n- قدامى تم تحديث بياناتهم: ${oldToUpdateGeneral.length}\n- قدامى تم تحويلهم لـ Inactive: ${oldToSetInactiveCodes.length}\n- موظفين وعقود جديدة تم إنشاؤهم: ${newEmpsPayload.length}`;
         setStatusMsg(finalMsg);
         alert('تمت المزامنة بنجاح بنسبة 100%!');
         e.target.value = '';
