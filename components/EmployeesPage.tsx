@@ -546,7 +546,8 @@ export default function EmployeesPage() {
         hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         status: newEmp.status,
         email: newEmp.email,
-        mobile: newEmp.mobile
+        mobile: newEmp.mobile,
+        contract_type: newEmp.contract_type
       }]);
 
       if (empError) throw empError;
@@ -1215,3 +1216,4 @@ export default function EmployeesPage() {
     </div>
   );
 }
+ممكن زرار يمسح الريكوردز المزدوجة من جدول employees and contracts  او تدمجهم بطريقة لان انا عاندي الناس رافعه شيتات مكرر كتير فشوف حل مناسب
