@@ -121,7 +121,7 @@ export default function EmployeesPage() {
     return null;
   };
 
-  // 🎯 دالة جديدة لحساب سنة ناقص يوم أوتوماتيكياً
+  // 🎯 دالة جديدة لحساب سنة ناقص يوم أوتوماتيكياً للعقود المحددة
   const calculateInitialEndDate = (startDateStr: string | null | undefined) => {
     if (!startDateStr) return '';
     const d = new Date(startDateStr);
@@ -149,7 +149,6 @@ export default function EmployeesPage() {
       const matchesSearch = !term || empCode.includes(term) || empName.includes(term) || empDept.includes(term);
       const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
       const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
-      
       const matchesType = !selectedType || cType === selectedType || cType.includes(selectedType);
 
       let matchesAge = true;
@@ -173,12 +172,7 @@ export default function EmployeesPage() {
     });
 
     const total = activeOnlyForKpi.length;
-
-    let newJoiners = 0;
-    let perm = 0;
-    let fixed = 0;
-    let aboveAge = 0;
-    let missingData = 0;
+    let newJoiners = 0, perm = 0, fixed = 0, aboveAge = 0, missingData = 0;
 
     activeOnlyForKpi.forEach(e => {
       const cType = getField(e, 'contract_type', 'ContractType');
@@ -209,18 +203,9 @@ export default function EmployeesPage() {
     const calcPct = (val: number) => (total > 0 ? ((val / total) * 100).toFixed(1) : '0');
 
     return { 
-      total, 
-      newJoiners, 
-      newJoinersPct: calcPct(newJoiners),
-      perm, 
-      permPct: calcPct(perm), 
-      fixed, 
-      fixedPct: calcPct(fixed), 
-      aboveAge, 
-      aboveAgePct: calcPct(aboveAge),
-      missingData,
-      missingDataPct: calcPct(missingData),
-      currentYear
+      total, newJoiners, newJoinersPct: calcPct(newJoiners),
+      perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), 
+      aboveAge, aboveAgePct: calcPct(aboveAge), missingData, missingDataPct: calcPct(missingData), currentYear
     };
   }, [baseFilteredEmployees]);
 
@@ -240,9 +225,7 @@ export default function EmployeesPage() {
       const isTransfer = dept.includes('تحويلات') || status.toLowerCase() !== 'active';
       const isExplicitSearch = searchTerm.trim() !== '' || selectedDept.includes('تحويلات');
 
-      if (isTransfer && !isExplicitSearch) {
-        return false;
-      }
+      if (isTransfer && !isExplicitSearch) return false;
 
       if (activeCardFilter === 'NEW_JOINERS') {
         if (!hiringDateStr) return false;
@@ -309,6 +292,7 @@ export default function EmployeesPage() {
     setReactivateSaving(true);
     try {
       const empCode = getField(reactivateEmp, 'employee_code', 'EmployeeCode');
+      const parsedCode = parseInt(empCode, 10);
 
       const { error: empError } = await supabase
         .from('employees')
@@ -319,14 +303,14 @@ export default function EmployeesPage() {
           termination_reason: null,
           termination_date: null
         })
-        .eq('employee_code', empCode);
+        .eq('employee_code', parsedCode);
 
       if (empError) throw empError;
 
       await supabase
         .from('contracts')
         .update({ status: 'Active' })
-        .eq('employee_code', empCode);
+        .eq('employee_code', parsedCode);
 
       alert(`✅ تم إعادة تفعيل الموظف (${getField(reactivateEmp, 'employee_name', 'ArabicName')}) ونقله إلى إدارة (${reactivateDept}) بنجاح.`);
       setReactivateEmp(null);
@@ -340,7 +324,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 💾 دالة الحفظ المحدثة (تعمل Upsert لجدول العقود + حساب أوتوماتيكي للنهاية)
+  // 💾 دالة الحفظ المحدثة (تحديث آمن يفصل Employees عن Contracts تماماً)
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -361,6 +345,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(empCode, 10);
 
+      // 1. تحديث بيانات الموظف الأساسية فقط (بدون نوع العقد)
       const employeeUpdateData = {
         employee_code: parsedCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -378,7 +363,15 @@ export default function EmployeesPage() {
       const { error: empError } = await supabase.from('employees').update(employeeUpdateData).eq('employee_code', parsedCode);
       if (empError) throw empError;
 
-      const { data: existingContract } = await supabase.from('contracts').select('contract_id').eq('employee_code', parsedCode).eq('status', 'Active').maybeSingle();
+      // 2. تحديث جدول العقود بالبيانات الصحيحة وتاريخ الانتهاء الأوتوماتيكي
+      const { data: latestContracts } = await supabase
+        .from('contracts')
+        .select('contract_id')
+        .eq('employee_code', parsedCode)
+        .order('contract_id', { ascending: false })
+        .limit(1);
+
+      const existingContract = latestContracts && latestContracts.length > 0 ? latestContracts[0] : null;
 
       const contractData = {
         employee_code: parsedCode,
@@ -403,6 +396,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // 🌟 دالة الإنهاء (تم حذف contract_type من التحديث الخاص بـ employees لعدم وجوده)
   const handleConfirmTermination = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
@@ -410,20 +404,22 @@ export default function EmployeesPage() {
     setTermSaving(true);
     try {
       const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
+      const parsedCode = parseInt(empCode, 10);
 
+      // 1. تحديث الموظف بالسبب فقط
       const { error: empError } = await supabase
         .from('employees')
         .update({
           department: 'تحويلات تحت الاعتماد',
           status: 'Inactive',
           termination_reason: termReason,
-          termination_date: termDate,
-          contract_type: termReason 
+          termination_date: termDate
         })
-        .eq('employee_code', empCode);
+        .eq('employee_code', parsedCode);
 
       if (empError) throw empError;
 
+      // 2. تحديث عقد الموظف ليأخذ سبب الإنهاء كـ (نوع عقد) 
       await supabase
         .from('contracts')
         .update({ 
@@ -431,7 +427,7 @@ export default function EmployeesPage() {
           contract_end_date: termDate,
           contract_type: termReason 
         })
-        .eq('employee_code', empCode)
+        .eq('employee_code', parsedCode)
         .eq('status', 'Active');
 
       alert(`✅ تم تحويل الموظف وتحديث نوع العقد إلى (${termReason}) بنجاح.`);
@@ -453,6 +449,7 @@ export default function EmployeesPage() {
 
     setBulkSaving(true);
     try {
+      const parsedCodes = selectedEmpIds.map(id => parseInt(id, 10));
       const updatePayload: any = {};
       if (bulkDept) updatePayload.department = bulkDept;
       if (bulkCompany) updatePayload.company = bulkCompany;
@@ -460,7 +457,7 @@ export default function EmployeesPage() {
       const { error } = await supabase
         .from('employees')
         .update(updatePayload)
-        .in('employee_code', selectedEmpIds);
+        .in('employee_code', parsedCodes);
 
       if (error) throw error;
 
@@ -484,9 +481,10 @@ export default function EmployeesPage() {
 
     setIsDeleting(true);
     try {
-      await supabase.from('contracts').delete().in('employee_code', selectedEmpIds);
+      const parsedCodes = selectedEmpIds.map(id => parseInt(id, 10));
+      await supabase.from('contracts').delete().in('employee_code', parsedCodes);
       
-      const { error: empError } = await supabase.from('employees').delete().in('employee_code', selectedEmpIds);
+      const { error: empError } = await supabase.from('employees').delete().in('employee_code', parsedCodes);
       if (empError) throw empError;
 
       alert('تم حذف الموظفين بنجاح 🗑️✅');
@@ -506,7 +504,6 @@ export default function EmployeesPage() {
 
     setIsDeleting(true);
     try {
-      // 1. تجميع كل الموظفين حسب الكود
       const grouped = new Map<string, any[]>();
       employees.forEach(emp => {
         const code = String(getField(emp, 'employee_code', 'EmployeeCode')).trim();
@@ -519,12 +516,9 @@ export default function EmployeesPage() {
       const idsToDelete: any[] = [];
       let duplicateCount = 0;
 
-      // 2. البحث عن الكروت المكررة
       grouped.forEach((records) => {
         if (records.length > 1) {
           duplicateCount += (records.length - 1);
-          
-          // ترتيبهم عشان نحتفظ بأفضل سجل (Active > معاه رقم قومي > معاه موبايل)
           records.sort((a, b) => {
             const aActive = getField(a, 'status', 'Status').toLowerCase() === 'active';
             const bActive = getField(b, 'status', 'Status').toLowerCase() === 'active';
@@ -539,7 +533,6 @@ export default function EmployeesPage() {
             return 0;
           });
 
-          // إضافة معرفات السجلات المكررة (عدا الأول الأفضل) لسلة الحذف
           for (let i = 1; i < records.length; i++) {
             if (records[i].id) idsToDelete.push(records[i].id);
           }
@@ -552,7 +545,6 @@ export default function EmployeesPage() {
         return;
       }
 
-      // 3. مسح السجلات الزائدة باستخدام الـ ID الداخلي لـ Supabase
       const { error: delErr } = await supabase.from('employees').delete().in('id', idsToDelete);
       if (delErr) throw delErr;
 
@@ -565,6 +557,7 @@ export default function EmployeesPage() {
     }
   };
 
+  // ➕ دالة الإضافة المحدثة (إزالة contract_type من جدول employees وحساب أوتوماتيكي لتاريخ النهاية)
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -582,6 +575,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
+      // 1. إضافة الموظف الأساسي (من غير حقل العقد)
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
@@ -594,12 +588,12 @@ export default function EmployeesPage() {
         hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
         status: newEmp.status,
         email: newEmp.email,
-        mobile: newEmp.mobile,
-        contract_type: newEmp.contract_type
+        mobile: newEmp.mobile
       }]);
 
       if (empError) throw empError;
 
+      // 2. إضافة بيانات التعاقد
       const { error: contractError } = await supabase.from('contracts').insert([{
         employee_code: parsedCode,
         contract_type: newEmp.contract_type,
@@ -852,6 +846,7 @@ export default function EmployeesPage() {
         <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
         <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
+        {/* 🌟 قائمة أنواع العقود الـ 4 المحددة رسمياً */}
         <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
           <option value="">كل أنواع العقود</option>
           {STANDARD_CONTRACT_TYPES.map((t, i) => <option key={i} value={t}>{t}</option>)}
