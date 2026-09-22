@@ -36,6 +36,10 @@ export default function DashboardPage() {
   
   // حالة نافذة التوزيع العمري
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<{ label: string; count: number; color: string; emps: any[] } | null>(null);
+  
+  // 🌟 حالات الترتيب (Sorting) لجدول نافذة التوزيع العمري
+  const [ageSortCol, setAgeSortCol] = useState<string>('employee_name');
+  const [ageSortDir, setAgeSortDir] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -143,13 +147,11 @@ export default function DashboardPage() {
     const currentYear = new Date().getFullYear();
     const targetExpiryYear = currentYear + 1;
 
-    // 1. الموظفون النشطون المستهدفون
     const activeEmployeesOnly = (allEmployees || []).filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
       !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
     );
 
-    // 2. تطبيق فلاتر الشركة والإدارة العلوية
     const baseFilteredEmps = activeEmployeesOnly.filter((emp) => {
       const empComp = String(getField(emp, 'company', 'Company') || '').toLowerCase();
       const empDept = String(getField(emp, 'department', 'Department') || '').toLowerCase();
@@ -159,25 +161,18 @@ export default function DashboardPage() {
       return matchesComp && matchesDept;
     });
 
-    // 3. حساب الأرقام الإجمالية للكروت
     let totalFixed = 0, totalPerm = 0, totalAboveAge = 0, totalExpiringSoon = 0;
     const futureTurning60List: any[] = [];
     const turning60SoonList: any[] = [];
-    const missingDataList: any[] = [];
 
     baseFilteredEmps.forEach((emp) => {
       const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
       const nationalId = getField(emp, 'national_id', 'NationalID');
       const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
-      const mobile = getField(emp, 'mobile', 'Mobile');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
       const dept = String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
-
-      if (!nationalId || !mobile) {
-        missingDataList.push({ ...emp, employee_code: empCode, employee_name: empName, national_id: nationalId, mobile });
-      }
 
       if (type.includes('دائم') || type.includes('غير محدد')) totalPerm++;
       else if (type.includes('فوق السن')) totalAboveAge++;
@@ -200,7 +195,6 @@ export default function DashboardPage() {
       }
     });
 
-    // 4. 🌟 فلترة الموظفين بناءً على الكارت المنقور عليه
     const kpiFilteredEmps = baseFilteredEmps.filter((emp) => {
       const type = String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
@@ -218,7 +212,6 @@ export default function DashboardPage() {
       return true;
     });
 
-    // 5. بناء الرسوم البيانية والجداول
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
 
@@ -260,7 +253,6 @@ export default function DashboardPage() {
 
     alerts.sort((a, b) => a.days - b.days);
 
-    // 🔥 تحويل قائمة الإدارات إلى قائمة تفاعلية بالكامل وترتيبها من الأكبر للأصغر
     const allDepts = Object.entries(deptsCount)
       .sort((a, b) => b[1] - a[1])
       .map(([name, count]) => ({ name, count }));
@@ -280,7 +272,7 @@ export default function DashboardPage() {
       expiringSoonCount: totalExpiringSoon,
       expiringSoonPct: calcPct(totalExpiringSoon),
       turning60SoonCount: turning60SoonList.length,
-      allDepts, // القائمة الجديدة التفاعلية
+      allDepts, 
       urgentAlerts: alerts.slice(0, 20),
       contractsByMonth,
       futureTurning60List,
@@ -325,6 +317,48 @@ export default function DashboardPage() {
       .map(g => ({ ...g, pct: (g.count / total) * 100 }));
   }, [dashboardData.kpiFilteredEmps]);
 
+  // 🌟 دالة ترتيب الموظفين داخل النافذة العمرية
+  const sortedAgeGroupEmps = useMemo(() => {
+    if (!selectedAgeGroup) return [];
+    const emps = [...selectedAgeGroup.emps];
+    return emps.sort((a, b) => {
+      let valA, valB;
+      if (ageSortCol === 'age') {
+        valA = getEmployeeAge(a) || 0;
+        valB = getEmployeeAge(b) || 0;
+        return ageSortDir === 'asc' ? valA - valB : valB - valA;
+      } else {
+        const keyMap: Record<string, string[]> = {
+          'employee_code': ['employee_code', 'EmployeeCode'],
+          'employee_name': ['employee_name', 'ArabicName'],
+          'department': ['department', 'Department'],
+          'job_title': ['job_title', 'JobTitle'],
+          'contract_type': ['contract_type', 'ContractType'],
+          'contract_end_date': ['contract_end_date', 'ContractEndDate']
+        };
+        const keys = keyMap[ageSortCol] || [ageSortCol];
+        valA = getField(a, ...keys);
+        valB = getField(b, ...keys);
+        const res = String(valA).localeCompare(String(valB), 'ar', { numeric: true });
+        return ageSortDir === 'asc' ? res : -res;
+      }
+    });
+  }, [selectedAgeGroup, ageSortCol, ageSortDir]);
+
+  const handleAgeSort = (col: string) => {
+    if (ageSortCol === col) {
+      setAgeSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setAgeSortCol(col);
+      setAgeSortDir('asc');
+    }
+  };
+
+  const renderAgeSortArrow = (col: string) => {
+    if (ageSortCol !== col) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
+    return ageSortDir === 'asc' ? <span style={{ color: '#0d9488', marginRight: '4px' }}>▲</span> : <span style={{ color: '#0d9488', marginRight: '4px' }}>▼</span>;
+  };
+
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -332,7 +366,7 @@ export default function DashboardPage() {
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG (لتفعيل النقر)
+  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG
   const renderInteractiveDonutChart = () => {
     let cumulativePercent = 0;
     
@@ -670,7 +704,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* 🔥 نافذة التوزيع العمري التفاعلية الجديدة */}
+      {/* 🔥 نافذة التوزيع العمري التفاعلية الجديدة مع الـ السورت */}
       {selectedAgeGroup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '900px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -691,18 +725,18 @@ export default function DashboardPage() {
             <div className="table-responsive">
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
                 <thead>
-                  <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
-                    <th style={{ padding: '10px' }}>الكود</th>
-                    <th style={{ padding: '10px' }}>الموظف</th>
-                    <th style={{ padding: '10px' }}>الإدارة</th>
-                    <th style={{ padding: '10px' }}>الوظيفة</th>
-                    <th style={{ padding: '10px', textAlign: 'center' }}>السن</th>
-                    <th style={{ padding: '10px' }}>نوع العقد</th>
-                    <th style={{ padding: '10px' }}>نهاية العقد</th>
+                  <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', color: '#475569', userSelect: 'none' }}>
+                    <th onClick={() => handleAgeSort('employee_code')} style={{ padding: '10px', cursor: 'pointer' }}>الكود {renderAgeSortArrow('employee_code')}</th>
+                    <th onClick={() => handleAgeSort('employee_name')} style={{ padding: '10px', cursor: 'pointer' }}>الموظف {renderAgeSortArrow('employee_name')}</th>
+                    <th onClick={() => handleAgeSort('department')} style={{ padding: '10px', cursor: 'pointer' }}>الإدارة {renderAgeSortArrow('department')}</th>
+                    <th onClick={() => handleAgeSort('job_title')} style={{ padding: '10px', cursor: 'pointer' }}>الوظيفة {renderAgeSortArrow('job_title')}</th>
+                    <th onClick={() => handleAgeSort('age')} style={{ padding: '10px', textAlign: 'center', cursor: 'pointer' }}>السن {renderAgeSortArrow('age')}</th>
+                    <th onClick={() => handleAgeSort('contract_type')} style={{ padding: '10px', cursor: 'pointer' }}>نوع العقد {renderAgeSortArrow('contract_type')}</th>
+                    <th onClick={() => handleAgeSort('contract_end_date')} style={{ padding: '10px', cursor: 'pointer' }}>نهاية العقد {renderAgeSortArrow('contract_end_date')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {selectedAgeGroup.emps.map((emp: any, idx: number) => {
+                  {sortedAgeGroupEmps.map((emp: any, idx: number) => {
                     const age = getEmployeeAge(emp);
                     return (
                       <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }} className="hover:bg-slate-50 transition-colors">
