@@ -4,28 +4,40 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
-export default function DataSyncPage() {
+// استقبال بيانات المستخدم الحالي زي صفحة الإعدادات
+interface DataSyncProps {
+  currentUser?: any;
+}
+
+export default function DataSyncPage({ currentUser }: DataSyncProps) {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [progress, setProgress] = useState(0);
 
   // 🌟 حماية الصفحة للأدمن فقط
   const [userRole, setUserRole] = useState<string>('');
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('session_user');
-    if (savedUser) {
-      try {
-        const parsed = JSON.parse(savedUser);
-        setUserRole(parsed.role || 'Viewer'); 
-      } catch (e) {
-        console.error(e);
+    if (currentUser?.role) {
+      setUserRole(currentUser.role);
+      setIsAuthChecking(false);
+    } else {
+      const savedUser = localStorage.getItem('session_user');
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+          setUserRole(parsed.role || 'Viewer'); 
+        } catch (e) {
+          console.error(e);
+          setUserRole('Viewer');
+        }
+      } else {
         setUserRole('Viewer');
       }
-    } else {
-      setUserRole('Viewer');
+      setIsAuthChecking(false);
     }
-  }, []);
+  }, [currentUser]);
 
   const isAdmin = userRole.toLowerCase() === 'admin';
 
@@ -178,7 +190,6 @@ export default function DataSyncPage() {
           const isOldEmployee = existingCodesSet.has(cleanCode);
 
           if (isOldEmployee) {
-            // 🔥 الموظف القديم المُحوّل / المُوقف
             if (isTransferDept || isSalaryStop) {
               oldToSetInactive.push({
                 employee_code: parsedCodeInt,
@@ -186,7 +197,6 @@ export default function DataSyncPage() {
                 termination_date: terminationDateFormatted || new Date().toISOString().split('T')[0]
               });
             } else {
-              // 🔥 الموظف القديم العادي: تحديث بياناته الأساسية بالكامل (بدون لمس Contracts)
               const updateObj: any = { employee_code: parsedCodeInt };
               if (deptVal !== null) updateObj.department = deptVal;
               if (jobVal !== null) updateObj.job_title = jobVal;
@@ -204,7 +214,6 @@ export default function DataSyncPage() {
               }
             }
           } else {
-            // 🔥 الموظف الجديد
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
             newEmpsPayload.push({
@@ -226,9 +235,9 @@ export default function DataSyncPage() {
 
             newContractsPayload.push({
               employee_code: parsedCodeInt,
-              contract_type: 'محدد المدة', // إجباري لأي حد جديد
+              contract_type: 'محدد المدة',
               contract_start_date: hiringDateFormatted,
-              contract_end_date: contractEndFormatted, // سنة ناقص يوم
+              contract_end_date: contractEndFormatted,
               status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active'
             });
           }
@@ -236,16 +245,13 @@ export default function DataSyncPage() {
 
         setProgress(30);
 
-        // 3. معالجة الدفعات المجمعة (Batch Operations)
         const BATCH_SIZE = 300;
 
-        // أ) تحويل الموظفين المستبعدين لـ Inactive وتغيير نوع العقد لسبب الإنهاء
         if (oldToSetInactive.length > 0) {
           setStatusMsg(`جاري إيقاف وتحويل ${oldToSetInactive.length} موظف قديم...`);
           for (let i = 0; i < oldToSetInactive.length; i += BATCH_SIZE) {
             const chunk = oldToSetInactive.slice(i, i + BATCH_SIZE);
             
-            // 1. تحديث جدول الموظفين (الحالة والسبب)
             const empUpdatePromises = chunk.map(emp => 
               supabase.from('employees').update({ 
                 status: 'Inactive', 
@@ -256,7 +262,6 @@ export default function DataSyncPage() {
             );
             await Promise.all(empUpdatePromises);
 
-            // 2. تحديث جدول العقود (الحالة وتغيير نوع العقد لسبب الإنهاء)
             const contractUpdatePromises = chunk.map(emp => 
               supabase.from('contracts').update({ 
                 status: 'Inactive',
@@ -270,7 +275,6 @@ export default function DataSyncPage() {
 
         setProgress(45);
 
-        // ب) تحديث الموظفين القدامى (تحديث شامل لجدول Employees فقط، دون المساس بـ Contracts)
         if (oldToUpdateGeneral.length > 0) {
           setStatusMsg(`جاري تحديث بيانات ${oldToUpdateGeneral.length} موظف قديم...`);
           for (let i = 0; i < oldToUpdateGeneral.length; i += BATCH_SIZE) {
@@ -290,7 +294,6 @@ export default function DataSyncPage() {
           }
         }
 
-        // ج) إدخال الموظفين الجدد وعقودهم بالدفعة المجمعة
         if (newEmpsPayload.length > 0) {
           setStatusMsg(`جاري إضافة ${newEmpsPayload.length} موظف جديد بعقودهم...`);
           for (let i = 0; i < newEmpsPayload.length; i += BATCH_SIZE) {
@@ -320,12 +323,19 @@ export default function DataSyncPage() {
     reader.readAsBinaryString(file);
   };
 
+  // 🚨 شاشة التحميل لمنع الوميض
+  if (isAuthChecking) {
+    return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري التحقق من الصلاحيات... ⏳</div>;
+  }
+
   // 🚨 حماية الصفحة لمنع غير الأدمن من الدخول
   if (!isAdmin) {
     return (
-      <div className="card text-center py-12 px-6" style={{ borderColor: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', direction: 'rtl', borderRadius: '12px' }}>
-        <h2 className="m-0 mb-2 text-lg font-extrabold" style={{ color: '#dc2626' }}>🚨 محاولة وصول غير مصرح بها!</h2>
-        <p className="font-bold" style={{ color: '#dc2626' }}>ليس لديك صلاحيات مدير النظام للدخول لهذه الصفحة والمزامنة الشاملة. (دورك الحالي: {userRole})</p>
+      <div style={{ padding: '40px', direction: 'rtl' }}>
+        <div style={{ borderColor: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', padding: '40px', borderRadius: '12px', textAlign: 'center' }}>
+          <h2 style={{ margin: '0 0 10px', fontSize: '20px', fontWeight: '900', color: '#dc2626' }}>🚨 محاولة وصول غير مصرح بها!</h2>
+          <p style={{ fontWeight: 'bold', color: '#dc2626', fontSize: '14px' }}>ليس لديك صلاحيات مدير النظام (Admin) للدخول لهذه الصفحة. (دورك الحالي: {userRole})</p>
+        </div>
       </div>
     );
   }
