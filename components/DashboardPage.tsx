@@ -33,6 +33,9 @@ export default function DashboardPage() {
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
   const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
+  
+  // حالة نافذة التوزيع العمري
+  const [selectedAgeGroup, setSelectedAgeGroup] = useState<{ label: string; count: number; color: string; emps: any[] } | null>(null);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -257,9 +260,9 @@ export default function DashboardPage() {
 
     alerts.sort((a, b) => a.days - b.days);
 
-    const topDepts = Object.entries(deptsCount)
+    // 🔥 تحويل قائمة الإدارات إلى قائمة تفاعلية بالكامل وترتيبها من الأكبر للأصغر
+    const allDepts = Object.entries(deptsCount)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
 
     const totalEmpsCount = baseFilteredEmps.length || 1;
@@ -277,7 +280,7 @@ export default function DashboardPage() {
       expiringSoonCount: totalExpiringSoon,
       expiringSoonPct: calcPct(totalExpiringSoon),
       turning60SoonCount: turning60SoonList.length,
-      topDepts,
+      allDepts, // القائمة الجديدة التفاعلية
       urgentAlerts: alerts.slice(0, 20),
       contractsByMonth,
       futureTurning60List,
@@ -295,29 +298,31 @@ export default function DashboardPage() {
     });
   }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
-  // 📊 حساب بيانات التوزيع العمري ديناميكياً
+  // 📊 حساب بيانات التوزيع العمري ديناميكياً مع حفظ بيانات الموظفين
   const ageData = useMemo(() => {
-    let u30 = 0, from30 = 0, from40 = 0, from50 = 0, over60 = 0, unrecorded = 0;
+    const groups = {
+      u30: { label: 'طاقة شابة (أقل من 30)', count: 0, color: '#10b981', emps: [] as any[] },
+      from30: { label: 'تطور ونمو (30 - 39)', count: 0, color: '#3b82f6', emps: [] as any[] },
+      from40: { label: 'استقرار (40 - 49)', count: 0, color: '#8b5cf6', emps: [] as any[] },
+      from50: { label: 'أهل الخبرة (50 - 59)', count: 0, color: '#f59e0b', emps: [] as any[] },
+      over60: { label: 'فوق السن (60+)', count: 0, color: '#ef4444', emps: [] as any[] },
+      unrecorded: { label: 'غير مسجل', count: 0, color: '#94a3b8', emps: [] as any[] }
+    };
     
     dashboardData.kpiFilteredEmps.forEach(emp => {
       const age = getEmployeeAge(emp);
-      if (age === null) unrecorded++;
-      else if (age < 30) u30++;
-      else if (age < 40) from30++;
-      else if (age < 50) from40++;
-      else if (age < 60) from50++;
-      else over60++;
+      if (age === null) { groups.unrecorded.count++; groups.unrecorded.emps.push(emp); }
+      else if (age < 30) { groups.u30.count++; groups.u30.emps.push(emp); }
+      else if (age < 40) { groups.from30.count++; groups.from30.emps.push(emp); }
+      else if (age < 50) { groups.from40.count++; groups.from40.emps.push(emp); }
+      else if (age < 60) { groups.from50.count++; groups.from50.emps.push(emp); }
+      else { groups.over60.count++; groups.over60.emps.push(emp); }
     });
 
     const total = dashboardData.kpiFilteredEmps.length || 1;
-    return [
-      { label: 'أقل من 30', count: u30, color: '#10b981', pct: (u30 / total) * 100 },
-      { label: '30 - 39 سنة', count: from30, color: '#3b82f6', pct: (from30 / total) * 100 },
-      { label: '40 - 49 سنة', count: from40, color: '#8b5cf6', pct: (from40 / total) * 100 },
-      { label: '50 - 59 سنة', count: from50, color: '#f59e0b', pct: (from50 / total) * 100 },
-      { label: 'فوق السن (60+)', count: over60, color: '#ef4444', pct: (over60 / total) * 100 },
-      { label: 'غير مسجل', count: unrecorded, color: '#94a3b8', pct: (unrecorded / total) * 100 }
-    ].filter(i => i.count > 0);
+    return Object.values(groups)
+      .filter(g => g.count > 0)
+      .map(g => ({ ...g, pct: (g.count / total) * 100 }));
   }, [dashboardData.kpiFilteredEmps]);
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
@@ -327,32 +332,72 @@ export default function DashboardPage() {
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // 🍩 دالة رسم الدونت يدوياً بالـ CSS Conic Gradient
-  const renderDonutChart = () => {
-    let currentDegree = 0;
-    const gradientStops = ageData.map((slice) => {
-      const start = currentDegree;
-      currentDegree += slice.pct;
-      return `${slice.color} ${start}% ${currentDegree}%`;
-    }).join(', ');
-
-    const donutGradient = gradientStops ? `conic-gradient(${gradientStops})` : 'conic-gradient(#f1f5f9 0% 100%)';
-
+  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG (لتفعيل النقر)
+  const renderInteractiveDonutChart = () => {
+    let cumulativePercent = 0;
+    
     return (
-      <div className="flex flex-col items-center justify-center w-full h-full gap-6">
-        <div style={{ width: '180px', height: '180px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}>
-          <div style={{ width: '120px', height: '120px', background: '#ffffff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.05)' }}>
-            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي</span>
-            <span style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
+      <div className="flex flex-col items-center justify-center w-full h-full gap-6 mt-4">
+        {/* SVG Donut Chart */}
+        <div style={{ position: 'relative', width: '200px', height: '200px' }}>
+          <svg width="100%" height="100%" viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
+            {/* الخلفية */}
+            <circle cx="21" cy="21" r="15.91549431" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
+            
+            {/* الشرائح */}
+            {ageData.map((slice, idx) => {
+              const dashArray = `${slice.pct} ${100 - slice.pct}`;
+              const dashOffset = 100 - cumulativePercent;
+              cumulativePercent += slice.pct;
+              
+              return (
+                <circle
+                  key={idx}
+                  cx="21"
+                  cy="21"
+                  r="15.91549431"
+                  fill="transparent"
+                  stroke={slice.color}
+                  strokeWidth="6"
+                  strokeDasharray={dashArray}
+                  strokeDashoffset={dashOffset}
+                  onClick={() => setSelectedAgeGroup(slice)}
+                  style={{ cursor: 'pointer', transition: 'stroke-width 0.2s ease-in-out, filter 0.2s' }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.strokeWidth = '8';
+                    e.currentTarget.style.filter = 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.strokeWidth = '6';
+                    e.currentTarget.style.filter = 'none';
+                  }}
+                />
+              );
+            })}
+          </svg>
+          
+          {/* النص الداخلي */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>تصفية الفلتر</span>
+            <span style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
           </div>
         </div>
 
-        <div className="w-full grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-2 text-[11px] font-bold">
+        {/* Legend التفاعلية */}
+        <div className="w-full grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] font-bold px-2">
           {ageData.map((slice, idx) => (
-            <div key={idx} className="flex items-center gap-1.5" title={`${slice.count} موظف`}>
+            <div 
+              key={idx} 
+              className="flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors" 
+              title="اضغط لعرض الموظفين"
+              onClick={() => setSelectedAgeGroup(slice)}
+              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+              onMouseEnter={(e) => e.currentTarget.style.borderColor = slice.color}
+              onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
+            >
               <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: slice.color }} />
-              <span className="text-[#334155] truncate">{slice.label}</span>
-              <span className="text-[#64748b]">({slice.count})</span>
+              <span className="text-[#334155] truncate flex-1">{slice.label}</span>
+              <span className="text-[#0f172a] font-mono bg-white px-2 py-0.5 rounded shadow-sm">({slice.count})</span>
             </div>
           ))}
         </div>
@@ -391,7 +436,7 @@ export default function DashboardPage() {
 
       {/* 🌟 الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px' }}>
+        <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard 
             loading={loading} 
             tone="brass" 
@@ -403,7 +448,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div style={{ outline: activeKpiFilter === 'fixed' ? '2px solid #3b82f6' : 'none', borderRadius: '12px' }}>
+        <div style={{ outline: activeKpiFilter === 'fixed' ? '2px solid #3b82f6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard 
             loading={loading} 
             tone="blue" 
@@ -415,7 +460,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div style={{ outline: activeKpiFilter === 'perm' ? '2px solid #10b981' : 'none', borderRadius: '12px' }}>
+        <div style={{ outline: activeKpiFilter === 'perm' ? '2px solid #10b981' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard 
             loading={loading} 
             tone="green" 
@@ -427,7 +472,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div style={{ outline: activeKpiFilter === 'aboveAge' ? '2px solid #8b5cf6' : 'none', borderRadius: '12px' }}>
+        <div style={{ outline: activeKpiFilter === 'aboveAge' ? '2px solid #8b5cf6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard 
             loading={loading} 
             tone="purple" 
@@ -439,7 +484,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px' }}>
+        <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard 
             loading={loading} 
             tone="amber" 
@@ -451,8 +496,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* 🎂 كارت المعاشات المحدث بفتح النافذة المنبثقة مباشرة */}
-        <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px' }}>
+        <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard 
             loading={loading} 
             tone="red" 
@@ -488,22 +532,41 @@ export default function DashboardPage() {
 
       {/* الرسوم البيانية المتفاعلة */}
       <div className="grid lg:grid-cols-3 gap-5">
-        <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }}>
-          <h4 className="m-0 mb-5 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>📊 أكبر 5 إدارات في هذه المجموعه</h4>
-          <div className="flex flex-col gap-4">
-            {dashboardData.topDepts.length === 0 ? (
+        
+        {/* 🔥 قائمة الإدارات التفاعلية القابلة للتمرير */}
+        <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column' }}>
+          <div className="flex items-center justify-between mb-5">
+            <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>📊 توزيع الموظفين على الإدارات</h4>
+            <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>اضغط للفلترة 🖱️</span>
+          </div>
+          <div className="flex flex-col gap-3 overflow-y-auto pr-1" style={{ maxHeight: '250px' }}>
+            {dashboardData.allDepts.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#64748b', fontSize: '12px', padding: '20px' }}>لا توجد بيانات مطابقة لهذا الفلتر</div>
-            ) : dashboardData.topDepts.map((dept, idx) => {
-              const max = dashboardData.topDepts[0]?.count || 1;
+            ) : dashboardData.allDepts.map((dept, idx) => {
+              const max = dashboardData.allDepts[0]?.count || 1;
               const percentage = (dept.count / max) * 100;
+              const isActiveDept = filterDept === dept.name;
               return (
-                <div key={idx}>
-                  <div className="flex justify-between text-[11px] font-bold mb-1.5" style={{ color: '#334155' }}>
-                    <span>{dept.name}</span>
-                    <span className="font-mono">{dept.count.toLocaleString('en-US')}</span>
+                <div 
+                  key={idx} 
+                  onClick={() => setFilterDept(isActiveDept ? '' : dept.name)}
+                  style={{ 
+                    cursor: 'pointer', 
+                    padding: '8px', 
+                    borderRadius: '8px', 
+                    background: isActiveDept ? '#f0fdf4' : 'transparent',
+                    border: isActiveDept ? '1px solid #86efac' : '1px solid transparent',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => !isActiveDept && (e.currentTarget.style.background = '#f8fafc')}
+                  onMouseLeave={(e) => !isActiveDept && (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div className="flex justify-between text-[11px] font-bold mb-1.5" style={{ color: isActiveDept ? '#15803d' : '#334155' }}>
+                    <span className="truncate pl-2" title={dept.name}>{dept.name}</span>
+                    <span className="font-mono bg-white px-2 py-0.5 rounded border shadow-sm">{dept.count.toLocaleString('en-US')}</span>
                   </div>
-                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
-                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${percentage}%`, background: 'linear-gradient(90deg, #14b8a6, #0d9488)' }} />
+                  <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${percentage}%`, background: isActiveDept ? '#10b981' : 'linear-gradient(90deg, #14b8a6, #0d9488)' }} />
                   </div>
                 </div>
               );
@@ -547,14 +610,17 @@ export default function DashboardPage() {
 
       <div className="grid lg:grid-cols-3 gap-5">
         
-        {/* 🎂 كارت التوزيع العمري الذكي (بدون مكتبات) */}
+        {/* 🎂 كارت التوزيع العمري التفاعلي (Interactive SVG Donut) */}
         <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-1">
-          <h3 style={{ margin: '0 0 16px', fontSize: '13.5px', color: '#0f172a', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            🎂 التوزيع العمري للقوة العاملة
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 style={{ margin: 0, fontSize: '13.5px', color: '#0f172a', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🎂 التوزيع العمري للقوة العاملة
+            </h3>
+            <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>تفاعلي 👆</span>
+          </div>
           
-          <div style={{ height: '300px', width: '100%' }}>
-            {ageData.length > 0 ? renderDonutChart() : (
+          <div style={{ height: '330px', width: '100%' }}>
+            {ageData.length > 0 ? renderInteractiveDonutChart() : (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 'bold' }}>
                 لا توجد بيانات عمرية متاحة للفئة المحددة
               </div>
@@ -574,10 +640,10 @@ export default function DashboardPage() {
               لا توجد مهام عاجلة في الفلتر المختار! 🎉
             </div>
           ) : (
-            <div className="overflow-y-auto max-h-[220px]">
+            <div className="overflow-y-auto pr-1" style={{ maxHeight: '290px' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px' }}>
                 <thead>
-                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', position: 'sticky', top: 0, zIndex: 10 }}>
                     <th style={{ padding: '8px' }}>الكود</th>
                     <th style={{ padding: '8px' }}>الموظف</th>
                     <th style={{ padding: '8px' }}>الإدارة</th>
@@ -587,7 +653,7 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {dashboardData.urgentAlerts.map((alert) => (
-                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}>
+                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={{ padding: '8px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{alert.employee_code}</td>
                       <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{alert.employee_name}</td>
                       <td style={{ padding: '8px', color: '#64748b', fontSize: '11px' }}>{alert.department || '—'}</td>
@@ -603,6 +669,59 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* 🔥 نافذة التوزيع العمري التفاعلية الجديدة */}
+      {selectedAgeGroup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '900px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
+              <div className="flex items-center gap-3">
+                <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: selectedAgeGroup.color }} />
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>
+                  موظفين في شريحة: {selectedAgeGroup.label}
+                </h3>
+              </div>
+              <button onClick={() => setSelectedAgeGroup(null)} style={{ background: '#f1f5f9', border: 0, color: '#64748b', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            
+            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>
+              العدد الإجمالي: <span style={{ color: selectedAgeGroup.color, fontSize: '16px' }}>{selectedAgeGroup.count}</span> موظف
+            </div>
+
+            <div className="table-responsive">
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+                <thead>
+                  <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', color: '#475569' }}>
+                    <th style={{ padding: '10px' }}>الكود</th>
+                    <th style={{ padding: '10px' }}>الموظف</th>
+                    <th style={{ padding: '10px' }}>الإدارة</th>
+                    <th style={{ padding: '10px' }}>الوظيفة</th>
+                    <th style={{ padding: '10px', textAlign: 'center' }}>السن</th>
+                    <th style={{ padding: '10px' }}>نوع العقد</th>
+                    <th style={{ padding: '10px' }}>نهاية العقد</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedAgeGroup.emps.map((emp: any, idx: number) => {
+                    const age = getEmployeeAge(emp);
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }} className="hover:bg-slate-50 transition-colors">
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
+                        <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'department', 'Department') || '—'}</td>
+                        <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
+                        <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: selectedAgeGroup.color }}>{age ? `${age} سنة` : '—'}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{getField(emp, 'contract_type', 'ContractType') || '—'}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{getField(emp, 'contract_end_date', 'ContractEndDate') || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 🎂 نافذة بلوغ سن الـ 60 المنبثقة المحدثة */}
       {showAgeModal && (
