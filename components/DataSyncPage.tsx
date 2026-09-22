@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
@@ -8,6 +8,26 @@ export default function DataSyncPage() {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [progress, setProgress] = useState(0);
+
+  // 🌟 حماية الصفحة للأدمن فقط
+  const [userRole, setUserRole] = useState<string>('');
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('session_user');
+    if (savedUser) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setUserRole(parsed.role || 'Viewer'); 
+      } catch (e) {
+        console.error(e);
+        setUserRole('Viewer');
+      }
+    } else {
+      setUserRole('Viewer');
+    }
+  }, []);
+
+  const isAdmin = userRole.toLowerCase() === 'admin';
 
   // 🌟 دالة إنشاء وتحميل قالب Excel
   const handleDownloadTemplate = () => {
@@ -58,32 +78,16 @@ export default function DataSyncPage() {
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
-  // 🌟 دالة معالجة وتحويل التواريخ بشكل دقيق دون التأثر بالتوقيت العالمي (UTC)
   const parseExcelDate = (excelDate: any) => {
     if (!excelDate) return null;
-
-    let d: Date;
-
     if (typeof excelDate === 'number') {
-      // تحويل تاريخ الإكسيل الرقمي (Excel Serial Date)
-      d = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-    } else if (excelDate instanceof Date) {
-      d = excelDate;
-    } else {
-      d = new Date(excelDate);
+      const d = new Date((excelDate - (25567 + 2)) * 86400 * 1000);
+      return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
     }
-
-    if (isNaN(d.getTime())) return null;
-
-    // استخراج مكونات التاريخ بالتوقيت المحلي (Local Time) لتجنب نقص الأيام بسبب Timezones
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-
-    return `${year}-${month}-${day}`;
+    const d = new Date(excelDate);
+    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
   };
 
-  // 🌟 دالة حساب نهاية العقد (سنة ناقص يوم) بناءً على تاريخ التعيين الصحيح
   const calculateYearMinusOneDay = (startDateStr: string | null) => {
     if (!startDateStr) return null;
     const parts = startDateStr.split('-');
@@ -256,7 +260,7 @@ export default function DataSyncPage() {
             const contractUpdatePromises = chunk.map(emp => 
               supabase.from('contracts').update({ 
                 status: 'Inactive',
-                contract_type: emp.termination_reason, // 👈 تغيير نوع العقد لسبب الإيقاف
+                contract_type: emp.termination_reason, 
                 contract_end_date: emp.termination_date
               }).eq('employee_code', emp.employee_code).eq('status', 'Active')
             );
@@ -315,6 +319,16 @@ export default function DataSyncPage() {
 
     reader.readAsBinaryString(file);
   };
+
+  // 🚨 حماية الصفحة لمنع غير الأدمن من الدخول
+  if (!isAdmin) {
+    return (
+      <div className="card text-center py-12 px-6" style={{ borderColor: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', direction: 'rtl', borderRadius: '12px' }}>
+        <h2 className="m-0 mb-2 text-lg font-extrabold" style={{ color: '#dc2626' }}>🚨 محاولة وصول غير مصرح بها!</h2>
+        <p className="font-bold" style={{ color: '#dc2626' }}>ليس لديك صلاحيات مدير النظام للدخول لهذه الصفحة والمزامنة الشاملة. (دورك الحالي: {userRole})</p>
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: '24px', direction: 'rtl' }}>
@@ -376,7 +390,7 @@ export default function DataSyncPage() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h3 style={{ margin: '0 0 8px', fontSize: '22px', color: '#0f172a', fontWeight: '900' }}>
-              📊 مركز مزامنة ورفع البيانات (Data Sync Tool)
+              📊 مركز مزامنة ورفع البيانات (Data Sync Tool) 👑
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
               تحديث شامل وآمن. لا يتم المساس بأنواع عقود القدامى إلا في حالات الإيقاف.
