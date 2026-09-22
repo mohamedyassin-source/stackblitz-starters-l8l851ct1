@@ -147,6 +147,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
   };
 
+  // 🚀 الدالة المحدثة: حفظ البيانات في الـ Cookies + LocalStorage
   const proceedToLogin = (data: any) => {
     const userData = {
       code: data.employee_code,
@@ -156,7 +157,13 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
       company: data.company || 'المراسم الدولية',
     };
 
+    // 1. الحفظ في الـ Local Storage (عشان الشاشات والواجهة تقرأه بسرعة)
     localStorage.setItem('session_user', JSON.stringify(userData));
+
+    // 2. 🛡️ الحفظ في الـ Cookies (عشان السيرفر والـ Middleware يقدروا يقرأوه ويمنعوا الاختراق)
+    // نستخدم encodeURIComponent لتجنب أي مشاكل في النصوص العربية أو الرموز داخل الكوكي
+    document.cookie = `session_user=${encodeURIComponent(JSON.stringify(userData))}; path=/; max-age=86400`; // صالحة لمدة يوم (86400 ثانية)
+
     onLoginSuccess(userData);
   };
 
