@@ -5,6 +5,7 @@ import { navigateTo } from '@/lib/navigation';
 import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
@@ -91,6 +92,47 @@ export default function DashboardPage() {
       month60: age60Date.getMonth() + 1,
       day60: age60Date.getDate()
     };
+  };
+
+  const getEmployeeAge = (emp: any) => {
+    const rawAge = getField(emp, 'age', 'Age');
+    if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
+      return Number(rawAge);
+    }
+
+    const bDateStr = getField(emp, 'birth_date', 'BirthDate');
+    const natId = getField(emp, 'national_id', 'NationalID');
+
+    let birthDate: Date | null = null;
+    if (bDateStr) {
+      const b = new Date(bDateStr);
+      if (!isNaN(b.getTime())) birthDate = b;
+    }
+
+    if (!birthDate && natId) {
+      const idStr = String(natId).replace(/\D/g, '');
+      if (idStr.length === 14) {
+        const centuryDigit = idStr.charAt(0);
+        const yearDigits = idStr.substring(1, 3);
+        const monthDigits = idStr.substring(3, 5);
+        const dayDigits = idStr.substring(5, 7);
+        const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
+        const b = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
+        if (!isNaN(b.getTime())) birthDate = b;
+      }
+    }
+
+    if (birthDate) {
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const m = today.getMonth() - birthDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    }
+
+    return null;
   };
 
   const companiesList = Array.from(new Set((allEmployees || []).map((e) => getField(e, 'company', 'Company')).filter(Boolean)));
@@ -277,7 +319,8 @@ export default function DashboardPage() {
       futureTurning60List,
       turning60SoonList,
       currentYear,
-      targetExpiryYear
+      targetExpiryYear,
+      kpiFilteredEmps // Added for the age demographics chart
     };
   }, [allEmployees, allRenewals, filterCompany, filterDept, activeKpiFilter]);
 
@@ -289,19 +332,49 @@ export default function DashboardPage() {
     });
   }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
+  // 📊 حساب بيانات التوزيع العمري ديناميكياً بناءً على الفلاتر النشطة
+  const ageDemographicsData = useMemo(() => {
+    let under30 = 0;
+    let from30to39 = 0;
+    let from40to49 = 0;
+    let from50to59 = 0;
+    let over60 = 0;
+    let unrecorded = 0;
+
+    dashboardData.kpiFilteredEmps.forEach(emp => {
+      const age = getEmployeeAge(emp); 
+
+      if (age === null || age === undefined) {
+        unrecorded++;
+      } else if (age < 30) {
+        under30++;
+      } else if (age >= 30 && age <= 39) {
+        from30to39++;
+      } else if (age >= 40 && age <= 49) {
+        from40to49++;
+      } else if (age >= 50 && age <= 59) {
+        from50to59++;
+      } else if (age >= 60) {
+        over60++;
+      }
+    });
+
+    return [
+      { name: 'طاقة شابة (أقل من 30)', value: under30, fill: '#10b981' }, 
+      { name: 'تطور ونمو (30 - 39)', value: from30to39, fill: '#3b82f6' }, 
+      { name: 'استقرار (40 - 49)', value: from40to49, fill: '#8b5cf6' }, 
+      { name: 'أهل الخبرة (50 - 59)', value: from50to59, fill: '#f59e0b' }, 
+      { name: 'فوق السن (60+)', value: over60, fill: '#ef4444' }, 
+      { name: 'غير مسجل', value: unrecorded, fill: '#94a3b8' } 
+    ].filter(item => item.value > 0);
+  }, [dashboardData.kpiFilteredEmps]); 
+
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
   const dateFormatted = currentTime.toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   const timeFormatted = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
-
-  const totalContracts = dashboardData.kpiFilteredCount;
-  const p1 = totalContracts ? (dashboardData.permCount / totalContracts) * 100 : 0;
-  const p2 = p1 + (totalContracts ? (dashboardData.fixedCount / totalContracts) * 100 : 0);
-  const donutGradient = totalContracts === 0 
-    ? 'conic-gradient(#e2e8f0 0% 100%)' 
-    : `conic-gradient(#10b981 0% ${p1}%, #3b82f6 ${p1}% ${p2}%, #f59e0b ${p2}% 100%)`;
 
   return (
     <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
@@ -489,20 +562,46 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
-        <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '24px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col justify-center items-center relative lg:col-span-1">
-          <h4 className="m-0 mb-6 text-[13.5px] font-extrabold w-full text-right" style={{ color: '#0f172a' }}>📑 نسبة العقود بالمجموعة</h4>
+        <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }} className="lg:col-span-1">
+          <h3 style={{ margin: '0 0 16px', fontSize: '13.5px', color: '#0f172a', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            🎂 التوزيع العمري للقوة العاملة
+          </h3>
           
-          <div style={{ width: '170px', height: '160px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}>
-            <div style={{ width: '115px', height: '115px', background: '#ffffff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.05)' }}>
-              <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تصفية الفلتر</span>
-              <span style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
-            </div>
-          </div>
-
-          <div className="w-full flex justify-between mt-8 text-[11px] font-bold px-2">
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full" style={{ background: '#10b981' }} />دائم ({dashboardData.permCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full" style={{ background: '#3b82f6' }} />محدد ({dashboardData.fixedCount})</div>
-            <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-full" style={{ background: '#f59e0b' }} />فوق السن ({dashboardData.aboveAgeCount})</div>
+          <div style={{ height: '300px', width: '100%' }}>
+            {ageDemographicsData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={ageDemographicsData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={100}
+                    paddingAngle={3}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {ageDemographicsData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.fill} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    formatter={(value: number) => [`${value} موظف`, 'العدد']}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontFamily: 'inherit', direction: 'rtl' }}
+                  />
+                  <Legend 
+                    verticalAlign="bottom" 
+                    height={36} 
+                    iconType="circle"
+                    formatter={(value, entry: any) => <span style={{ color: '#475569', fontSize: '12px', fontWeight: 'bold' }}>{value} ({entry.payload.value})</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 'bold' }}>
+                لا توجد بيانات عمرية متاحة للفئة المحددة
+              </div>
+            )}
           </div>
         </div>
 
