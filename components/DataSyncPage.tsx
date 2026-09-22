@@ -58,16 +58,32 @@ export default function DataSyncPage() {
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
+  // 🌟 دالة معالجة وتحويل التواريخ بشكل دقيق دون التأثر بالتوقيت العالمي (UTC)
   const parseExcelDate = (excelDate: any) => {
     if (!excelDate) return null;
+
+    let d: Date;
+
     if (typeof excelDate === 'number') {
-      const d = new Date((excelDate - (25567 + 2)) * 86400 * 1000);
-      return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+      // تحويل تاريخ الإكسيل الرقمي (Excel Serial Date)
+      d = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+    } else if (excelDate instanceof Date) {
+      d = excelDate;
+    } else {
+      d = new Date(excelDate);
     }
-    const d = new Date(excelDate);
-    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+
+    if (isNaN(d.getTime())) return null;
+
+    // استخراج مكونات التاريخ بالتوقيت المحلي (Local Time) لتجنب نقص الأيام بسبب Timezones
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
   };
 
+  // 🌟 دالة حساب نهاية العقد (سنة ناقص يوم) بناءً على تاريخ التعيين الصحيح
   const calculateYearMinusOneDay = (startDateStr: string | null) => {
     if (!startDateStr) return null;
     const parts = startDateStr.split('-');
