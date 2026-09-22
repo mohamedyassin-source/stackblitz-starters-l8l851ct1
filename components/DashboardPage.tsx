@@ -5,7 +5,6 @@ import { navigateTo } from '@/lib/navigation';
 import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const getField = (obj: any, ...keys: string[]) => {
   if (!obj) return '';
@@ -27,15 +26,12 @@ export default function DashboardPage() {
 
   // حالات النوافذ المنبثقة
   const [showAgeModal, setShowAgeModal] = useState(false);
-  const [showShortTermModal, setShowShortTermModal] = useState(false);
-  const [showMissingDataModal, setShowMissingDataModal] = useState(false);
-
+  
   // فلاتر نافذة بلوغ سن الـ 60 (السنة والشهر)
   const currentYearStr = new Date().getFullYear().toString();
   const [ageFilterYear, setAgeFilterYear] = useState<string>(currentYearStr);
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
-  const [selectedShortTermDept, setSelectedShortTermDept] = useState<string | null>(null);
   const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
 
   useEffect(() => {
@@ -94,6 +90,7 @@ export default function DashboardPage() {
     };
   };
 
+  // 🎂 دالة حساب العمر المرنة للتوزيع العمري
   const getEmployeeAge = (emp: any) => {
     const rawAge = getField(emp, 'age', 'Age');
     if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
@@ -221,8 +218,6 @@ export default function DashboardPage() {
     // 5. بناء الرسوم البيانية والجداول
     const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
-    const shortTermByDept: Record<string, any[]> = {};
-    let shortTermTotal = 0;
 
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const contractsByMonth = monthsNames.map((name) => ({ name, count: 0, emps: [] as any[] }));
@@ -233,7 +228,6 @@ export default function DashboardPage() {
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
-      const startDateStr = getField(emp, 'contract_start_date', 'ContractStartDate', 'hiring_date', 'HiringDate');
 
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
@@ -259,26 +253,6 @@ export default function DashboardPage() {
           alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
         }
       }
-
-      if (type.includes('محدد') && !type.includes('فوق السن')) {
-        let isShort = false;
-        let historyDesc = '';
-        if (startDateStr && endDateStr) {
-          const start = new Date(startDateStr);
-          const end = new Date(endDateStr);
-          const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-          if (diffDays > 0 && diffDays <= 360) {
-            isShort = true;
-            const diffMonths = Math.round(diffDays / 30) || 1;
-            historyDesc = `تعيين (${diffMonths} ش)`;
-          }
-        }
-        if (isShort) {
-          shortTermTotal++;
-          if (!shortTermByDept[dept]) shortTermByDept[dept] = [];
-          shortTermByDept[dept].push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, historyDesc });
-        }
-      }
     });
 
     alerts.sort((a, b) => a.days - b.days);
@@ -287,13 +261,6 @@ export default function DashboardPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([name, count]) => ({ name, count }));
-
-    const shortTermList = Object.entries(shortTermByDept)
-      .map(([deptName, emps]) => ({ 
-        deptName, 
-        emps: emps.sort((a, b) => (getDaysRemaining(a.contract_end_date) ?? 999) - (getDaysRemaining(b.contract_end_date) ?? 999)) 
-      }))
-      .sort((a, b) => b.emps.length - a.emps.length);
 
     const totalEmpsCount = baseFilteredEmps.length || 1;
     const calcPct = (val: number) => ((val / totalEmpsCount) * 100).toFixed(1);
@@ -310,19 +277,15 @@ export default function DashboardPage() {
       expiringSoonCount: totalExpiringSoon,
       expiringSoonPct: calcPct(totalExpiringSoon),
       turning60SoonCount: turning60SoonList.length,
-      missingDataList,
       topDepts,
       urgentAlerts: alerts.slice(0, 20),
       contractsByMonth,
-      shortTermTotal,
-      shortTermList,
       futureTurning60List,
-      turning60SoonList,
       currentYear,
       targetExpiryYear,
-      kpiFilteredEmps // Added for the age demographics chart
+      kpiFilteredEmps
     };
-  }, [allEmployees, allRenewals, filterCompany, filterDept, activeKpiFilter]);
+  }, [allEmployees, filterCompany, filterDept, activeKpiFilter]);
 
   const filteredAge60ModalList = useMemo(() => {
     return dashboardData.futureTurning60List.filter((emp) => {
@@ -332,42 +295,30 @@ export default function DashboardPage() {
     });
   }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
-  // 📊 حساب بيانات التوزيع العمري ديناميكياً بناءً على الفلاتر النشطة
-  const ageDemographicsData = useMemo(() => {
-    let under30 = 0;
-    let from30to39 = 0;
-    let from40to49 = 0;
-    let from50to59 = 0;
-    let over60 = 0;
-    let unrecorded = 0;
-
+  // 📊 حساب بيانات التوزيع العمري ديناميكياً
+  const ageData = useMemo(() => {
+    let u30 = 0, from30 = 0, from40 = 0, from50 = 0, over60 = 0, unrecorded = 0;
+    
     dashboardData.kpiFilteredEmps.forEach(emp => {
-      const age = getEmployeeAge(emp); 
-
-      if (age === null || age === undefined) {
-        unrecorded++;
-      } else if (age < 30) {
-        under30++;
-      } else if (age >= 30 && age <= 39) {
-        from30to39++;
-      } else if (age >= 40 && age <= 49) {
-        from40to49++;
-      } else if (age >= 50 && age <= 59) {
-        from50to59++;
-      } else if (age >= 60) {
-        over60++;
-      }
+      const age = getEmployeeAge(emp);
+      if (age === null) unrecorded++;
+      else if (age < 30) u30++;
+      else if (age < 40) from30++;
+      else if (age < 50) from40++;
+      else if (age < 60) from50++;
+      else over60++;
     });
 
+    const total = dashboardData.kpiFilteredEmps.length || 1;
     return [
-      { name: 'طاقة شابة (أقل من 30)', value: under30, fill: '#10b981' }, 
-      { name: 'تطور ونمو (30 - 39)', value: from30to39, fill: '#3b82f6' }, 
-      { name: 'استقرار (40 - 49)', value: from40to49, fill: '#8b5cf6' }, 
-      { name: 'أهل الخبرة (50 - 59)', value: from50to59, fill: '#f59e0b' }, 
-      { name: 'فوق السن (60+)', value: over60, fill: '#ef4444' }, 
-      { name: 'غير مسجل', value: unrecorded, fill: '#94a3b8' } 
-    ].filter(item => item.value > 0);
-  }, [dashboardData.kpiFilteredEmps]); 
+      { label: 'أقل من 30', count: u30, color: '#10b981', pct: (u30 / total) * 100 },
+      { label: '30 - 39 سنة', count: from30, color: '#3b82f6', pct: (from30 / total) * 100 },
+      { label: '40 - 49 سنة', count: from40, color: '#8b5cf6', pct: (from40 / total) * 100 },
+      { label: '50 - 59 سنة', count: from50, color: '#f59e0b', pct: (from50 / total) * 100 },
+      { label: 'فوق السن (60+)', count: over60, color: '#ef4444', pct: (over60 / total) * 100 },
+      { label: 'غير مسجل', count: unrecorded, color: '#94a3b8', pct: (unrecorded / total) * 100 }
+    ].filter(i => i.count > 0);
+  }, [dashboardData.kpiFilteredEmps]);
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
@@ -375,6 +326,39 @@ export default function DashboardPage() {
   const timeFormatted = currentTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
+
+  // 🍩 دالة رسم الدونت يدوياً بالـ CSS Conic Gradient
+  const renderDonutChart = () => {
+    let currentDegree = 0;
+    const gradientStops = ageData.map((slice) => {
+      const start = currentDegree;
+      currentDegree += slice.pct;
+      return `${slice.color} ${start}% ${currentDegree}%`;
+    }).join(', ');
+
+    const donutGradient = gradientStops ? `conic-gradient(${gradientStops})` : 'conic-gradient(#f1f5f9 0% 100%)';
+
+    return (
+      <div className="flex flex-col items-center justify-center w-full h-full gap-6">
+        <div style={{ width: '180px', height: '180px', borderRadius: '50%', background: donutGradient, position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 8px 24px rgba(0,0,0,0.06)' }}>
+          <div style={{ width: '120px', height: '120px', background: '#ffffff', borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.05)' }}>
+            <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي</span>
+            <span style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
+          </div>
+        </div>
+
+        <div className="w-full grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-2 text-[11px] font-bold">
+          {ageData.map((slice, idx) => (
+            <div key={idx} className="flex items-center gap-1.5" title={`${slice.count} موظف`}>
+              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: slice.color }} />
+              <span className="text-[#334155] truncate">{slice.label}</span>
+              <span className="text-[#64748b]">({slice.count})</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
@@ -562,42 +546,15 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
-        <div style={{ background: '#ffffff', padding: '20px', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }} className="lg:col-span-1">
+        
+        {/* 🎂 كارت التوزيع العمري الذكي (بدون مكتبات) */}
+        <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-1">
           <h3 style={{ margin: '0 0 16px', fontSize: '13.5px', color: '#0f172a', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
             🎂 التوزيع العمري للقوة العاملة
           </h3>
           
           <div style={{ height: '300px', width: '100%' }}>
-            {ageDemographicsData.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={ageDemographicsData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={100}
-                    paddingAngle={3}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {ageDemographicsData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => [`${value} موظف`, 'العدد']}
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontFamily: 'inherit', direction: 'rtl' }}
-                  />
-                  <Legend 
-                    verticalAlign="bottom" 
-                    height={36} 
-                    iconType="circle"
-                    formatter={(value, entry: any) => <span style={{ color: '#475569', fontSize: '12px', fontWeight: 'bold' }}>{value} ({entry.payload.value})</span>}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
+            {ageData.length > 0 ? renderDonutChart() : (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 'bold' }}>
                 لا توجد بيانات عمرية متاحة للفئة المحددة
               </div>
@@ -605,6 +562,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* 🚨 المهام العاجلة */}
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: '#dc2626' }}>
