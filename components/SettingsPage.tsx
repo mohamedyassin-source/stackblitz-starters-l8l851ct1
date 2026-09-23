@@ -57,14 +57,13 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
       if (savedUser) {
         try {
           const parsed = JSON.parse(savedUser);
-          // ✅ التصحيح الأمني: الافتراضي أصبح Viewer بدلاً من Admin لمنع الاختراق
           setUserRole(parsed.role || 'Viewer'); 
         } catch (e) {
           console.error(e);
-          setUserRole('Viewer'); // تأمين إضافي في حالة تعطل الـ JSON
+          setUserRole('Viewer');
         }
       } else {
-        setUserRole('Viewer'); // تأمين إضافي في حالة عدم وجود الجلسة
+        setUserRole('Viewer');
       }
     }
   }, [currentUser]);
@@ -162,15 +161,16 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 4. حذف مستخدم بدلالة employee_code أو username
+  // 4. 🎯 حذف مستخدم بدلالة كود الموظف أو اسم المستخدم
   const handleDeleteAppUser = async (user: any) => {
-    if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username}) نهائياً من app_users؟`)) return;
+    if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username || user.employee_code}) نهائياً من app_users؟`)) return;
 
     try {
       let query = supabase.from('app_users').delete();
       
       if (user.employee_code) {
-        query = query.eq('employee_code', user.employee_code);
+        const codeNum = parseInt(user.employee_code, 10);
+        query = query.eq('employee_code', isNaN(codeNum) ? user.employee_code : codeNum);
       } else {
         query = query.eq('username', user.username);
       }
@@ -185,21 +185,26 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 5. تعديل صلاحية مستخدم بدلالة employee_code أو username
+  // 5. 🎯 تعديل الصلاحية بدلالة كود الموظف (employee_code) أو اسم المستخدم (username)
   const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
       let query = supabase.from('app_users').update({ role: newRole });
 
       if (user.employee_code) {
-        query = query.eq('employee_code', user.employee_code);
-      } else {
+        const codeNum = parseInt(user.employee_code, 10);
+        query = query.eq('employee_code', isNaN(codeNum) ? user.employee_code : codeNum);
+      } else if (user.username) {
         query = query.eq('username', user.username);
+      } else if (user.id) {
+        query = query.eq('id', user.id);
+      } else {
+        throw new Error('لا يوجد كود موظف أو اسم مستخدم محدد لهذا السجل.');
       }
 
       const { error } = await query;
       if (error) throw error;
 
-      alert(`✅ تم تحديث الصلاحية إلى ${newRole}`);
+      alert(`✅ تم تحديث الصلاحية لـ (${user.username || user.employee_code}) إلى ${newRole}`);
       fetchAppUsers();
     } catch (err: any) {
       alert('خطأ أثناء تحديث الصلاحية: ' + err.message);
@@ -215,12 +220,18 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  // 6. تعديل الصلاحية في جدول الموظفين العادي (employees) بدلالة كود الموظف
   const handleRoleChange = async (empCode: string, newRole: string) => {
-    const { error } = await supabase.from('employees').update({ role: newRole }).eq('employee_code', empCode);
+    const codeNum = parseInt(empCode, 10);
+    const { error } = await supabase
+      .from('employees')
+      .update({ role: newRole })
+      .eq('employee_code', isNaN(codeNum) ? empCode : codeNum);
+
     if (error) {
-      alert('حدث خطأ أثناء تعديل الصلاحية');
+      alert('حدث خطأ أثناء تعديل الصلاحية: ' + error.message);
     } else {
-      alert(`✅ تم تغيير الصلاحية إلى ${newRole} بنجاح.`);
+      alert(`✅ تم تغيير الصلاحية بالكود (${empCode}) إلى ${newRole} بنجاح.`);
       fetchAllEmployees();
     }
   };
@@ -309,7 +320,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <input 
                   type="text" 
-                  placeholder="بحث في app_users..." 
+                  placeholder="بحث كود أو اسم الموظف..." 
                   value={userSearch} 
                   onChange={e => setUserSearch(e.target.value)}
                   style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', width: '200px' }} 
@@ -341,7 +352,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                   ) : (
                     filteredAppUsers.map((user, idx) => (
                       <tr key={user.employee_code || user.username || idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{user.username}</td>
+                        <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{user.username || '—'}</td>
                         <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold', color: '#d97706' }}>{user.employee_code || '—'}</td>
                         <td style={{ padding: '12px' }}>
                           <select 
@@ -417,7 +428,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
                           <select 
                             value={emp.role || 'Employee'}
                             onChange={(e) => {
-                              if (window.confirm(`هل أنت متأكد من تغيير صلاحية الموظف (${emp.employee_name}) إلى ${e.target.value}؟`)) {
+                              if (window.confirm(`هل أنت متأكد من تغيير صلاحية كود الموظف (${emp.employee_code}) إلى ${e.target.value}؟`)) {
                                 handleRoleChange(emp.employee_code, e.target.value);
                               }
                             }}
