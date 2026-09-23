@@ -290,13 +290,13 @@ export default function DashboardPage() {
     });
   }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
-  // 📊 حساب بيانات التوزيع العمري ديناميكياً مع حفظ بيانات الموظفين
+  // 📊  بيانات التوزيع العمري الموظفين
   const ageData = useMemo(() => {
     const groups = {
-      u30: { label: 'طاقة شابة (أقل من 30)', count: 0, color: '#10b981', emps: [] as any[] },
-      from30: { label: 'تطور ونمو (30 - 39)', count: 0, color: '#3b82f6', emps: [] as any[] },
-      from40: { label: 'استقرار (40 - 49)', count: 0, color: '#8b5cf6', emps: [] as any[] },
-      from50: { label: 'أهل الخبرة (50 - 59)', count: 0, color: '#f59e0b', emps: [] as any[] },
+      u30: { label: 'موظفين أعمارهم (أقل من 30)', count: 0, color: '#10b981', emps: [] as any[] },
+      from30: { label: 'موظفين أعمارهم (30 - 39)', count: 0, color: '#3b82f6', emps: [] as any[] },
+      from40: { label: 'موظفين أعمارهم (40 - 49)', count: 0, color: '#8b5cf6', emps: [] as any[] },
+      from50: { label: 'موظفين أعمارهم (50 - 59)', count: 0, color: '#f59e0b', emps: [] as any[] },
       over60: { label: 'فوق السن (60+)', count: 0, color: '#ef4444', emps: [] as any[] },
       unrecorded: { label: 'غير مسجل', count: 0, color: '#94a3b8', emps: [] as any[] }
     };
@@ -666,12 +666,12 @@ export default function DashboardPage() {
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: '#dc2626' }}>
-              <span className="text-base">🚨</span> مهام عاجلة للمجموعة الفعالة (تنتهي خلال 60 يوم)
+              <span className="text-base">🚨</span> مهام عاجلة للمجموعة العاملة (تنتهي خلال 60 يوم)
             </h4>
           </div>
           {dashboardData.urgentAlerts.length === 0 ? (
             <div className="text-center py-8 rounded-xl text-[13px] font-bold" style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
-              لا توجد مهام عاجلة في الفلتر المختار! 🎉
+              لا توجد مهام عاجلة طبقاً للفلتر! 🎉
             </div>
           ) : (
             <div className="overflow-y-auto pr-1" style={{ maxHeight: '290px' }}>
