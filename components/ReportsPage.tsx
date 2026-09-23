@@ -409,11 +409,11 @@ export default function ReportsPage() {
       <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>📊 مركز تقارير العقود والاستحقاقات</h3>
-          <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>تقارير استباقية وأدوات عمل لمراقبة حركة العقود</p>
+          <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>تقارير مراقبة حركة العقود</p>
         </div>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button onClick={handleExportExcel} style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            📥 تصدير تكتيكي Excel
+            📥 تصدير  Excel
           </button>
           <button onClick={() => window.print()} style={{ background: '#0f172a', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             🖨️ طباعة
@@ -452,7 +452,7 @@ export default function ReportsPage() {
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>السجل العام</span>
             <span style={{ fontSize: '20px' }}>📋</span>
           </div>
-          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>كشف شامل للنشطين</div>
+          <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>كشف شامل للعاملين</div>
         </div>
       </div>
 
