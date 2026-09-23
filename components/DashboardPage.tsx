@@ -366,9 +366,10 @@ export default function DashboardPage() {
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG
+  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG (الآن يدعم ظهور النسبة المئوية فوق الشريحة)
   const renderInteractiveDonutChart = () => {
-    let cumulativePercent = 0;
+    let cumulativePercentForSlices = 0;
+    let cumulativePercentForText = 0;
     
     return (
       <div className="flex flex-col items-center justify-center w-full h-full gap-6 mt-4">
@@ -378,15 +379,15 @@ export default function DashboardPage() {
             {/* الخلفية */}
             <circle cx="21" cy="21" r="15.91549431" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
             
-            {/* الشرائح */}
+            {/* رسم الشرائح الملونة */}
             {ageData.map((slice, idx) => {
               const dashArray = `${slice.pct} ${100 - slice.pct}`;
-              const dashOffset = 100 - cumulativePercent;
-              cumulativePercent += slice.pct;
+              const dashOffset = 100 - cumulativePercentForSlices;
+              cumulativePercentForSlices += slice.pct;
               
               return (
                 <circle
-                  key={idx}
+                  key={`slice-${idx}`}
                   cx="21"
                   cy="21"
                   r="15.91549431"
@@ -408,11 +409,45 @@ export default function DashboardPage() {
                 />
               );
             })}
+
+            {/* رسم النصوص المئوية فوق الشرائح */}
+            {ageData.map((slice, idx) => {
+              // تحديد منتصف الشريحة (زاوية)
+              const midPct = cumulativePercentForText + slice.pct / 2;
+              cumulativePercentForText += slice.pct;
+
+              // إخفاء النص لو الشريحة صغيرة جداً (< 5%) عشان الشكل ميبقاش زحمة
+              if (slice.pct < 5) return null;
+
+              // تحويل النسبة لزاوية بالراديان وحساب الإحداثيات (x, y)
+              const angle = (midPct / 100) * 2 * Math.PI;
+              const r = 15.91549431; 
+              const x = 21 + r * Math.cos(angle);
+              const y = 21 + r * Math.sin(angle);
+
+              return (
+                <text
+                  key={`text-${idx}`}
+                  x={x}
+                  y={y}
+                  fill="#ffffff"
+                  fontSize="2.5"
+                  fontWeight="bold"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  // تدوير النص بـ 90 درجة عشان يعوض الدوران السالب لـ SVG نفسه
+                  transform={`rotate(90 ${x} ${y})`}
+                  style={{ pointerEvents: 'none', textShadow: '0px 1px 2px rgba(0,0,0,0.6)' }}
+                >
+                  {Math.round(slice.pct)}%
+                </text>
+              );
+            })}
           </svg>
           
-          {/* النص الداخلي */}
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>تصفية الفلتر</span>
+          {/* النص الداخلي في قلب الدائرة */}
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', pointerEvents: 'none' }}>
+            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginTop: '70px' }}>تصفية الفلتر</span>
             <span style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
           </div>
         </div>
@@ -855,7 +890,7 @@ export default function DashboardPage() {
 
       {/* نافذة تفاصيل الشهر بالرسومات */}
       {selectedChartMonth && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', itemsCenter: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>
