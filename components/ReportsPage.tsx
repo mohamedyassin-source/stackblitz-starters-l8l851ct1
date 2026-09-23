@@ -203,6 +203,9 @@ export default function ReportsPage() {
       if (activeReport === 'monthly') {
         const endDate = endDateVal ? new Date(endDateVal) : null;
         const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
+        
+        // 🚀 استثناء الموظف إذا كان عقده قد تحول بالفعل إلى "فوق السن"
+        const isAlreadyOverAge = String(cType).includes('فوق السن');
 
         const matchesMonthYear = (d: Date | null) => {
           if (!d || isNaN(d.getTime())) return false;
@@ -212,7 +215,7 @@ export default function ReportsPage() {
         };
 
         const isExpiringThisMonth = matchesMonthYear(endDate);
-        const isTurning60ThisMonth = matchesMonthYear(retirementDate);
+        const isTurning60ThisMonth = matchesMonthYear(retirementDate) && !isAlreadyOverAge;
 
         if (!isExpiringThisMonth && !isTurning60ThisMonth) return false;
 
@@ -248,12 +251,16 @@ export default function ReportsPage() {
       const endDateVal = getField(emp, 'contract_end_date');
       const endDate = endDateVal ? new Date(endDateVal) : null;
       const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
+      const cType = String(getField(emp, 'contract_type'));
+      
+      // 🚀 استثناء الموظف من إنذارات הـ 60 إذا كان عقده قد تحول بالفعل إلى "فوق السن"
+      const isAlreadyOverAge = cType.includes('فوق السن');
       
       const m = parseInt(selectedMonth);
       const y = parseInt(selectedYear);
 
       const isExpiringThisMonth = endDate && (endDate.getMonth() + 1 === m) && (endDate.getFullYear() === y);
-      const isTurning60ThisMonth = retirementDate && (retirementDate.getMonth() + 1 === m) && (retirementDate.getFullYear() === y);
+      const isTurning60ThisMonth = retirementDate && (retirementDate.getMonth() + 1 === m) && (retirementDate.getFullYear() === y) && !isAlreadyOverAge;
 
       if (isExpiringThisMonth || isTurning60ThisMonth) {
         totalExpirations++;
@@ -633,7 +640,7 @@ export default function ReportsPage() {
                 const name = getField(emp, 'employee_name');
                 const dept = getField(emp, 'department');
                 const job = getField(emp, 'job_title');
-                const cType = getField(emp, 'contract_type');
+                const cType = String(getField(emp, 'contract_type'));
                 const endDate = getField(emp, 'contract_end_date');
                 const age = getEmployeeAge(emp);
                 const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
@@ -641,7 +648,7 @@ export default function ReportsPage() {
                 const actionStatus = getActionStatus(code);
                 
                 let isTurning60Now = false;
-                if (retirementDate && activeReport === 'monthly') {
+                if (retirementDate && activeReport === 'monthly' && !cType.includes('فوق السن')) {
                   if (retirementDate.getMonth() + 1 === parseInt(selectedMonth) && retirementDate.getFullYear() === parseInt(selectedYear)) {
                     isTurning60Now = true;
                   }
