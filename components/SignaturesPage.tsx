@@ -26,10 +26,20 @@ function formatDate(dateStr?: string | null) {
   return formatArabicDate(d);
 }
 
+// 🌟 دالة مساعدة لحساب شهر بداية العقد الجديد لاستخدامها في الفلتر
+const calculateNewStartDate = (oldEndDateStr: string | null | undefined) => {
+  if (!oldEndDateStr) return '';
+  const parts = String(oldEndDateStr).split('-');
+  if (parts.length < 3) return oldEndDateStr;
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export default function SignaturesPage() {
   const { renewals, employees, loading, refresh: fetchApprovedRequests } = useAppData();
   
-  // 🌟 سحب الطلبات المعتمدة فقط
+  // سحب الطلبات المعتمدة فقط
   const requests = useMemo(() => {
     return (renewals || [])
       .filter((r) => r.status === 'Approved')
@@ -38,15 +48,17 @@ export default function SignaturesPage() {
   
   const [actionLoading, setActionLoading] = useState(false);
   
-  // 🗂️ فلتر الكروت العلوية
+  // 🗂️ فلتر الكروت العلوية (Tab Filter)
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'pending_signature' | 'signed'>('pending_signature');
 
   // 🔃 حالات الترتيب
   const [sortColumn, setSortColumn] = useState<string>('request_id');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
 
+  // 🔍 الفلاتر الشاملة (Global Filters)
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(''); // 🌟 فلتر الشهر الجديد
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // 📝 حالة نافذة تعديل العقد
@@ -58,19 +70,38 @@ export default function SignaturesPage() {
 
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
 
-  // 🌟 نظام الفلترة الذكي
-  const filteredRequests = useMemo(() => {
+  // 🌟 1. الفلتر الشامل (Global Filter): يطبق على البحث، الإدارة، والشهر
+  const globalFilteredRequests = useMemo(() => {
     return requests.filter(req => {
-      if (activeFilterCard === 'pending_signature' && req.signature_status === 'تم التوقيع') return false;
-      if (activeFilterCard === 'signed' && req.signature_status !== 'تم التوقيع') return false;
-      
       const term = searchTerm.toLowerCase();
       const matchesSearch = !term || String(req.employee_code).toLowerCase().includes(term) || String(req.employee_name).toLowerCase().includes(term) || String(req.request_id).toLowerCase().includes(term);
       const matchesDept = !selectedDept || req.department === selectedDept;
       
-      return matchesSearch && matchesDept;
+      // تطبيق فلتر الشهر على تاريخ بداية العقد الجديد
+      let matchesMonth = true;
+      if (selectedMonth) {
+        const newStart = calculateNewStartDate(req.contract_end_date);
+        matchesMonth = newStart ? newStart.startsWith(selectedMonth) : false;
+      }
+      
+      return matchesSearch && matchesDept && matchesMonth;
     });
-  }, [requests, activeFilterCard, searchTerm, selectedDept]);
+  }, [requests, searchTerm, selectedDept, selectedMonth]);
+
+  // 🌟 2. حسابات الكروت التفاعلية (تقرأ الآن من البيانات المفلترة شاملةً)
+  const totalAll = globalFilteredRequests.length;
+  const countPending = globalFilteredRequests.filter(r => r.signature_status !== 'تم التوقيع').length;
+  const countSigned = globalFilteredRequests.filter(r => r.signature_status === 'تم التوقيع').length;
+  const calcPct = (val: number) => totalAll > 0 ? ((val / totalAll) * 100).toFixed(1) : '0';
+
+  // 🌟 3. فلترة الجدول بناءً على الكارت المختار (يطبق فوق الفلتر الشامل)
+  const filteredRequests = useMemo(() => {
+    return globalFilteredRequests.filter(req => {
+      if (activeFilterCard === 'pending_signature' && req.signature_status === 'تم التوقيع') return false;
+      if (activeFilterCard === 'signed' && req.signature_status !== 'تم التوقيع') return false;
+      return true;
+    });
+  }, [globalFilteredRequests, activeFilterCard]);
 
   // 🔃 الترتيب
   const sortedRequests = useMemo(() => {
@@ -82,12 +113,6 @@ export default function SignaturesPage() {
       return sortDirection === 'asc' ? res : -res;
     });
   }, [filteredRequests, sortColumn, sortDirection]);
-
-  // 📊 حسابات الكروت
-  const totalAll = requests.length;
-  const countPending = requests.filter(r => r.signature_status !== 'تم التوقيع').length;
-  const countSigned = requests.filter(r => r.signature_status === 'تم التوقيع').length;
-  const calcPct = (val: number) => totalAll > 0 ? ((val / totalAll) * 100).toFixed(1) : '0';
 
   const handleSort = (columnKey: string) => {
     if (sortColumn === columnKey) {
@@ -116,15 +141,12 @@ export default function SignaturesPage() {
     const hiringDate = new Date(hiringDateRaw);
     if (isNaN(hiringDate.getTime())) return alert('تاريخ التعيين المتاح غير صالح.');
 
-    // الشهر اليومي للتعيين
     const hireMonth = hiringDate.getMonth(); // 0-11
     const today = new Date();
     let targetYear = today.getFullYear();
 
-    // تاريخ نهاية العقد يوافق آخر يوم في شهر التعيين
     const lastDayOfAnniversaryMonth = new Date(targetYear, hireMonth + 1, 0);
 
-    // إذا كان التاريخ المحسوب قد مضى هذا العام، نجعله للعام القادم
     if (lastDayOfAnniversaryMonth < today) {
       lastDayOfAnniversaryMonth.setFullYear(targetYear + 1);
     }
@@ -149,7 +171,6 @@ export default function SignaturesPage() {
       const req = editModal.req;
       const parsedCode = parseInt(req.employee_code, 10);
 
-      // 1. تحديث جدول طلبات التجديد
       const { error: reqErr } = await supabase
         .from('renewal_requests')
         .update({ new_contract_end_date: editEndDate })
@@ -157,7 +178,6 @@ export default function SignaturesPage() {
 
       if (reqErr) throw reqErr;
 
-      // 2. التعديل الفوري المباشر بجدول العقود السارية
       await supabase
         .from('contracts')
         .update({ contract_end_date: editEndDate })
@@ -340,7 +360,7 @@ export default function SignaturesPage() {
         </div>
       </div>
 
-      {/* 📊 الكروت العلوية */}
+      {/* 📊 الكروت العلوية التفاعلية */}
       <div className="no-print" style={{ marginBottom: '24px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           
@@ -400,7 +420,7 @@ export default function SignaturesPage() {
         </div>
       )}
 
-      {/* 🌟 شريط الفلاتر والبحث */}
+      {/* 🌟 شريط الفلاتر والبحث (بما في ذلك فلتر الشهر الجديد) */}
       <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'space-between', direction: 'rtl', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
           <input type="text" placeholder="بحث بالاسم أو الكود أو رقم الطلب..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', minWidth: '220px', fontWeight: 'bold' }} />
@@ -410,7 +430,13 @@ export default function SignaturesPage() {
             {deptsList.map((d: any, i) => (<option key={i} value={d}>{d}</option>))}
           </select>
 
-          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setActiveFilterCard('pending_signature'); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', color: '#334155', cursor: 'pointer' }}>
+          {/* 🌟 فلتر الشهر الجديد */}
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', background: '#eff6ff', padding: '6px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af', marginLeft: '6px', paddingRight: '6px' }}>شهر الاستحقاق:</span>
+            <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 6px', border: 0, background: 'transparent', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace', color: '#1e40af' }} />
+          </div>
+
+          <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedMonth(''); setActiveFilterCard('pending_signature'); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', color: '#334155', cursor: 'pointer' }}>
             إعادة ضبط
           </button>
         </div>
