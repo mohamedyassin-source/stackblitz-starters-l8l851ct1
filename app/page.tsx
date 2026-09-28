@@ -1,8 +1,8 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { onAppNavigate } from '@/lib/navigation';
-import { DataProvider } from '@/lib/DataContext';
+import { DataProvider, useAppData } from '@/lib/DataContext'; // إضافة استيراد useAppData
 
 const LoginPage = dynamic(() => import('@/components/LoginPage'), { ssr: false });
 const DashboardPage = dynamic(() => import('@/components/DashboardPage'), { ssr: false });
@@ -54,6 +54,141 @@ const PAGE_TITLES: Record<string, string> = {
   audit: 'سجل العمليات',
   settings: 'إعدادات النظام',
 };
+
+// مكون منفصل للشريط الجانبي ليتمكن من استخدام useAppData
+function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, sidebarOpen, handleLogout }: any) {
+  const { employees } = useAppData();
+
+  // حساب العقود المنتهية (الخطر الكارثي)
+  const criticalCount = useMemo(() => {
+    if (!employees) return 0;
+    
+    return employees.filter(emp => {
+      // نتجاهل العقود الدائمة
+      if (emp.contract_type === 'دائم' || String(emp.job_title).includes('دائم')) return false;
+      
+      const endDateStr = emp.contract_end_date;
+      if (!endDateStr) return false;
+      
+      const end = new Date(endDateStr);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
+      return days < 0; // لو الأيام بالسالب يبقى العقد منتهي (خطر)
+    }).length;
+  }, [employees]);
+
+  return (
+    <>
+      <style>{`
+        @keyframes pulse-red-badge {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(220, 38, 38, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+        }
+
+        .urgent-badge {
+          background-color: #dc2626;
+          color: white;
+          border-radius: 50%;
+          min-width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 6px;
+          font-size: 10px;
+          font-weight: bold;
+          animation: pulse-red-badge 1.5s infinite;
+          margin-right: auto; /* يزيح البادج لليسار في RTL */
+        }
+      `}</style>
+      
+      <aside
+        className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
+          sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 shrink-0">
+          <div className="seal w-10 h-10 text-base">★</div>
+          <div>
+            <h3 className="m-0 text-[17px] font-extrabold text-brass-300 leading-tight">المراسم الدولية</h3>
+            <span className="text-[11px] text-slate-400 font-medium">بوابة العقود والتجديدات</span>
+          </div>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
+          {SIDEBAR_GROUPS.map((group, index) => {
+            const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
+            if (visibleItems.length === 0) return null;
+            return (
+              <div key={index}>
+                <div className="text-[10.5px] text-slate-500 font-extrabold mb-2 px-2 tracking-wide">{group.title}</div>
+                <div className="flex flex-col gap-1">
+                  {visibleItems.map(item => (
+                    <button
+                      key={item.id}
+                      onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
+                      className={`nav-item w-full text-right px-3.5 py-2.5 rounded-lg text-[13.5px] font-bold flex items-center gap-2.5 transition-all ${
+                        activeTab === item.id
+                          ? 'bg-gradient-to-l from-brass-600 to-brass-400 text-white shadow-md shadow-brass-600/20'
+                          : 'text-slate-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.label}</span>
+                      
+                      {/* عرض الإشعار النابض بجانب "التنبيهات" إذا كان هناك خطر */}
+                      {item.id === 'alerts' && criticalCount > 0 && (
+                        <span className="urgent-badge">
+                          {criticalCount}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </nav>
+
+        {/* الجزء السفلي: زر التحديث المجمع + الإعدادات + الخروج */}
+        <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0 flex flex-col gap-2">
+          {['Admin', 'HR'].includes(currentUser.role) && (
+            <button
+              onClick={() => { setActiveTab('data_sync'); setSidebarOpen(false); }}
+              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors flex items-center gap-2.5 ${
+                activeTab === 'data_sync' ? 'bg-brass-600 border-brass-500 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
+              }`}
+            >
+              <span>🔄</span>
+              <span>تحديث البيانات المجمع</span>
+            </button>
+          )}
+
+          {currentUser.role === 'Admin' && (
+            <button
+              onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
+              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors ${
+                activeTab === 'settings' ? 'bg-navy-700 border-navy-700 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
+              }`}
+            >
+              ⚙️ الإعدادات والصلاحيات
+            </button>
+          )}
+
+          <button
+            onClick={handleLogout}
+            className="w-full px-3.5 py-2.5 rounded-lg text-[12.5px] font-bold bg-red-950/60 text-red-300 border border-red-900 hover:bg-red-950 transition-colors"
+          >
+            🚪 تسجيل الخروج
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}
 
 export default function Home() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -118,143 +253,77 @@ export default function Home() {
 
   return (
     <DataProvider>
-    <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
+      <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
 
-      {sidebarOpen && (
-        <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
+        {sidebarOpen && (
+          <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        )}
 
-      {/* الشريط الجانبي */}
-      <aside
-        className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
-          sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
-        }`}
-      >
-        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10 shrink-0">
-          <div className="seal w-10 h-10 text-base">★</div>
-          <div>
-            <h3 className="m-0 text-[17px] font-extrabold text-brass-300 leading-tight">المراسم الدولية</h3>
-            <span className="text-[11px] text-slate-400 font-medium">بوابة العقود والتجديدات</span>
-          </div>
-        </div>
+        {/* الشريط الجانبي مدمج كمكون منفصل للوصول للبيانات */}
+        <SidebarContent 
+          currentUser={currentUser} 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          setSidebarOpen={setSidebarOpen} 
+          sidebarOpen={sidebarOpen} 
+          handleLogout={handleLogout} 
+        />
 
-        <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
-          {SIDEBAR_GROUPS.map((group, index) => {
-            const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
-            if (visibleItems.length === 0) return null;
-            return (
-              <div key={index}>
-                <div className="text-[10.5px] text-slate-500 font-extrabold mb-2 px-2 tracking-wide">{group.title}</div>
-                <div className="flex flex-col gap-1">
-                  {visibleItems.map(item => (
-                    <button
-                      key={item.id}
-                      onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
-                      className={`nav-item w-full text-right px-3.5 py-2.5 rounded-lg text-[13.5px] font-bold flex items-center gap-2.5 transition-all ${
-                        activeTab === item.id
-                          ? 'bg-gradient-to-l from-brass-600 to-brass-400 text-white shadow-md shadow-brass-600/20'
-                          : 'text-slate-400 hover:text-white hover:bg-white/5'
-                      }`}
-                    >
-                      <span>{item.icon}</span>
-                      <span>{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* الجزء السفلي: زر التحديث المجمع + الإعدادات + الخروج */}
-        <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0 flex flex-col gap-2">
-          {['Admin', 'HR'].includes(currentUser.role) && (
-            <button
-              onClick={() => { setActiveTab('data_sync'); setSidebarOpen(false); }}
-              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors flex items-center gap-2.5 ${
-                activeTab === 'data_sync' ? 'bg-brass-600 border-brass-500 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
-              }`}
-            >
-              <span>🔄</span>
-              <span>تحديث البيانات المجمع</span>
-            </button>
-          )}
-
-          {currentUser.role === 'Admin' && (
-            <button
-              onClick={() => { setActiveTab('settings'); setSidebarOpen(false); }}
-              className={`w-full text-right px-3.5 py-2.5 rounded-lg text-[13px] font-bold border transition-colors ${
-                activeTab === 'settings' ? 'bg-navy-700 border-navy-700 text-white' : 'border-white/10 text-slate-300 hover:bg-white/5'
-              }`}
-            >
-              ⚙️ الإعدادات والصلاحيات
-            </button>
-          )}
-
-          <button
-            onClick={handleLogout}
-            className="w-full px-3.5 py-2.5 rounded-lg text-[12.5px] font-bold bg-red-950/60 text-red-300 border border-red-900 hover:bg-red-950 transition-colors"
+        {/* منطقة المحتوى الرئيسية */}
+        <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
+          <header
+            className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
+            style={{ background: 'var(--paper-card)', borderColor: 'var(--line)' }}
           >
-            🚪 تسجيل الخروج
-          </button>
-        </div>
-      </aside>
-
-      {/* منطقة المحتوى الرئيسية */}
-      <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
-        <header
-          className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
-          style={{ background: 'var(--paper-card)', borderColor: 'var(--line)' }}
-        >
-          <div className="flex items-center gap-3">
-            <button
-              className="lg:hidden w-9 h-9 rounded-lg grid place-items-center border"
-              style={{ borderColor: 'var(--line)', color: 'var(--ink)' }}
-              onClick={() => setSidebarOpen(true)}
-            >
-              ☰
-            </button>
-            <h2 className="m-0 text-[17px] sm:text-[19px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
-              {PAGE_TITLES[activeTab] || 'نظام العقود'}
-            </h2>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div
-              className="hidden sm:flex items-center gap-2.5 px-4 py-2 rounded-lg border text-[12px]"
-              style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
-            >
-              <span className="font-extrabold" style={{ color: 'var(--ink)' }}>{currentUser.name}</span>
-              <span style={{ color: 'var(--line)' }}>|</span>
-              <span className="font-extrabold text-brass-600">{currentUser.role}</span>
-              <span style={{ color: 'var(--line)' }}>|</span>
-              <span className="font-mono font-extrabold" style={{ color: 'var(--muted)' }}>{currentUser.code}</span>
+            <div className="flex items-center gap-3">
+              <button
+                className="lg:hidden w-9 h-9 rounded-lg grid place-items-center border"
+                style={{ borderColor: 'var(--line)', color: 'var(--ink)' }}
+                onClick={() => setSidebarOpen(true)}
+              >
+                ☰
+              </button>
+              <h2 className="m-0 text-[17px] sm:text-[19px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
+                {PAGE_TITLES[activeTab] || 'نظام العقود'}
+              </h2>
             </div>
-            <button
-              onClick={toggleTheme}
-              className="w-10 h-10 rounded-full border grid place-items-center text-[17px] transition-colors"
-              style={{ borderColor: 'var(--line)', background: 'var(--paper-card)' }}
-              title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
-            >
-              {isDarkMode ? '☀️' : '🌙'}
-            </button>
-          </div>
-        </header>
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6">
-          {activeTab === 'dashboard' && <DashboardPage />}
-          {activeTab === 'employees_data' && <EmployeesPage />}
-          {activeTab === 'data_sync' && <DataSyncPage />}
-          {activeTab === 'contracts' && <ContractsPage />}
-          {activeTab === 'renewals' && <RenewalsPage />}
-          {activeTab === 'signatures' && <SignaturesPage />}
-          {activeTab === 'reports' && <ReportsPage />}
-          {activeTab === 'alerts' && <AlertsPage />}
-          {activeTab === 'audit' && <AuditPage />}
-          {activeTab === 'settings' && <SettingsPage currentUser={currentUser} />}
-        </main>
+            <div className="flex items-center gap-3">
+              <div
+                className="hidden sm:flex items-center gap-2.5 px-4 py-2 rounded-lg border text-[12px]"
+                style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
+              >
+                <span className="font-extrabold" style={{ color: 'var(--ink)' }}>{currentUser.name}</span>
+                <span style={{ color: 'var(--line)' }}>|</span>
+                <span className="font-extrabold text-brass-600">{currentUser.role}</span>
+                <span style={{ color: 'var(--line)' }}>|</span>
+                <span className="font-mono font-extrabold" style={{ color: 'var(--muted)' }}>{currentUser.code}</span>
+              </div>
+              <button
+                onClick={toggleTheme}
+                className="w-10 h-10 rounded-full border grid place-items-center text-[17px] transition-colors"
+                style={{ borderColor: 'var(--line)', background: 'var(--paper-card)' }}
+                title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+              >
+                {isDarkMode ? '☀️' : '🌙'}
+              </button>
+            </div>
+          </header>
+
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+            {activeTab === 'dashboard' && <DashboardPage />}
+            {activeTab === 'employees_data' && <EmployeesPage />}
+            {activeTab === 'data_sync' && <DataSyncPage />}
+            {activeTab === 'contracts' && <ContractsPage />}
+            {activeTab === 'renewals' && <RenewalsPage />}
+            {activeTab === 'signatures' && <SignaturesPage />}
+            {activeTab === 'reports' && <ReportsPage />}
+            {activeTab === 'alerts' && <AlertsPage />}
+            {activeTab === 'audit' && <AuditPage />}
+            {activeTab === 'settings' && <SettingsPage currentUser={currentUser} />}
+          </main>
+        </div>
       </div>
-    </div>
     </DataProvider>
   );
 }
