@@ -140,14 +140,9 @@ export default function RenewalsPage() {
   const deptsList = Array.from(new Set(requests.map(r => r.department).filter(Boolean)));
   const compsList = Array.from(new Set(requests.map(r => r.company).filter(Boolean)));
 
-  // فلترة الطلبات
-  const filteredRequests = useMemo(() => {
+  // 🌟 1. الفلتر الشامل (Global Filter): يطبق الشهر، الشركة، الإدارة والبحث على كل البيانات
+  const globalFilteredRequests = useMemo(() => {
     return requests.filter(req => {
-      if (activeTab === 'Pending_Project' && req.status !== 'Pending_Project_Manager' && req.status !== 'Pending') return false;
-      if (activeTab === 'Pending_General' && req.status !== 'Pending_General_Manager') return false;
-      if (activeTab === 'Approved' && req.status !== 'Approved') return false;
-      if (activeTab === 'Rejected' && req.status !== 'Rejected') return false;
-
       const term = searchTerm.toLowerCase();
       const matchesSearch = !term || 
         String(req.employee_code || '').toLowerCase().includes(term) || 
@@ -161,12 +156,31 @@ export default function RenewalsPage() {
       let matchesMonth = true;
       if (selectedMonth) {
         const newStart = calculateNewStartDate(req.contract_end_date);
+        // selectedMonth بيجي بصيغة YYYY-MM
         matchesMonth = newStart ? newStart.startsWith(selectedMonth) : false;
       }
 
       return matchesSearch && matchesDept && matchesComp && matchesMonth;
     });
-  }, [requests, activeTab, searchTerm, selectedDept, selectedCompany, selectedMonth]);
+  }, [requests, searchTerm, selectedDept, selectedCompany, selectedMonth]);
+
+  // 🌟 2. حسابات الكروت التفاعلية: تقرأ الآن من البيانات المفلترة فقط
+  const countProj = globalFilteredRequests.filter(r => r.status === 'Pending_Project_Manager' || r.status === 'Pending').length;
+  const countGen = globalFilteredRequests.filter(r => r.status === 'Pending_General_Manager').length;
+  const countApproved = globalFilteredRequests.filter(r => r.status === 'Approved').length;
+  const countRejected = globalFilteredRequests.filter(r => r.status === 'Rejected').length;
+  const countAll = globalFilteredRequests.length;
+
+  // 🌟 3. فلترة الجدول بناءً على الكارت (التبويب) المختار
+  const filteredRequests = useMemo(() => {
+    return globalFilteredRequests.filter(req => {
+      if (activeTab === 'Pending_Project' && req.status !== 'Pending_Project_Manager' && req.status !== 'Pending') return false;
+      if (activeTab === 'Pending_General' && req.status !== 'Pending_General_Manager') return false;
+      if (activeTab === 'Approved' && req.status !== 'Approved') return false;
+      if (activeTab === 'Rejected' && req.status !== 'Rejected') return false;
+      return true;
+    });
+  }, [globalFilteredRequests, activeTab]);
 
   // 🔃 ترتيب الطلبات
   const sortedRequests = useMemo(() => {
@@ -208,13 +222,6 @@ export default function RenewalsPage() {
       <span style={{ color: '#3b82f6', marginRight: '4px' }}>▼</span>
     )
   );
-
-  // حسابات الكروت
-  const countProj = requests.filter(r => r.status === 'Pending_Project_Manager' || r.status === 'Pending').length;
-  const countGen = requests.filter(r => r.status === 'Pending_General_Manager').length;
-  const countApproved = requests.filter(r => r.status === 'Approved').length;
-  const countRejected = requests.filter(r => r.status === 'Rejected').length;
-  const countAll = requests.length;
 
   // دالة الاعتماد
   const handleConfirmApproval = async () => {
@@ -573,9 +580,9 @@ export default function RenewalsPage() {
           <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '12px', outline: 'none', width: '150px', fontWeight: 'bold' }} />
           <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', background: '#f8fafc', padding: '4px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#64748b', marginLeft: '6px', paddingRight: '6px' }}>شهر البداية:</span>
-            <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 6px', border: 0, background: 'transparent', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace' }} />
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', background: '#eff6ff', padding: '4px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#1e40af', marginLeft: '6px', paddingRight: '6px' }}>شهر البداية:</span>
+            <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 6px', border: 0, background: 'transparent', fontSize: '12px', outline: 'none', fontWeight: 'bold', fontFamily: 'monospace', color: '#1e40af' }} />
           </div>
 
           <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedMonth(''); }} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>إعادة ضبط</button>
@@ -610,7 +617,7 @@ export default function RenewalsPage() {
             </thead>
             <tbody>
               {sortedRequests.length === 0 ? (
-                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد طلبات في هذه المرحلة.</td></tr>
+                <tr><td colSpan={11} style={{ padding: '30px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا توجد طلبات في هذه المرحلة تطابق بحثك.</td></tr>
               ) : sortedRequests.map((req) => {
                 const days = getDaysRemaining(req.contract_end_date);
                 return (
