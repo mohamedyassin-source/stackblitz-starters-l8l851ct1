@@ -47,6 +47,58 @@ const getRetirementDate = (birthDateRaw: string | null) => {
   return new Date(birthDate.getFullYear() + 60, birthDate.getMonth(), birthDate.getDate());
 };
 
+// 🌟 مكون الفلتر الذكي متعدد التحديد (Checkboxes)
+const MultiSelectDropdown = ({ title, icon, options, selected, onChange }: { title: string, icon: string, options: string[], selected: string[], onChange: (val: string[]) => void }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(o => o.toLowerCase().includes(searchTerm.toLowerCase()));
+
+  const toggleSelection = (val: string) => {
+    if (selected.includes(val)) onChange(selected.filter(v => v !== val));
+    else onChange([...selected, val]);
+  };
+
+  return (
+    <div style={{ position: 'relative' }} ref={ref}>
+      <button type="button" onClick={() => setIsOpen(!isOpen)} style={{ padding: '8px 14px', borderRadius: '8px', border: selected.length > 0 ? '2px solid #2563eb' : '1px solid #cbd5e1', background: selected.length > 0 ? '#eff6ff' : '#ffffff', color: selected.length > 0 ? '#2563eb' : '#0f172a', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', minWidth: '160px', justifyContent: 'space-between' }}>
+        <span>{icon} {title} ({selected.length === 0 ? 'الكل' : selected.length})</span><span>▼</span>
+      </button>
+      {isOpen && (
+        <div style={{ position: 'absolute', top: '100%', right: 0, width: '260px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', marginTop: '6px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 100 }}>
+          <input type="text" placeholder={`🔍 ابحث في ${title}...`} value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', marginBottom: '10px', boxSizing: 'border-box' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #e2e8f0' }}>
+            <button type="button" onClick={() => onChange([...options])} style={{ background: 'transparent', border: 0, color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تحديد الكل</button>
+            <button type="button" onClick={() => onChange([])} style={{ background: 'transparent', border: 0, color: '#dc2626', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إلغاء التحديد</button>
+          </div>
+          <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {filteredOptions.length === 0 ? (
+              <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', padding: '8px' }}>لا توجد نتائج</div>
+            ) : (
+              filteredOptions.map((o, i) => (
+                <label key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: selected.includes(o) ? 'bold' : 'normal', color: '#0f172a' }}>
+                  <input type="checkbox" checked={selected.includes(o)} onChange={() => toggleSelection(o)} style={{ accentColor: '#2563eb', cursor: 'pointer' }} /> {o}
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 export default function ReportsPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [renewals, setRenewals] = useState<any[]>([]);
@@ -60,13 +112,11 @@ export default function ReportsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<string>(String(new Date().getMonth() + 1));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
-  const [selectedCompany, setSelectedCompany] = useState('');
-  const [selectedContractType, setSelectedContractType] = useState('');
-
+  
+  // 🌟 تحديث الفلاتر لتصبح مصفوفات (Multi-Select)
+  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
   const [selectedDepts, setSelectedDepts] = useState<string[]>([]);
-  const [deptSearchTerm, setDeptSearchTerm] = useState('');
-  const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
-  const deptDropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedContractTypes, setSelectedContractTypes] = useState<string[]>([]);
 
   // إعادة ضبط الفلتر الفرعي عند تغيير الشهر أو التقرير
   useEffect(() => {
@@ -138,16 +188,6 @@ export default function ReportsPage() {
     fetchReportsData();
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (deptDropdownRef.current && !deptDropdownRef.current.contains(event.target as Node)) {
-        setIsDeptDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const getActionStatus = (empCode: string) => {
     if (!empCode) return { text: 'بدون إجراء ⚠️', code: 'none', color: '#ef4444', bg: '#fef2f2', border: '#fecaca' };
     
@@ -184,11 +224,6 @@ export default function ReportsPage() {
   const deptsList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'department')).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'ar')), [activeEmployees]);
   const contractTypesList = useMemo(() => Array.from(new Set(activeEmployees.map(e => getField(e, 'contract_type')).filter(t => t && t !== '—'))), [activeEmployees]);
 
-  const filteredDeptsList = useMemo(() => {
-    if (!deptSearchTerm.trim()) return deptsList;
-    return deptsList.filter(d => String(d).toLowerCase().includes(deptSearchTerm.toLowerCase().trim()));
-  }, [deptsList, deptSearchTerm]);
-
   // فلترة التقرير
   const reportData = useMemo(() => {
     return activeEmployees.filter(emp => {
@@ -204,7 +239,7 @@ export default function ReportsPage() {
         const endDate = endDateVal ? new Date(endDateVal) : null;
         const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
         
-        // 🚀 استثناء الموظف إذا كان عقده قد تحول بالفعل إلى "فوق السن"
+        // استثناء الموظف من الإنذار لو كان عقده بالفعل تحول لـ "فوق السن"
         const isAlreadyOverAge = String(cType).includes('فوق السن');
 
         const matchesMonthYear = (d: Date | null) => {
@@ -217,14 +252,16 @@ export default function ReportsPage() {
         const isExpiringThisMonth = matchesMonthYear(endDate);
         const isTurning60ThisMonth = matchesMonthYear(retirementDate) && !isAlreadyOverAge;
 
+        // 🌟 التأكد من التقاطه سواء كان هينتهي عقده أو هيتم الـ 60 (حتى لو عقده دائم)
         if (!isExpiringThisMonth && !isTurning60ThisMonth) return false;
 
         // 🌟 تطبيق الفلتر الفرعي للأشرطة المتفاعلة
         if (activeMonthlyFilter === 'turning60' && !isTurning60ThisMonth) return false;
         
         const actionCode = getActionStatus(code).code;
-        if (activeMonthlyFilter === 'processed' && actionCode === 'none') return false;
-        if (activeMonthlyFilter === 'pending' && actionCode !== 'none') return false;
+        // 🌟 المتأخرات تعني أي عقد لم يتم توقيعه النهائي (سواء كان Pending, Approved أو None)
+        if (activeMonthlyFilter === 'pending' && actionCode === 'signed') return false; 
+        if (activeMonthlyFilter === 'processed' && actionCode !== 'signed') return false;
 
       } else if (activeReport === 'above_60') {
         const isAbove60 = age !== null && age >= 60;
@@ -233,19 +270,19 @@ export default function ReportsPage() {
       }
 
       const matchesSearch = !searchTerm || code.includes(searchTerm.toLowerCase()) || name.includes(searchTerm.toLowerCase());
-      const matchesComp = !selectedCompany || comp === selectedCompany;
+      const matchesComp = selectedCompanies.length === 0 || selectedCompanies.includes(comp);
       const matchesDept = selectedDepts.length === 0 || selectedDepts.includes(dept);
-      const matchesType = !selectedContractType || cType === selectedContractType;
+      const matchesType = selectedContractTypes.length === 0 || selectedContractTypes.includes(cType);
 
       return matchesSearch && matchesComp && matchesDept && matchesType;
     });
-  }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompany, selectedDepts, selectedContractType, searchTerm, activeMonthlyFilter, renewals]);
+  }, [activeEmployees, activeReport, selectedMonth, selectedYear, selectedCompanies, selectedDepts, selectedContractTypes, searchTerm, activeMonthlyFilter, renewals]);
 
   const monthlyStats = useMemo(() => {
     let totalExpirations = 0;
     let turning60 = 0;
-    let actionTaken = 0;
-    let noAction = 0;
+    let actionSigned = 0;
+    let delayedUnsigned = 0;
 
     activeEmployees.forEach(emp => {
       const endDateVal = getField(emp, 'contract_end_date');
@@ -253,26 +290,26 @@ export default function ReportsPage() {
       const retirementDate = getRetirementDate(getField(emp, 'birth_date'));
       const cType = String(getField(emp, 'contract_type'));
       
-      // 🚀 استثناء الموظف من إنذارات הـ 60 إذا كان عقده قد تحول بالفعل إلى "فوق السن"
       const isAlreadyOverAge = cType.includes('فوق السن');
-      
       const m = parseInt(selectedMonth);
       const y = parseInt(selectedYear);
 
       const isExpiringThisMonth = endDate && (endDate.getMonth() + 1 === m) && (endDate.getFullYear() === y);
       const isTurning60ThisMonth = retirementDate && (retirementDate.getMonth() + 1 === m) && (retirementDate.getFullYear() === y) && !isAlreadyOverAge;
 
+      // 🌟 يتم تضمينه لو عقده هينتهي أو هيتم الـ 60 (حتى لو كان "عقد دائم")
       if (isExpiringThisMonth || isTurning60ThisMonth) {
         totalExpirations++;
         if (isTurning60ThisMonth) turning60++;
 
         const status = getActionStatus(getField(emp, 'employee_code')).code;
-        if (status === 'none') noAction++;
-        else actionTaken++;
+        // 🌟 كل من لم يوقع يندرج تحت المتأخرات
+        if (status === 'signed') actionSigned++;
+        else delayedUnsigned++;
       }
     });
 
-    return { totalExpirations, turning60, actionTaken, noAction };
+    return { totalExpirations, turning60, actionSigned, delayedUnsigned };
   }, [activeEmployees, selectedMonth, selectedYear, renewals]);
 
   const deptSummaryData = useMemo(() => {
@@ -289,10 +326,6 @@ export default function ReportsPage() {
     });
     return Object.entries(summary).map(([dept, counts]) => ({ dept, ...counts }));
   }, [reportData]);
-
-  const toggleDeptSelection = (deptName: string) => {
-    setSelectedDepts(prev => prev.includes(deptName) ? prev.filter(d => d !== deptName) : [...prev, deptName]);
-  };
 
   const handleExportExcel = () => {
     if (reportData.length === 0) return alert('لا توجد بيانات للتصدير.');
@@ -384,7 +417,6 @@ export default function ReportsPage() {
           box-shadow: 0 0 0 1px var(--theme-color) inset;
         }
 
-        /* 🌟 تنسيق شريط الإحصائيات التفاعلي الجديد */
         .segmented-control {
           display: flex;
           background: #ffffff;
@@ -463,12 +495,12 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* 🌟 شريط المؤشرات التفاعلي الموزع بالتساوي (Segmented Control) */}
+      {/* 🌟 شريط المؤشرات التفاعلي الموزع بالتساوي */}
       {activeReport === 'monthly' && (
         <div className="segmented-control no-print">
           
           <div className="segmented-item" onClick={() => setActiveMonthlyFilter('all')} style={{ background: activeMonthlyFilter === 'all' ? '#f1f5f9' : 'transparent', borderBottomColor: activeMonthlyFilter === 'all' ? '#0f172a' : 'transparent' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>إجمالي انتهاء العقود</div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>إجمالي المستهدف</div>
             <div style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{monthlyStats.totalExpirations}</div>
           </div>
           
@@ -482,21 +514,21 @@ export default function ReportsPage() {
           <div className="segmented-divider"></div>
           
           <div className="segmented-item" onClick={() => setActiveMonthlyFilter('processed')} style={{ background: activeMonthlyFilter === 'processed' ? '#f0fdf4' : 'transparent', borderBottomColor: activeMonthlyFilter === 'processed' ? '#10b981' : 'transparent' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>تمت المعالجة (الـ HR)</div>
-            <div style={{ fontSize: '24px', fontWeight: '900', color: '#10b981' }}>{monthlyStats.actionTaken}</div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>مُكتمل (تم التوقيع)</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#10b981' }}>{monthlyStats.actionSigned}</div>
           </div>
           
           <div className="segmented-divider"></div>
           
           <div className="segmented-item" onClick={() => setActiveMonthlyFilter('pending')} style={{ background: activeMonthlyFilter === 'pending' ? '#fef2f2' : 'transparent', borderBottomColor: activeMonthlyFilter === 'pending' ? '#ef4444' : 'transparent' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>متأخرات (بدون إجراء)</div>
-            <div style={{ fontSize: '24px', fontWeight: '900', color: '#ef4444' }}>{monthlyStats.noAction}</div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>متأخرات (لم يتم التوقيع)</div>
+            <div style={{ fontSize: '24px', fontWeight: '900', color: '#ef4444' }}>{monthlyStats.delayedUnsigned}</div>
           </div>
 
         </div>
       )}
 
-      {/* شريط الفلاتر */}
+      {/* 🌟 شريط الفلاتر باستخدام Checkboxes */}
       <div className="no-print" style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '24px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         
         {activeReport === 'monthly' && (
@@ -514,44 +546,13 @@ export default function ReportsPage() {
 
         <input type="text" placeholder="بحث بالاسم أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '180px', fontWeight: 'bold' }} />
 
-        <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
-          <option value="">🏢 كل الشركات</option>
-          {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
-        </select>
+        {/* فلاتر القوائم المنسدلة بالـ Checkboxes */}
+        <MultiSelectDropdown title="الشركات" icon="🏢" options={companiesList} selected={selectedCompanies} onChange={setSelectedCompanies} />
+        <MultiSelectDropdown title="الإدارات" icon="💼" options={deptsList} selected={selectedDepts} onChange={setSelectedDepts} />
+        <MultiSelectDropdown title="أنواع العقود" icon="📄" options={contractTypesList} selected={selectedContractTypes} onChange={setSelectedContractTypes} />
 
-        <div style={{ position: 'relative' }} ref={deptDropdownRef}>
-          <button type="button" onClick={() => setIsDeptDropdownOpen(!isDeptDropdownOpen)} style={{ padding: '8px 14px', borderRadius: '8px', border: selectedDepts.length > 0 ? '2px solid #2563eb' : '1px solid #cbd5e1', background: selectedDepts.length > 0 ? '#eff6ff' : '#ffffff', color: selectedDepts.length > 0 ? '#2563eb' : '#0f172a', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', minWidth: '160px', justifyContent: 'space-between' }}>
-            <span>💼 الإدارات ({selectedDepts.length === 0 ? 'الكل' : selectedDepts.length})</span><span>▼</span>
-          </button>
-          {isDeptDropdownOpen && (
-            <div style={{ position: 'absolute', top: '100%', right: 0, width: '260px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '12px', padding: '12px', marginTop: '6px', boxShadow: '0 10px 25px rgba(0,0,0,0.15)', zIndex: 100 }}>
-              <input type="text" placeholder="🔍 ابحث اسم الإدارة..." value={deptSearchTerm} onChange={e => setDeptSearchTerm(e.target.value)} style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #cbd5e1', fontSize: '11px', outline: 'none', marginBottom: '10px', boxSizing: 'border-box' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', paddingBottom: '6px', borderBottom: '1px solid #e2e8f0' }}>
-                <button type="button" onClick={() => setSelectedDepts([...deptsList])} style={{ background: 'transparent', border: 0, color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تحديد الكل</button>
-                <button type="button" onClick={() => setSelectedDepts([])} style={{ background: 'transparent', border: 0, color: '#dc2626', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>إلغاء التحديد</button>
-              </div>
-              <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {filteredDeptsList.length === 0 ? (
-                  <div style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', padding: '8px' }}>لا توجد إدارة</div>
-                ) : (
-                  filteredDeptsList.map((d, i) => (
-                    <label key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', cursor: 'pointer', fontWeight: selectedDepts.includes(d) ? 'bold' : 'normal', color: '#0f172a' }}>
-                      <input type="checkbox" checked={selectedDepts.includes(d)} onChange={() => toggleDeptSelection(d)} style={{ accentColor: '#2563eb', cursor: 'pointer' }} /> {d}
-                    </label>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <select value={selectedContractType} onChange={e => setSelectedContractType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
-          <option value="">📄 أنواع العقود (الكل)</option>
-          {contractTypesList.map((t: any, i) => <option key={i} value={t}>{t}</option>)}
-        </select>
-
-        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDepts([]); setDeptSearchTerm(''); setSelectedContractType(''); setSelectedMonth(String(new Date().getMonth() + 1)); setSelectedYear(new Date().getFullYear().toString()); setActiveMonthlyFilter('all'); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
-          إعادة ضبط
+        <button onClick={() => { setSearchTerm(''); setSelectedCompanies([]); setSelectedDepts([]); setSelectedContractTypes([]); setSelectedMonth(String(new Date().getMonth() + 1)); setSelectedYear(new Date().getFullYear().toString()); setActiveMonthlyFilter('all'); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
+          إعادة ضبط 🔄
         </button>
       </div>
 
@@ -568,7 +569,7 @@ export default function ReportsPage() {
               {activeReport === 'full_roster' && 'السجل الموحد العام لجميع الموظفين النشطين'}
             </p>
             <div style={{ marginTop: '4px', fontSize: '11px', color: '#64748b' }}>
-              {selectedCompany && `شركة: ${selectedCompany} | `}
+              {selectedCompanies.length > 0 && `شركات: (${selectedCompanies.join('، ')}) | `}
               {selectedDepts.length > 0 && `إدارات: (${selectedDepts.join('، ')})`}
             </div>
           </div>
