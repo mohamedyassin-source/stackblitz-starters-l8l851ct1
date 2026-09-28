@@ -104,15 +104,23 @@ export default function AlertsPage() {
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
 
+  // 🌟 المنطق المحدث لكافة الكروت والتنبيهات
   const alertItems = useMemo(() => {
     return employees
-      .filter((e) => e.contract_type !== 'دائم' && !String(e.job_title).includes('دائم'))
       .map(emp => {
+        const cType = String(emp.contract_type || '');
+        const job = String(emp.job_title || '');
+        
+        const isPermanent = cType.includes('دائم') || job.includes('دائم');
+        const isAlreadyOverAge = cType.includes('فوق السن'); // 🚀 حماية عقود فوق السن
+
         const days = getDaysRemaining(emp.contract_end_date);
         
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
-        const isRetiringSoon = daysToRetirement !== null && daysToRetirement <= 90 && daysToRetirement >= 0;
+        
+        // 🚀 تنبيه المعاش يظهر فقط لمن يبلغ 60 ولم يتم تغيير عقده إلى "فوق السن"
+        const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90;
 
         const safeCode = String(emp.employee_code).trim().replace(/^0+/, '');
         const empRens = renewals
@@ -120,12 +128,15 @@ export default function AlertsPage() {
           .sort((a, b) => (b.request_id || '').localeCompare(a.request_id || ''));
         
         const latestRenewal = empRens[0];
+        const hasActiveRequest = !!latestRenewal && !latestRenewal.status.includes('Rejected') && !latestRenewal.signature_status.includes('تم التوقيع');
 
         let level: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
         
+        // ترتيب الأولويات: رادار المعاش أولاً، ثم الإنذارات الزمنية للعقود المحددة فقط
         if (isRetiringSoon) {
           level = 'retirement';
-        } else if (days !== null) {
+        } else if (!isPermanent && days !== null) {
+          // العقود المحددة المدة فقط هي من تحصل على إنذارات انتهاء العقد
           if (days < 0) level = 'critical';
           else if (days <= 30) level = 'warning';
           else if (days <= 90) level = 'notice';
@@ -137,7 +148,7 @@ export default function AlertsPage() {
           daysToRetirement: daysToRetirement,
           retirementDateStr: retirementDate ? retirementDate.toISOString().split('T')[0] : null,
           alertLevel: level,
-          hasActiveRequest: !!latestRenewal && !latestRenewal.status.includes('Rejected') && !latestRenewal.signature_status.includes('تم التوقيع'),
+          hasActiveRequest: hasActiveRequest,
           requestStatus: latestRenewal?.status || 'لا يوجد',
         };
       })
@@ -175,8 +186,8 @@ export default function AlertsPage() {
   const handleQuickRenewal = async (emp: any) => {
     setActionLoading(true);
     try {
-      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365) {
-        alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده.`);
+      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365 && !emp.contract_type.includes('فوق السن')) {
+        alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده، أو تجديده بنوع عقد "فوق السن".`);
         setActionLoading(false);
         return;
       }
