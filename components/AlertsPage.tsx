@@ -17,15 +17,15 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // مستويات التنبيه المحددة
-  const [severityTab, setSeverityTab] = useState<'all' | 'critical' | 'warning' | 'notice' | 'retirement'>('critical');
+  // 🌟 الديفولت بقى يفتح على الحرج جداً (الإنذار الاستباقي)
+  const [severityTab, setSeverityTab] = useState<'all' | 'critical' | 'warning' | 'notice' | 'retirement'>('warning');
 
   // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
 
-  // 🌟 دالة السحب التكرارية (لتخطي حد الـ 1000 صف بأمان تام)
+  // 🌟 دالة السحب التكرارية
   const fetchAllRows = async (tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) => {
     let allRows: any[] = [];
     let from = 0;
@@ -104,7 +104,6 @@ export default function AlertsPage() {
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
 
-  // 🌟 المنطق المحدث لكافة الكروت والتنبيهات
   const alertItems = useMemo(() => {
     return employees
       .map(emp => {
@@ -112,14 +111,13 @@ export default function AlertsPage() {
         const job = String(emp.job_title || '');
         
         const isPermanent = cType.includes('دائم') || job.includes('دائم');
-        const isAlreadyOverAge = cType.includes('فوق السن'); // 🚀 حماية عقود فوق السن
+        const isAlreadyOverAge = cType.includes('فوق السن'); 
 
         const days = getDaysRemaining(emp.contract_end_date);
         
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
         
-        // 🚀 تنبيه المعاش يظهر فقط لمن يبلغ 60 ولم يتم تغيير عقده إلى "فوق السن"
         const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90;
 
         const safeCode = String(emp.employee_code).trim().replace(/^0+/, '');
@@ -132,11 +130,9 @@ export default function AlertsPage() {
 
         let level: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
         
-        // ترتيب الأولويات: رادار المعاش أولاً، ثم الإنذارات الزمنية للعقود المحددة فقط
         if (isRetiringSoon) {
           level = 'retirement';
         } else if (!isPermanent && days !== null) {
-          // العقود المحددة المدة فقط هي من تحصل على إنذارات انتهاء العقد
           if (days < 0) level = 'critical';
           else if (days <= 30) level = 'warning';
           else if (days <= 90) level = 'notice';
@@ -256,17 +252,17 @@ export default function AlertsPage() {
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <style>{`
-        /* 🌟 انيميشن النبض الهادئ (Pulse) للكروت والسطور الحرجة */
+        /* 🌟 انيميشن النبض (Pulse) للحرج جداً (باللون البرتقالي) */
         @keyframes pulse-border {
-          0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); border-color: #ef4444; }
-          70% { box-shadow: 0 0 0 15px rgba(220, 38, 38, 0); border-color: #f87171; }
-          100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); border-color: #ef4444; }
+          0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4); border-color: #f97316; }
+          70% { box-shadow: 0 0 0 15px rgba(249, 115, 22, 0); border-color: #fdba74; }
+          100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); border-color: #f97316; }
         }
         
         @keyframes pulse-row-bg {
-          0% { background-color: #fef2f2; }
-          50% { background-color: #fee2e2; }
-          100% { background-color: #fef2f2; }
+          0% { background-color: #fff7ed; }
+          50% { background-color: #ffedd5; }
+          100% { background-color: #fff7ed; }
         }
 
         .pulse-critical-card {
@@ -313,7 +309,6 @@ export default function AlertsPage() {
         }
       `}</style>
 
-      {/* العنوان الرئيسي والأزرار */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>🚨 غرفة العمليات والتنبيهات </h3>
@@ -335,23 +330,23 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* 🚨 شريط التنبيه العاجل (يظهر فقط في حالة وجود كوارث/عقود منتهية) 🚨 */}
-      {counts.critical > 0 && (
-        <div style={{ background: 'linear-gradient(90deg, #dc2626, #991b1b)', color: '#fff', padding: '16px 24px', borderRadius: '12px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', boxShadow: '0 10px 15px -3px rgba(220, 38, 38, 0.3)', border: '1px solid #f87171' }}>
+      {/* 🚨 شريط التنبيه الاستباقي العاجل (يظهر لعقود مرحلة الحرج جداً) 🚨 */}
+      {counts.warning > 0 && (
+        <div style={{ background: 'linear-gradient(90deg, #f97316, #c2410c)', color: '#fff', padding: '16px 24px', borderRadius: '12px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', boxShadow: '0 10px 15px -3px rgba(249, 115, 22, 0.3)', border: '1px solid #fb923c' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <span style={{ fontSize: '32px', animation: 'bounce 2s infinite' }}>⚠️</span>
+            <span style={{ fontSize: '32px', animation: 'bounce 2s infinite' }}>⏳</span>
             <div>
-              <div style={{ fontWeight: '900', fontSize: '16px', marginBottom: '4px' }}>تنبيه عاجل جداً!</div>
+              <div style={{ fontWeight: '900', fontSize: '16px', marginBottom: '4px' }}>تنبيه استباقي هام!</div>
               <div style={{ fontSize: '13px', opacity: 0.9 }}>
-                النظام يرصد عدد <strong style={{ fontSize: '16px', background: '#fff', color: '#dc2626', padding: '2px 8px', borderRadius: '4px' }}>{counts.critical}</strong> عقود منتهية الصلاحية تماماً (تجاوزت التاريخ). هذا يشكل خطراً قانونياً، يرجى اتخاذ الإجراء الفوري!
+                النظام يرصد عدد <strong style={{ fontSize: '16px', background: '#fff', color: '#ea580c', padding: '2px 8px', borderRadius: '4px' }}>{counts.warning}</strong> عقود في المرحلة "الحرجة جداً" (تنتهي خلال 30 يوماً). يرجى سرعة التجديد لتفادي الدخول في الخطر القانوني!
               </div>
             </div>
           </div>
           <button 
-            onClick={() => setSeverityTab('critical')} 
-            style={{ background: '#ffffff', color: '#dc2626', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}
+            onClick={() => setSeverityTab('warning')} 
+            style={{ background: '#ffffff', color: '#ea580c', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}
           >
-            عرض المتأخرات فوراً 🏃‍♂️
+            عرض العقود الحرجة 🏃‍♂️
           </button>
         </div>
       )}
@@ -359,7 +354,7 @@ export default function AlertsPage() {
       {/* الكروت الإحصائية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
         
-        <div className={`modern-stat-card ${severityTab === 'critical' ? 'active' : ''} ${counts.critical > 0 ? 'pulse-critical-card' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setSeverityTab('critical')}>
+        <div className={`modern-stat-card ${severityTab === 'critical' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setSeverityTab('critical')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>خطر قانوني (منتهية)</span>
             <div className="card-icon-box">🔴</div>
@@ -370,7 +365,8 @@ export default function AlertsPage() {
           </div>
         </div>
 
-        <div className={`modern-stat-card ${severityTab === 'warning' ? 'active' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setSeverityTab('warning')}>
+        {/* الكارت اللي بينبض هو الحرج جداً */}
+        <div className={`modern-stat-card ${severityTab === 'warning' ? 'active' : ''} ${counts.warning > 0 ? 'pulse-critical-card' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setSeverityTab('warning')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>حرج جداً</span>
             <div className="card-icon-box">🟠</div>
@@ -461,8 +457,8 @@ export default function AlertsPage() {
                 <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>لا توجد مخاطر أو تنبيهات.. وضع السجلات ممتاز! 🎉</td></tr>
               ) : (
                 filteredAlerts.map(item => (
-                  // 🌟 هنا بنعطي للسطر الكلاس اللي بينبض لو كان كارتيكال
-                  <tr key={item.employee_code} className={item.alertLevel === 'critical' ? 'pulse-critical-row' : ''} style={{ borderBottom: '1px solid #f1f5f9', transition: 'background-color 0.3s' }}>
+                  // 🌟 السطر اللي بينبض هو "حرج جداً" (warning)
+                  <tr key={item.employee_code} className={item.alertLevel === 'warning' ? 'pulse-critical-row' : ''} style={{ borderBottom: '1px solid #f1f5f9', background: item.alertLevel === 'critical' ? '#fef2f2' : 'transparent', transition: 'background-color 0.3s' }}>
                     
                     <td style={{ padding: '12px' }}>
                       {item.alertLevel === 'critical' && <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🔴 كارثي</span>}
