@@ -1,48 +1,48 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import dynamic from 'next/dynamic';
 import { onAppNavigate } from '@/lib/navigation';
 import { DataProvider, useAppData } from '@/lib/DataContext';
 
-// 🌟 الاستدعاء القياسي المباشر (Inline) الذي يقبله Next.js بدون أخطاء Build
-// مع إضافة fallback ذكي يسحب المكون حتى لو لم يكن export default
-const LoginPage = dynamic(() => import('@/components/LoginPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const DashboardPage = dynamic(() => import('@/components/DashboardPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const EmployeesPage = dynamic(() => import('@/components/EmployeesPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const ContractsPage = dynamic(() => import('@/components/ContractsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const RenewalsPage = dynamic(() => import('@/components/RenewalsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const SignaturesPage = dynamic(() => import('@/components/SignaturesPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const ReportsPage = dynamic(() => import('@/components/ReportsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const AlertsPage = dynamic(() => import('@/components/AlertsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const AuditPage = dynamic(() => import('@/components/AuditPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const SettingsPage = dynamic(() => import('@/components/SettingsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
-const DataSyncPage = dynamic(() => import('@/components/DataSyncPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+// استيراد عادي (بدون dynamic / safeImport) — لو أي ملف عنده named export فقط
+// غيّر السطر إلى: import { LoginPage } from '@/components/LoginPage';
+import LoginPage from '@/components/LoginPage';
+import DashboardPage from '@/components/DashboardPage';
+import EmployeesPage from '@/components/EmployeesPage';
+import ContractsPage from '@/components/ContractsPage';
+import RenewalsPage from '@/components/RenewalsPage';
+import SignaturesPage from '@/components/SignaturesPage';
+import ReportsPage from '@/components/ReportsPage';
+import AlertsPage from '@/components/AlertsPage';
+import AuditPage from '@/components/AuditPage';
+import SettingsPage from '@/components/SettingsPage';
+import DataSyncPage from '@/components/DataSyncPage';
 
+// ⚠️ تأكد دائماً أن هذه الثوابت لا تسبقها كلمة export في هذا الملف
 const SIDEBAR_GROUPS = [
   { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
-  { 
-    title: 'شؤون العاملين', 
+  {
+    title: 'شؤون العاملين',
     items: [
       { id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] },
-    ] 
+    ],
   },
-  { 
-    title: 'إدارة العقود', 
+  {
+    title: 'إدارة العقود',
     items: [
       { id: 'contracts', icon: '📂', label: 'العقود الحالية', roles: ['Admin', 'HR'] },
       { id: 'renewals', icon: '⏳', label: 'طلبات التجديد', roles: ['Admin', 'HR'] },
       { id: 'signatures', icon: '✍️', label: 'توقيع العقود', roles: ['Admin', 'HR', 'Employee'] },
-    ]
+    ],
   },
-  { 
-    title: 'المتابعة والتقارير', 
+  {
+    title: 'المتابعة والتقارير',
     items: [
       { id: 'reports', icon: '📈', label: 'التقارير', roles: ['Admin', 'HR'] },
       { id: 'alerts', icon: '🚨', label: 'التنبيهات', roles: ['Admin', 'HR'] },
       { id: 'audit', icon: '🕵️‍♂️', label: 'سجل العمليات', roles: ['Admin'] },
-    ]
-  }
+    ],
+  },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
@@ -65,17 +65,17 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
   // حساب العقود الحرجة جداً (متبقي 30 يوم أو أقل، ولم تنتهِ بعد)
   const warningCount = useMemo(() => {
     if (!employees) return 0;
-    
-    return employees.filter(emp => {
+
+    return employees.filter((emp: any) => {
       if (emp.contract_type === 'دائم' || String(emp.job_title).includes('دائم')) return false;
-      
+
       const endDateStr = emp.contract_end_date;
       if (!endDateStr) return false;
-      
+
       const end = new Date(endDateStr);
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      
+
       const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
       return days >= 0 && days <= 30; // حرج جداً
     }).length;
@@ -106,7 +106,7 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
           margin-right: auto;
         }
       `}</style>
-      
+
       <aside
         className={`w-[264px] h-screen bg-navy-950 text-white flex flex-col fixed top-0 right-0 z-50 transition-transform duration-200 ${
           sidebarOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'
@@ -122,13 +122,13 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
 
         <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-5">
           {SIDEBAR_GROUPS.map((group, index) => {
-            const visibleItems = group.items.filter(item => item.roles.includes(currentUser.role));
+            const visibleItems = group.items.filter((item) => item.roles.includes(currentUser.role));
             if (visibleItems.length === 0) return null;
             return (
               <div key={index}>
                 <div className="text-[10.5px] text-slate-500 font-extrabold mb-2 px-2 tracking-wide">{group.title}</div>
                 <div className="flex flex-col gap-1">
-                  {visibleItems.map(item => (
+                  {visibleItems.map((item) => (
                     <button
                       key={item.id}
                       onClick={() => { setActiveTab(item.id); setSidebarOpen(false); }}
@@ -140,7 +140,7 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
                     >
                       <span>{item.icon}</span>
                       <span>{item.label}</span>
-                      
+
                       {/* عرض الإشعار النابض بجانب "التنبيهات" إذا كان هناك خطر */}
                       {item.id === 'alerts' && warningCount > 0 && (
                         <span className="urgent-badge">
@@ -215,7 +215,7 @@ export default function Home() {
     document.body.classList.toggle('dark', dark);
     setCheckingAuth(false);
 
-    const unsubscribe = onAppNavigate(({ tab }) => {
+    const unsubscribe = onAppNavigate(({ tab }: { tab: string }) => {
       setActiveTab(tab);
       setSidebarOpen(false);
     });
@@ -262,15 +262,17 @@ export default function Home() {
           <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
         )}
 
-        <SidebarContent 
-          currentUser={currentUser} 
-          activeTab={activeTab} 
-          setActiveTab={setActiveTab} 
-          setSidebarOpen={setSidebarOpen} 
-          sidebarOpen={sidebarOpen} 
-          handleLogout={handleLogout} 
+        {/* الشريط الجانبي مدمج كمكون منفصل للوصول للبيانات */}
+        <SidebarContent
+          currentUser={currentUser}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          setSidebarOpen={setSidebarOpen}
+          sidebarOpen={sidebarOpen}
+          handleLogout={handleLogout}
         />
 
+        {/* منطقة المحتوى الرئيسية */}
         <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
           <header
             className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
