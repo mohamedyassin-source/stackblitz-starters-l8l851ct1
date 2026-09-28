@@ -118,7 +118,8 @@ export default function AlertsPage() {
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
 
-        const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90;
+        // 🌟 التعديل الجراحي: يجب أن يكون المتبقي أكبر من أو يساوي الصفر، وأقل من 90 يوم
+        const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement >= 0 && daysToRetirement <= 90;
 
         const safeCode = String(emp.employee_code).trim().replace(/^0+/, '');
         const empRens = renewals
@@ -186,7 +187,7 @@ export default function AlertsPage() {
     try {
       const contractType = String(emp.contract_type || '');
 
-      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365 && !contractType.includes('فوق السن')) {
+      if (emp.daysToRetirement !== null && emp.daysToRetirement >= 0 && emp.daysToRetirement <= 365 && !contractType.includes('فوق السن')) {
         alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده، أو تجديده بنوع عقد "فوق السن".`);
         setActionLoading(false);
         return;
@@ -501,7 +502,7 @@ export default function AlertsPage() {
                         style={{
                           background: item.hasActiveRequest ? '#f1f5f9' : '#4f46e5',
                           color: item.hasActiveRequest ? '#94a3b8' : '#ffffff',
-                          border: item.hasActiveRequest ? '1px solid #cbd5e1' : 0,
+                          border: item.hasActiveRequest ? '1px solid #cbd5e1' : 0, 
                           padding: '6px 12px', borderRadius: '6px',
                           fontSize: '10px', fontWeight: 'bold',
                           cursor: item.hasActiveRequest || actionLoading ? 'not-allowed' : 'pointer',
