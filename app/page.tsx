@@ -1,3 +1,64 @@
+'use client';
+
+import { useState, useEffect, useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import { onAppNavigate } from '@/lib/navigation';
+import { DataProvider, useAppData } from '@/lib/DataContext';
+
+// 🌟 الاستدعاء القياسي المباشر (Inline) الذي يقبله Next.js بدون أخطاء Build
+// مع إضافة fallback ذكي يسحب المكون حتى لو لم يكن export default
+const LoginPage = dynamic(() => import('@/components/LoginPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const DashboardPage = dynamic(() => import('@/components/DashboardPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const EmployeesPage = dynamic(() => import('@/components/EmployeesPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const ContractsPage = dynamic(() => import('@/components/ContractsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const RenewalsPage = dynamic(() => import('@/components/RenewalsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const SignaturesPage = dynamic(() => import('@/components/SignaturesPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const ReportsPage = dynamic(() => import('@/components/ReportsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const AlertsPage = dynamic(() => import('@/components/AlertsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const AuditPage = dynamic(() => import('@/components/AuditPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const SettingsPage = dynamic(() => import('@/components/SettingsPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+const DataSyncPage = dynamic(() => import('@/components/DataSyncPage').then(m => m.default ? m : { default: Object.values(m)[0] as any }), { ssr: false });
+
+const SIDEBAR_GROUPS = [
+  { title: 'الرئيسية', items: [{ id: 'dashboard', icon: '📊', label: 'لوحة التحكم', roles: ['Admin', 'HR', 'Employee'] }] },
+  { 
+    title: 'شؤون العاملين', 
+    items: [
+      { id: 'employees_data', icon: '👥', label: 'بيانات الموظفين', roles: ['Admin', 'HR'] },
+    ] 
+  },
+  { 
+    title: 'إدارة العقود', 
+    items: [
+      { id: 'contracts', icon: '📂', label: 'العقود الحالية', roles: ['Admin', 'HR'] },
+      { id: 'renewals', icon: '⏳', label: 'طلبات التجديد', roles: ['Admin', 'HR'] },
+      { id: 'signatures', icon: '✍️', label: 'توقيع العقود', roles: ['Admin', 'HR', 'Employee'] },
+    ]
+  },
+  { 
+    title: 'المتابعة والتقارير', 
+    items: [
+      { id: 'reports', icon: '📈', label: 'التقارير', roles: ['Admin', 'HR'] },
+      { id: 'alerts', icon: '🚨', label: 'التنبيهات', roles: ['Admin', 'HR'] },
+      { id: 'audit', icon: '🕵️‍♂️', label: 'سجل العمليات', roles: ['Admin'] },
+    ]
+  }
+];
+
+const PAGE_TITLES: Record<string, string> = {
+  dashboard: 'لوحة التحكم',
+  employees_data: 'بيانات الموظفين',
+  data_sync: 'تحديث واستيراد البيانات المجمع',
+  contracts: 'العقود الحالية',
+  renewals: 'طلبات التجديد',
+  signatures: 'توقيع العقود',
+  reports: 'التقارير',
+  alerts: 'التنبيهات',
+  audit: 'سجل العمليات',
+  settings: 'إعدادات النظام',
+};
+
+// ⚠️ مكون القائمة الجانبية (بدون export) ليعمل كـ Component داخلي
 function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, sidebarOpen, handleLogout }: any) {
   const { employees } = useAppData();
 
@@ -30,7 +91,7 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
         }
 
         .urgent-badge {
-          background-color: #f97316; /* برتقالي */
+          background-color: #f97316;
           color: white;
           border-radius: 50%;
           min-width: 20px;
@@ -94,7 +155,7 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
           })}
         </nav>
 
-        {/* ... باقي الكود السفلي للقائمة كما هو */}
+        {/* الجزء السفلي */}
         <div className="px-4 py-4 bg-black/20 border-t border-white/10 shrink-0 flex flex-col gap-2">
           {['Admin', 'HR'].includes(currentUser.role) && (
             <button
@@ -128,5 +189,142 @@ function SidebarContent({ currentUser, activeTab, setActiveTab, setSidebarOpen, 
         </div>
       </aside>
     </>
+  );
+}
+
+// 🌟 تصدير الصفحة الرئيسية الوحيد في هذا الملف
+export default function Home() {
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('session_user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('session_user');
+      }
+    }
+    const savedTheme = localStorage.getItem('theme');
+    const dark = savedTheme === 'dark';
+    setIsDarkMode(dark);
+    document.body.classList.toggle('dark', dark);
+    setCheckingAuth(false);
+
+    const unsubscribe = onAppNavigate(({ tab }) => {
+      setActiveTab(tab);
+      setSidebarOpen(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !isDarkMode;
+    setIsDarkMode(next);
+    document.body.classList.toggle('dark', next);
+    localStorage.setItem('theme', next ? 'dark' : 'light');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('session_user');
+    setCurrentUser(null);
+  };
+
+  if (checkingAuth) {
+    return (
+      <div className="grid place-items-center min-h-screen bg-navy-950 text-white text-sm font-bold gap-3">
+        <div className="w-10 h-10 border-2 border-brass-400 border-t-transparent rounded-full animate-spin" />
+        جاري التحقق من الصلاحيات والتأمين...
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <LoginPage
+        onLoginSuccess={(user: any) => {
+          setCurrentUser(user);
+          setActiveTab('dashboard');
+        }}
+      />
+    );
+  }
+
+  return (
+    <DataProvider>
+      <div className="flex min-h-screen relative" style={{ background: 'var(--paper)' }}>
+
+        {sidebarOpen && (
+          <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        )}
+
+        <SidebarContent 
+          currentUser={currentUser} 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          setSidebarOpen={setSidebarOpen} 
+          sidebarOpen={sidebarOpen} 
+          handleLogout={handleLogout} 
+        />
+
+        <div className="flex-1 flex flex-col min-h-screen w-full lg:pr-[264px]">
+          <header
+            className="h-[72px] flex items-center justify-between px-4 sm:px-6 border-b sticky top-0 z-30"
+            style={{ background: 'var(--paper-card)', borderColor: 'var(--line)' }}
+          >
+            <div className="flex items-center gap-3">
+              <button
+                className="lg:hidden w-9 h-9 rounded-lg grid place-items-center border"
+                style={{ borderColor: 'var(--line)', color: 'var(--ink)' }}
+                onClick={() => setSidebarOpen(true)}
+              >
+                ☰
+              </button>
+              <h2 className="m-0 text-[17px] sm:text-[19px] font-extrabold" style={{ color: 'var(--navy-950)' }}>
+                {PAGE_TITLES[activeTab] || 'نظام العقود'}
+              </h2>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <div
+                className="hidden sm:flex items-center gap-2.5 px-4 py-2 rounded-lg border text-[12px]"
+                style={{ background: 'var(--paper)', borderColor: 'var(--line)' }}
+              >
+                <span className="font-extrabold" style={{ color: 'var(--ink)' }}>{currentUser.name}</span>
+                <span style={{ color: 'var(--line)' }}>|</span>
+                <span className="font-extrabold text-brass-600">{currentUser.role}</span>
+                <span style={{ color: 'var(--line)' }}>|</span>
+                <span className="font-mono font-extrabold" style={{ color: 'var(--muted)' }}>{currentUser.code}</span>
+              </div>
+              <button
+                onClick={toggleTheme}
+                className="w-10 h-10 rounded-full border grid place-items-center text-[17px] transition-colors"
+                style={{ borderColor: 'var(--line)', background: 'var(--paper-card)' }}
+                title={isDarkMode ? 'الوضع النهاري' : 'الوضع الليلي'}
+              >
+                {isDarkMode ? '☀️' : '🌙'}
+              </button>
+            </div>
+          </header>
+
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6">
+            {activeTab === 'dashboard' && <DashboardPage />}
+            {activeTab === 'employees_data' && <EmployeesPage />}
+            {activeTab === 'data_sync' && <DataSyncPage />}
+            {activeTab === 'contracts' && <ContractsPage />}
+            {activeTab === 'renewals' && <RenewalsPage />}
+            {activeTab === 'signatures' && <SignaturesPage />}
+            {activeTab === 'reports' && <ReportsPage />}
+            {activeTab === 'alerts' && <AlertsPage />}
+            {activeTab === 'audit' && <AuditPage />}
+            {activeTab === 'settings' && <SettingsPage currentUser={currentUser} />}
+          </main>
+        </div>
+      </div>
+    </DataProvider>
   );
 }
