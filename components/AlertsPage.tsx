@@ -316,7 +316,7 @@ export default function AlertsPage() {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>🚨 غرفة العمليات والتنبيهات </h3>
+          <h3 style={{ margin: 0, fontSize: '20px', color: '#0f172a', fontWeight: '900' }}>🚨 صفحة العمليات والتنبيهات </h3>
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>رصد المخاطر القانونية، التجاوزات الزمنية، وتنبيهات سن التقاعد</p>
         </div>
 
