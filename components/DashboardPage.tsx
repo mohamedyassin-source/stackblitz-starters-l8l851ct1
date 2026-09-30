@@ -416,8 +416,8 @@ export default function DashboardPage() {
               const midPct = cumulativePercentForText + slice.pct / 2;
               cumulativePercentForText += slice.pct;
 
-              // إخفاء النص لو الشريحة صغيرة جداً (< 5%) عشان الشكل ميبقاش زحمة
-              if (slice.pct < 5) return null;
+              // إخفاء النص لو الشريحة صغيرة جداً (< 1%) عشان الشكل ميبقاش زحمة
+              if (slice.pct < 1) return null;
 
               // تحويل النسبة لزاوية بالراديان وحساب الإحداثيات (x, y)
               const angle = (midPct / 100) * 2 * Math.PI;
