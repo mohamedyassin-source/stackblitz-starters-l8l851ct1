@@ -13,6 +13,13 @@ const STANDARD_CONTRACT_TYPES = [
   'دائم'
 ];
 
+// 🌟 أسباب الإنهاء والإيقاف الشائعة (تم إضافة عدم اجتياز فترة الاختبار والأجازة هنا ليتعرف عليها النظام)
+const TERMINATION_REASONS = [
+  'انتهاء عقد', 'إنهاء تعاقد', 'استقالة', 'إنهاء خدمات', 
+  'بلوغ سن', 'انقطاع عن العمل', 'نقل شركة شقيقة',
+  'عدم اجتياز فترة الاختبار', 'أجازة بدون راتب'
+];
+
 export default function EmployeesPage() {
   const { employees, loading, refresh: fetchEmployees } = useAppData();
 
@@ -352,15 +359,15 @@ export default function EmployeesPage() {
         employee_code: parsedCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
         national_id: getField(editData.emp, 'national_id', 'NationalID'),
-        birth_date: getField(editData.emp, 'birth_date', 'BirthDate') || null, // 👈 تمت إضافة تاريخ الميلاد
+        birth_date: getField(editData.emp, 'birth_date', 'BirthDate') || null,
         department: getField(editData.emp, 'department', 'Department'),
         company: getField(editData.emp, 'company', 'Company'),
         job_title: getField(editData.emp, 'job_title', 'JobTitle'),
         hiring_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
         status: status,
-        email: getField(editData.emp, 'email', 'Email'), // 👈 الإيميل
+        email: getField(editData.emp, 'email', 'Email'),
         mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE'),
-        manager: getField(editData.emp, 'manager', 'Manager') // 👈 تمت إضافة المدير
+        manager: getField(editData.emp, 'manager', 'Manager')
       };
 
       const { error: empError } = await supabase
@@ -503,7 +510,7 @@ export default function EmployeesPage() {
       const { error: empError } = await supabase.from('employees').delete().in('employee_code', parsedCodes);
       if (empError) throw empError;
 
-      alert('تم حذف الموظفين بنجاح 🗑️✅');
+      alert('تم حذف الموظفين بنجاح 🗑️️✅');
       setSelectedEmpIds([]);
       await fetchEmployees();
     } catch (err: any) {
@@ -584,7 +591,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
-      // 1. إضافة الموظف الأساسي (بدون age)
+      // 1. إضافة الموظف الأساسي
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
@@ -693,7 +700,6 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* 🌟 الزر الجديد لتنظيف التكرارات */}
           <button 
             onClick={handleCleanDuplicates}
             disabled={isDeleting}
@@ -1094,14 +1100,9 @@ export default function EmployeesPage() {
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة / التحويل:</label>
                 <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
-                  <option value="استقالة">استقالة</option>
-                  <option value="إنهاء عقد">إنهاء عقد</option>
-                  <option value="إنهاء خدمات">إنهاء خدمات</option>
-                  <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
-                  <option value="انقطاع عن العمل">انقطاع عن العمل</option>
-                  <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
-                  <option value="أجازة بدون راتب">أجازة بدون راتب</option>
-                  <option value="عدم إجتياز فترة الإختبار">عدم إجتياز فترة الإختبار</option>
+                  {TERMINATION_REASONS.map((reason, idx) => (
+                    <option key={idx} value={reason}>{reason}</option>
+                  ))}
                 </select>
               </div>
 
