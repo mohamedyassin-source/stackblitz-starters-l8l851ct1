@@ -1100,7 +1100,8 @@ export default function EmployeesPage() {
                   <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
                   <option value="انقطاع عن العمل">انقطاع عن العمل</option>
                   <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
-                   <option value="أجازة بدون راتب">أجازة بدون راتب</option>
+                  <option value="أجازة بدون راتب">أجازة بدون راتب</option>
+                  <option value="عدم إجتياز فترة الإختبار">عدم إجتياز فترة الإختبار</option>
                 </select>
               </div>
 
