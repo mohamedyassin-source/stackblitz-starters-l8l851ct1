@@ -587,6 +587,7 @@ export default function ContractsPage() {
       const empJob = String(emp.job_title || '');
       const empType = String(emp.contract_type || '');
       const empStatus = String(emp.status || '');
+      const termReason = String(emp.termination_reason || ''); 
       const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
       
       return [
@@ -594,7 +595,7 @@ export default function ContractsPage() {
         emp.employee_name,
         empDept || '—',
         empJob || '—',
-        isTerminated ? 'إنهاء تعاقد' : empType,
+        isTerminated ? (termReason || (TERMINATION_REASONS.includes(empType) ? empType : 'موقوف / منهي خدمته')) : empType,
         age !== null ? age : '—',
         emp.contract_end_date || '—',
         daysLeft !== null ? daysLeft : '—',
@@ -825,6 +826,7 @@ export default function ContractsPage() {
                 const empJob = String(emp.job_title || '');
                 const empType = String(emp.contract_type || '');
                 const empStatus = String(emp.status || '');
+                const termReason = String(emp.termination_reason || ''); 
                 
                 const isHiddenDept = empDept.includes('تحويلات');
                 const isHiddenJob = empJob.startsWith('ايقاف راتب');
@@ -862,8 +864,10 @@ export default function ContractsPage() {
                     </td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empDept || '—'}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empJob || '—'}</td>
+                    
+                    {/* 🌟 تعديل عرض نوع العقد */}
                     <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
-                      {isTerminated ? 'إنهاء تعاقد' : empType}
+                      {isTerminated ? (termReason || (TERMINATION_REASONS.includes(empType) ? empType : 'موقوف / منهي خدمته')) : empType}
                     </td>
 
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
