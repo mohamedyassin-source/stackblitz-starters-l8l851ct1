@@ -10,10 +10,11 @@ const STANDARD_CONTRACT_TYPES = [
   'دائم'
 ];
 
-// أسباب الإنهاء والإيقاف الشائعة
+// 🌟 أسباب الإنهاء والإيقاف الشائعة (تم إضافة الأسباب الجديدة)
 const TERMINATION_REASONS = [
   'انتهاء عقد', 'إنهاء تعاقد', 'استقالة', 'إنهاء خدمات', 
-  'بلوغ سن', 'انقطاع عن العمل', 'نقل شركة شقيقة'
+  'بلوغ سن', 'انقطاع عن العمل', 'نقل شركة شقيقة',
+  'عدم اجتياز فترة الاختبار', 'أجازة بدون راتب'
 ];
 
 export default function ContractsPage() {
@@ -30,7 +31,7 @@ export default function ContractsPage() {
   const [expiryMonth, setExpiryMonth] = useState(''); 
   const [selectedReqStatus, setSelectedReqStatus] = useState(''); 
   
-  // 🗂️ فلتر الكروت العلوية (تم تبديل expired بـ suspended)
+  // 🗂️ فلتر الكروت العلوية
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'suspended'>('all');
 
   // 🔃 حالات الترتيب
@@ -58,7 +59,7 @@ export default function ContractsPage() {
   const [terminateEmployeeCode, setTerminateEmployeeCode] = useState('');
   const [termSearchTerm, setTermSearchTerm] = useState(''); 
   const [terminateDate, setTerminateDate] = useState(new Date().toISOString().split('T')[0]);
-  const [termReason, setTermReason] = useState('انتهاء عقد');
+  const [termReason, setTermReason] = useState('استقالة');
 
   const [editModal, setEditModal] = useState<{ isOpen: boolean; emp?: any }>({ isOpen: false });
   const [editContractType, setEditContractType] = useState('');
@@ -68,7 +69,7 @@ export default function ContractsPage() {
   // 🌟 نافذة المتابعة
   const [workflowModal, setWorkflowModal] = useState<{ isOpen: boolean; emp?: any; req?: any }>({ isOpen: false });
 
-  // 🎂 دالة حساب العمر بالسنوات من تاريخ الميلاد
+  // 🎂 دالة حساب العمر
   const calculateAge = (birthDateRaw: string | null | undefined) => {
     if (!birthDateRaw) return null;
     const birthDate = new Date(birthDateRaw);
@@ -188,7 +189,7 @@ export default function ContractsPage() {
     return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
   };
 
-  // 🌟 نظام الفلترة الذكي الشامل مع الإيقافات
+  // 🌟 نظام الفلترة الذكي
   const filteredContracts = useMemo(() => {
     const term = String(searchTerm || '').trim().toLowerCase();
     const isSearching = term.length > 0;
@@ -206,11 +207,9 @@ export default function ContractsPage() {
       const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
       const isSuspendedRecord = isHiddenDept || isHiddenJob || isTerminated;
 
-      // 🎯 فصل الإيقافات: لا تظهر إلا في كارت الإيقافات
       if (activeFilterCard === 'suspended') {
         if (!isSuspendedRecord) return false;
       } else {
-        // إخفاء الموقوفين من باقي الكروت (إلا لو بتبحث عنهم بالاسم)
         if (isSuspendedRecord && !isSearching) return false;
       }
 
@@ -280,7 +279,6 @@ export default function ContractsPage() {
     });
   }, [filteredContracts, sortColumn, sortDirection, renewals]);
 
-  // إحصائيات الكروت (مع استبعاد الإيقافات من قوة العمل)
   const activeEmployees = useMemo(() => {
     return employees.filter(emp => {
       if (!emp) return false;
@@ -302,7 +300,6 @@ export default function ContractsPage() {
   const overAgeContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('فوق السن') || (calculateAge(e.birth_date) ?? 0) >= 60).length;
   const expiringSoonCount = activeEmployees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
   
-  // حساب الموقوفين
   const suspendedCount = employees.filter(emp => {
     if (!emp) return false;
     const empDept = String(emp.department || '');
@@ -479,12 +476,22 @@ export default function ContractsPage() {
     if (!editModal.emp) return;
     setActionLoading(true);
     const parsedCode = parseInt(editModal.emp.employee_code, 10);
-    if (editModal.emp.contract_id) {
-      await supabase.from('contracts').update({ contract_type: editContractType, contract_start_date: editStartDate, contract_end_date: editEndDate }).eq('contract_id', editModal.emp.contract_id);
-    } else {
-      await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: editContractType, contract_start_date: editStartDate, contract_end_date: editEndDate, status: 'Active' }]);
+    
+    try {
+      if (editModal.emp.contract_id) {
+        await supabase.from('contracts').update({ contract_type: editContractType, contract_start_date: editStartDate, contract_end_date: editEndDate }).eq('contract_id', editModal.emp.contract_id).select('contract_id');
+      } else {
+        await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: editContractType, contract_start_date: editStartDate, contract_end_date: editEndDate, status: 'Active' }]);
+      }
+      
+      alert('تم التعديل ✅'); 
+      setEditModal({ isOpen: false }); 
+      fetchData();
+    } catch (error: any) {
+      alert('خطأ: ' + error.message);
+    } finally {
+      setActionLoading(false);
     }
-    setActionLoading(false); alert('تم التعديل ✅'); setEditModal({ isOpen: false }); fetchData();
   };
 
   const handleDeleteSelected = async () => {
@@ -513,30 +520,44 @@ export default function ContractsPage() {
     }
   };
 
+  // 🌟 دالة الإنهاء المحدثة لتخطي خطأ الـ ID الخفي
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return;
     setActionLoading(true);
     const parsedCode = parseInt(terminateEmployeeCode, 10);
     
-    await supabase.from('employees').update({ 
-      department: 'تحويلات تحت الاعتماد', 
-      status: 'Inactive', 
-      termination_date: terminateDate, 
-      termination_reason: termReason,
-      contract_type: termReason 
-    }).eq('employee_code', parsedCode);
+    try {
+      // 1. تحديث الموظف مع إضافة select('employee_code') لتخطي مشكلة الـ id
+      const { error: empError } = await supabase.from('employees').update({ 
+        department: 'تحويلات تحت الاعتماد', 
+        status: 'Inactive', 
+        termination_date: terminateDate, 
+        termination_reason: termReason,
+        contract_type: termReason 
+      }).eq('employee_code', parsedCode).select('employee_code');
       
-    await supabase.from('contracts').update({ 
-      status: 'Inactive', 
-      contract_end_date: terminateDate,
-      contract_type: termReason 
-    }).eq('employee_code', parsedCode).eq('status', 'Active');
+      if (empError) throw empError;
+        
+      // 2. تحديث العقد النشط بنفس الطريقة
+      const { error: contractError } = await supabase.from('contracts').update({ 
+        status: 'Inactive', 
+        contract_end_date: terminateDate,
+        contract_type: termReason 
+      }).eq('employee_code', parsedCode).eq('status', 'Active').select('employee_code');
       
-    setActionLoading(false); 
-    alert('تم الإيقاف والتحويل للانتظار بنجاح ✅'); 
-    setIsTerminateModalOpen(false); 
-    fetchData();
+      if (contractError) throw contractError;
+        
+      alert(`تم الإيقاف والتحويل للانتظار بنجاح (السبب: ${termReason}) ✅`); 
+      setIsTerminateModalOpen(false);
+      setTerminateEmployeeCode('');
+      setTermSearchTerm('');
+      fetchData();
+    } catch (err: any) {
+      alert('خطأ أثناء العملية: ' + err.message);
+    } finally {
+      setActionLoading(false); 
+    }
   };
 
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
@@ -558,12 +579,24 @@ export default function ContractsPage() {
       }
     }
 
-    const [reqId] = generateSequentialIds(1);
-    const parsedCode = parseInt(emp.employee_code, 10);
-    await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending_Project_Manager', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
-    await supabase.from('contracts').update({ status: 'Archived' }).eq('employee_code', parsedCode).eq('status', 'Active');
-    await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: newContractType, contract_start_date: newContractStartDate, contract_end_date: newContractEndDate, status: 'Active' }]);
-    setActionLoading(false); setIsNewContractModalOpen(false); alert('تم إنشاء العقد وإرساله لاعتماد المشروع ✅'); fetchData();
+    try {
+      const [reqId] = generateSequentialIds(1);
+      const parsedCode = parseInt(emp.employee_code, 10);
+      
+      await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending_Project_Manager', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
+      
+      await supabase.from('contracts').update({ status: 'Archived' }).eq('employee_code', parsedCode).eq('status', 'Active').select('employee_code');
+      
+      await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: newContractType, contract_start_date: newContractStartDate, contract_end_date: newContractEndDate, status: 'Active' }]);
+      
+      alert('تم إنشاء العقد وإرساله لاعتماد المشروع ✅'); 
+      setIsNewContractModalOpen(false); 
+      fetchData();
+    } catch (err: any) {
+      alert('خطأ: ' + err.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleExportExcel = () => {
@@ -572,12 +605,10 @@ export default function ContractsPage() {
       return;
     }
 
-    // تجهيز أسماء الأعمدة (Headers)
     const headers = [
       'الكود', 'الموظف', 'الإدارة', 'الوظيفة', 'النوع', 'السن', 'تاريخ الانتهاء', 'الأيام المتبقية', 'حالة النموذج'
     ];
 
-    // تجهيز البيانات المطابقة للجدول الحالي
     const rows = sortedContracts.map(emp => {
       const age = calculateAge(emp.birth_date);
       const daysLeft = getDaysRemaining(emp.contract_end_date);
@@ -587,7 +618,7 @@ export default function ContractsPage() {
       const empJob = String(emp.job_title || '');
       const empType = String(emp.contract_type || '');
       const empStatus = String(emp.status || '');
-      const termReason = String(emp.termination_reason || ''); 
+      const termReasonFromDb = String(emp.termination_reason || ''); 
       const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
       
       return [
@@ -595,7 +626,8 @@ export default function ContractsPage() {
         emp.employee_name,
         empDept || '—',
         empJob || '—',
-        isTerminated ? (termReason || (TERMINATION_REASONS.includes(empType) ? empType : 'موقوف / منهي خدمته')) : empType,
+        // 🌟 إظهار السبب الحقيقي في ملف الإكسيل
+        isTerminated ? (termReasonFromDb || empType) : empType,
         age !== null ? age : '—',
         emp.contract_end_date || '—',
         daysLeft !== null ? daysLeft : '—',
@@ -603,13 +635,11 @@ export default function ContractsPage() {
       ];
     });
 
-    // تحويل البيانات لنسق CSV
     const csvContent = [
       headers.join(','),
       ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
     ].join('\n');
 
-    // إضافة BOM (\uFEFF) لدعم اللغة العربية في Excel
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -826,7 +856,6 @@ export default function ContractsPage() {
                 const empJob = String(emp.job_title || '');
                 const empType = String(emp.contract_type || '');
                 const empStatus = String(emp.status || '');
-                const termReason = String(emp.termination_reason || ''); 
                 
                 const isHiddenDept = empDept.includes('تحويلات');
                 const isHiddenJob = empJob.startsWith('ايقاف راتب');
@@ -865,9 +894,9 @@ export default function ContractsPage() {
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empDept || '—'}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empJob || '—'}</td>
                     
-                    {/* 🌟 تعديل عرض نوع العقد */}
+                    {/* 🌟 إظهار سبب الإيقاف الحقيقي في عمود النوع */}
                     <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
-                      {isTerminated ? (termReason || (TERMINATION_REASONS.includes(empType) ? empType : 'موقوف / منهي خدمته')) : empType}
+                      {isTerminated ? (emp.termination_reason || empType) : empType}
                     </td>
 
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
@@ -1083,13 +1112,9 @@ export default function ContractsPage() {
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontSize: '12px', color: '#64748b', marginBottom: '8px', fontWeight: 'bold' }}>سبب إنهاء الخدمة / التحويل *</label>
                 <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', outline: 'none', fontWeight: 'bold' }}>
-                  <option value="انتهاء عقد">انتهاء عقد</option>
-                  <option value="إنهاء تعاقد">إنهاء تعاقد</option>
-                  <option value="استقالة">استقالة</option>
-                  <option value="إنهاء خدمات">إنهاء خدمات</option>
-                  <option value="بلوغ سن">بلوغ سن (تقاعد)</option>
-                  <option value="انقطاع عن العمل">انقطاع عن العمل</option>
-                  <option value="نقل شركة شقيقة">نقل شركة شقيقة</option>
+                  {TERMINATION_REASONS.map((reason, idx) => (
+                    <option key={idx} value={reason}>{reason}</option>
+                  ))}
                 </select>
               </div>
               <div style={{ marginBottom: '24px' }}>
