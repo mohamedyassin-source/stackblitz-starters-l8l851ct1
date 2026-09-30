@@ -13,7 +13,7 @@ const STANDARD_CONTRACT_TYPES = [
   'دائم'
 ];
 
-// 🌟 أسباب الإنهاء والإيقاف الشائعة (تم إضافة عدم اجتياز فترة الاختبار والأجازة هنا ليتعرف عليها النظام)
+// 🌟 أسباب الإنهاء والإيقاف الشائعة
 const TERMINATION_REASONS = [
   'انتهاء عقد', 'إنهاء تعاقد', 'استقالة', 'إنهاء خدمات', 
   'بلوغ سن', 'انقطاع عن العمل', 'نقل شركة شقيقة',
@@ -331,7 +331,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 💾 دالة الحفظ المحدثة (مضادة للأخطاء وتلتقط أي خلل من قاعدة البيانات)
+  // 💾 دالة الحفظ المحدثة
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editData) return;
@@ -354,7 +354,6 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(empCode, 10);
 
-      // 1. تحديث بيانات الموظف الأساسية الشاملة
       const employeeUpdateData = {
         employee_code: parsedCode,
         employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
@@ -377,7 +376,6 @@ export default function EmployeesPage() {
 
       if (empError) throw new Error("خطأ في تحديث بيانات الموظف: " + empError.message);
 
-      // تجهيز بيانات العقد
       const contractData = {
         employee_code: parsedCode,
         contract_type: contractType, 
@@ -386,7 +384,6 @@ export default function EmployeesPage() {
         status: status
       };
 
-      // 2. تحديث جدول العقود بذكاء
       if (contractId) {
         const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', contractId);
         if (cErr) throw new Error("خطأ في تحديث العقد المباشر: " + cErr.message);
@@ -510,7 +507,7 @@ export default function EmployeesPage() {
       const { error: empError } = await supabase.from('employees').delete().in('employee_code', parsedCodes);
       if (empError) throw empError;
 
-      alert('تم حذف الموظفين بنجاح 🗑️️✅');
+      alert('تم حذف الموظفين بنجاح 🗑️✅');
       setSelectedEmpIds([]);
       await fetchEmployees();
     } catch (err: any) {
@@ -520,13 +517,14 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🧹 دالة تنظيف التكرارات (Deduplication)
+  // 🧹 دالة تنظيف التكرارات الذكية (Deduplication) - بدون استخدام id
   const handleCleanDuplicates = async () => {
     const confirmStr = window.prompt('🚨 تحذير: هذا الإجراء سيفحص قاعدة البيانات ويقوم بحذف السجلات المكررة للموظفين (الذين لديهم نفس الكود) مع الاحتفاظ بالنسخة الأكمل والأنشط فقط.\n\nاكتب كلمة "تأكيد" للاستمرار:');
     if (confirmStr !== 'تأكيد') return;
 
     setIsDeleting(true);
     try {
+      // 1. تجميع الموظفين المتطابقين في الكود
       const grouped = new Map<string, any[]>();
       employees.forEach(emp => {
         const code = String(getField(emp, 'employee_code', 'EmployeeCode')).trim();
@@ -536,12 +534,15 @@ export default function EmployeesPage() {
         }
       });
 
-      const idsToDelete: any[] = [];
       let duplicateCount = 0;
+      const promises: Promise<any>[] = [];
 
-      grouped.forEach((records) => {
+      // 2. معالجة كل مجموعة بها تكرار
+      for (const [code, records] of Array.from(grouped.entries())) {
         if (records.length > 1) {
           duplicateCount += (records.length - 1);
+          
+          // ترتيب النسخ لتكون الأكمل/الأنشط هي الأولى
           records.sort((a, b) => {
             const aActive = getField(a, 'status', 'Status').toLowerCase() === 'active';
             const bActive = getField(b, 'status', 'Status').toLowerCase() === 'active';
@@ -556,22 +557,44 @@ export default function EmployeesPage() {
             return 0;
           });
 
-          for (let i = 1; i < records.length; i++) {
-            if (records[i].id) idsToDelete.push(records[i].id);
-          }
-        }
-      });
+          // أخذ أفضل نسخة وتجهيزها للحفظ
+          const bestRecord = records[0];
+          const payload = {
+            employee_code: parseInt(code, 10),
+            employee_name: getField(bestRecord, 'employee_name', 'ArabicName'),
+            national_id: getField(bestRecord, 'national_id', 'NationalID') || null,
+            birth_date: getField(bestRecord, 'birth_date', 'BirthDate') || null,
+            department: getField(bestRecord, 'department', 'Department') || null,
+            company: getField(bestRecord, 'company', 'Company') || null,
+            job_title: getField(bestRecord, 'job_title', 'JobTitle') || null,
+            hiring_date: getField(bestRecord, 'hiring_date', 'HiringDate') || null,
+            status: getField(bestRecord, 'status', 'Status') || 'Active',
+            email: getField(bestRecord, 'email', 'Email') || null,
+            mobile: getField(bestRecord, 'mobile', 'Mobile') || null,
+            contract_type: getField(bestRecord, 'contract_type', 'ContractType') || null,
+            contract_end_date: getField(bestRecord, 'contract_end_date', 'ContractEndDate') || null
+          };
 
-      if (idsToDelete.length === 0) {
+          // وضع عملية "حذف الكل ثم إدخال الأفضل" في مصفوفة وعود التنفيذ
+          promises.push(
+            (async () => {
+              await supabase.from('employees').delete().eq('employee_code', parseInt(code, 10));
+              await supabase.from('employees').insert([payload]);
+            })()
+          );
+        }
+      }
+
+      if (promises.length === 0) {
         alert('لم يتم العثور على أي سجلات مكررة بنفس الكود. قاعدة بياناتك نظيفة! ✨');
         setIsDeleting(false);
         return;
       }
 
-      const { error: delErr } = await supabase.from('employees').delete().in('id', idsToDelete);
-      if (delErr) throw delErr;
+      // 3. تنفيذ عمليات الحذف والإضافة للنسخ السليمة
+      await Promise.all(promises);
 
-      alert(`تم تنظيف قاعدة البيانات وحذف ${duplicateCount} سجل مكرر بنجاح! 🧹✨`);
+      alert(`تم تنظيف قاعدة البيانات ومعالجة ${duplicateCount} تكرار بنجاح! 🧹✨`);
       await fetchEmployees();
     } catch (err: any) {
       alert('حدث خطأ أثناء تنظيف التكرارات: ' + err.message);
@@ -591,7 +614,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
-      // 1. إضافة الموظف الأساسي
+      // 1. إضافة الموظف الأساسي (بدون age)
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
@@ -700,6 +723,7 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* 🌟 الزر الجديد لتنظيف التكرارات */}
           <button 
             onClick={handleCleanDuplicates}
             disabled={isDeleting}
