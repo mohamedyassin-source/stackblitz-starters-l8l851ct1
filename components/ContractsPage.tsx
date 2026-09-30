@@ -31,7 +31,7 @@ export default function ContractsPage() {
   const [expiryMonth, setExpiryMonth] = useState(''); 
   const [selectedReqStatus, setSelectedReqStatus] = useState(''); 
   
-  // 🗂️ فلتر الكروت العلوية
+  // 🗂️️ فلتر الكروت العلوية
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'suspended'>('all');
 
   // 🔃 حالات الترتيب
@@ -471,6 +471,7 @@ export default function ContractsPage() {
     setEditModal({ isOpen: true, emp });
   };
 
+  // 🌟 تعديل العقد - إزالة .select() لتفادي الخطأ
   const handleEditContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModal.emp) return;
@@ -479,9 +480,19 @@ export default function ContractsPage() {
     
     try {
       if (editModal.emp.contract_id) {
-        await supabase.from('contracts').update({ contract_type: editContractType, contract_start_date: editStartDate, contract_end_date: editEndDate }).eq('contract_id', editModal.emp.contract_id).select('contract_id');
+        await supabase.from('contracts').update({ 
+          contract_type: editContractType, 
+          contract_start_date: editStartDate, 
+          contract_end_date: editEndDate 
+        }).eq('contract_id', editModal.emp.contract_id);
       } else {
-        await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: editContractType, contract_start_date: editStartDate, contract_end_date: editEndDate, status: 'Active' }]);
+        await supabase.from('contracts').insert([{ 
+          employee_code: parsedCode, 
+          contract_type: editContractType, 
+          contract_start_date: editStartDate, 
+          contract_end_date: editEndDate, 
+          status: 'Active' 
+        }]);
       }
       
       alert('تم التعديل ✅'); 
@@ -520,7 +531,7 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 دالة الإنهاء المحدثة لتخطي خطأ הـ contract_type في جدول الموظفين
+  // 🌟 دالة الإنهاء المحدثة لتخطي خطأ الـ ID نهائياً (بإزالة select)
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return;
@@ -528,22 +539,24 @@ export default function ContractsPage() {
     const parsedCode = parseInt(terminateEmployeeCode, 10);
     
     try {
-      // 1. تحديث الموظف (تم إزالة contract_type من هنا لأنه غير موجود في جدول employees)
+      // 1. تحديث الموظف
       const { error: empError } = await supabase.from('employees').update({ 
+        employee_code: parsedCode,
         department: 'تحويلات تحت الاعتماد', 
         status: 'Inactive', 
         termination_date: terminateDate, 
         termination_reason: termReason
-      }).eq('employee_code', parsedCode).select('employee_code');
+      }).eq('employee_code', parsedCode);
       
       if (empError) throw empError;
         
-      // 2. تحديث العقد النشط (هنا يتم تحديث contract_type بشكل طبيعي)
+      // 2. تحديث العقد النشط
       const { error: contractError } = await supabase.from('contracts').update({ 
+        employee_code: parsedCode,
         status: 'Inactive', 
         contract_end_date: terminateDate,
         contract_type: termReason 
-      }).eq('employee_code', parsedCode).eq('status', 'Active').select('employee_code');
+      }).eq('employee_code', parsedCode).eq('status', 'Active');
       
       if (contractError) throw contractError;
         
@@ -559,6 +572,7 @@ export default function ContractsPage() {
     }
   };
 
+  // 🌟 دالة العقد الجديد - تم إزالة select
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return;
@@ -584,9 +598,17 @@ export default function ContractsPage() {
       
       await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending_Project_Manager', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
       
-      await supabase.from('contracts').update({ status: 'Archived' }).eq('employee_code', parsedCode).eq('status', 'Active').select('employee_code');
+      await supabase.from('contracts').update({ 
+        status: 'Archived' 
+      }).eq('employee_code', parsedCode).eq('status', 'Active');
       
-      await supabase.from('contracts').insert([{ employee_code: parsedCode, contract_type: newContractType, contract_start_date: newContractStartDate, contract_end_date: newContractEndDate, status: 'Active' }]);
+      await supabase.from('contracts').insert([{ 
+        employee_code: parsedCode, 
+        contract_type: newContractType, 
+        contract_start_date: newContractStartDate, 
+        contract_end_date: newContractEndDate, 
+        status: 'Active' 
+      }]);
       
       alert('تم إنشاء العقد وإرساله لاعتماد المشروع ✅'); 
       setIsNewContractModalOpen(false); 
