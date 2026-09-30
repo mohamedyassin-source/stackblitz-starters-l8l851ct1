@@ -566,6 +566,59 @@ export default function ContractsPage() {
     setActionLoading(false); setIsNewContractModalOpen(false); alert('تم إنشاء العقد وإرساله لاعتماد المشروع ✅'); fetchData();
   };
 
+  const handleExportExcel = () => {
+    if (sortedContracts.length === 0) {
+      alert('لا توجد بيانات لتصديرها');
+      return;
+    }
+
+    // تجهيز أسماء الأعمدة (Headers)
+    const headers = [
+      'الكود', 'الموظف', 'الإدارة', 'الوظيفة', 'النوع', 'السن', 'تاريخ الانتهاء', 'الأيام المتبقية', 'حالة النموذج'
+    ];
+
+    // تجهيز البيانات المطابقة للجدول الحالي
+    const rows = sortedContracts.map(emp => {
+      const age = calculateAge(emp.birth_date);
+      const daysLeft = getDaysRemaining(emp.contract_end_date);
+      const reqInfo = getRenewalStatusInfo(String(emp.employee_code || '')).text;
+      
+      const empDept = String(emp.department || '');
+      const empJob = String(emp.job_title || '');
+      const empType = String(emp.contract_type || '');
+      const empStatus = String(emp.status || '');
+      const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
+      
+      return [
+        emp.employee_code,
+        emp.employee_name,
+        empDept || '—',
+        empJob || '—',
+        isTerminated ? 'إنهاء تعاقد' : empType,
+        age !== null ? age : '—',
+        emp.contract_end_date || '—',
+        daysLeft !== null ? daysLeft : '—',
+        reqInfo
+      ];
+    });
+
+    // تحويل البيانات لنسق CSV
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    // إضافة BOM (\uFEFF) لدعم اللغة العربية في Excel
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `العقود_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <style>{`
@@ -612,6 +665,9 @@ export default function ContractsPage() {
           <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>إدارة شاملة لدورة حياة العقود ومتابعة أعمار الموظفين وسن التقاعد</p>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button onClick={handleExportExcel} style={{ background: '#10b981', color: '#ffffff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+            📊 تصدير Excel
+          </button>
           <button onClick={() => { setTerminateEmployeeCode(''); setTermSearchTerm(''); setIsTerminateModalOpen(true); }} style={{ background: '#ffffff', color: '#dc2626', border: '1px solid #fecaca', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>🚫 تحويل للانتظار</button>
           <button onClick={() => { setSelectedEmployeeCode(''); setEmpSearchTerm(''); setShowEmpDropdown(false); setIsNewContractModalOpen(true); }} style={{ background: '#0f172a', color: '#ffffff', border: 0, padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>📝 إنشاء عقد لموظف جديد</button>
         </div>
