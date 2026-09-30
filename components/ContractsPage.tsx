@@ -10,7 +10,7 @@ const STANDARD_CONTRACT_TYPES = [
   'دائم'
 ];
 
-// 🌟 أسباب الإنهاء والإيقاف الشائعة (تم إضافة الأسباب الجديدة)
+// 🌟 أسباب الإنهاء والإيقاف الشائعة
 const TERMINATION_REASONS = [
   'انتهاء عقد', 'إنهاء تعاقد', 'استقالة', 'إنهاء خدمات', 
   'بلوغ سن', 'انقطاع عن العمل', 'نقل شركة شقيقة',
@@ -520,7 +520,7 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 دالة الإنهاء المحدثة لتخطي خطأ الـ ID الخفي
+  // 🌟 دالة الإنهاء المحدثة لتخطي خطأ הـ contract_type في جدول الموظفين
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return;
@@ -528,18 +528,17 @@ export default function ContractsPage() {
     const parsedCode = parseInt(terminateEmployeeCode, 10);
     
     try {
-      // 1. تحديث الموظف مع إضافة select('employee_code') لتخطي مشكلة الـ id
+      // 1. تحديث الموظف (تم إزالة contract_type من هنا لأنه غير موجود في جدول employees)
       const { error: empError } = await supabase.from('employees').update({ 
         department: 'تحويلات تحت الاعتماد', 
         status: 'Inactive', 
         termination_date: terminateDate, 
-        termination_reason: termReason,
-        contract_type: termReason 
+        termination_reason: termReason
       }).eq('employee_code', parsedCode).select('employee_code');
       
       if (empError) throw empError;
         
-      // 2. تحديث العقد النشط بنفس الطريقة
+      // 2. تحديث العقد النشط (هنا يتم تحديث contract_type بشكل طبيعي)
       const { error: contractError } = await supabase.from('contracts').update({ 
         status: 'Inactive', 
         contract_end_date: terminateDate,
@@ -626,7 +625,6 @@ export default function ContractsPage() {
         emp.employee_name,
         empDept || '—',
         empJob || '—',
-        // 🌟 إظهار السبب الحقيقي في ملف الإكسيل
         isTerminated ? (termReasonFromDb || empType) : empType,
         age !== null ? age : '—',
         emp.contract_end_date || '—',
@@ -856,6 +854,7 @@ export default function ContractsPage() {
                 const empJob = String(emp.job_title || '');
                 const empType = String(emp.contract_type || '');
                 const empStatus = String(emp.status || '');
+                const termReasonFromDb = String(emp.termination_reason || ''); 
                 
                 const isHiddenDept = empDept.includes('تحويلات');
                 const isHiddenJob = empJob.startsWith('ايقاف راتب');
@@ -896,7 +895,7 @@ export default function ContractsPage() {
                     
                     {/* 🌟 إظهار سبب الإيقاف الحقيقي في عمود النوع */}
                     <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
-                      {isTerminated ? (emp.termination_reason || empType) : empType}
+                      {isTerminated ? (termReasonFromDb || empType) : empType}
                     </td>
 
                     <td style={{ padding: '12px', textAlign: 'center', fontWeight: 'bold' }}>
