@@ -517,14 +517,13 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🧹 دالة تنظيف التكرارات الذكية (Deduplication) - بدون استخدام id
+  // 🧹 دالة تنظيف التكرارات (Deduplication) مصححة - بدون الحاجة لحقل id
   const handleCleanDuplicates = async () => {
     const confirmStr = window.prompt('🚨 تحذير: هذا الإجراء سيفحص قاعدة البيانات ويقوم بحذف السجلات المكررة للموظفين (الذين لديهم نفس الكود) مع الاحتفاظ بالنسخة الأكمل والأنشط فقط.\n\nاكتب كلمة "تأكيد" للاستمرار:');
     if (confirmStr !== 'تأكيد') return;
 
     setIsDeleting(true);
     try {
-      // 1. تجميع الموظفين المتطابقين في الكود
       const grouped = new Map<string, any[]>();
       employees.forEach(emp => {
         const code = String(getField(emp, 'employee_code', 'EmployeeCode')).trim();
@@ -537,12 +536,11 @@ export default function EmployeesPage() {
       let duplicateCount = 0;
       const promises: Promise<any>[] = [];
 
-      // 2. معالجة كل مجموعة بها تكرار
-      for (const [code, records] of Array.from(grouped.entries())) {
+      grouped.forEach((records, code) => {
         if (records.length > 1) {
           duplicateCount += (records.length - 1);
           
-          // ترتيب النسخ لتكون الأكمل/الأنشط هي الأولى
+          // ترتيب السجلات بناءً على النشاط واكتمال البيانات (الأفضل في الأعلى)
           records.sort((a, b) => {
             const aActive = getField(a, 'status', 'Status').toLowerCase() === 'active';
             const bActive = getField(b, 'status', 'Status').toLowerCase() === 'active';
@@ -557,8 +555,9 @@ export default function EmployeesPage() {
             return 0;
           });
 
-          // أخذ أفضل نسخة وتجهيزها للحفظ
+          // نأخذ أفضل سجل ونحتفظ به
           const bestRecord = records[0];
+          
           const payload = {
             employee_code: parseInt(code, 10),
             employee_name: getField(bestRecord, 'employee_name', 'ArabicName'),
@@ -570,20 +569,19 @@ export default function EmployeesPage() {
             hiring_date: getField(bestRecord, 'hiring_date', 'HiringDate') || null,
             status: getField(bestRecord, 'status', 'Status') || 'Active',
             email: getField(bestRecord, 'email', 'Email') || null,
-            mobile: getField(bestRecord, 'mobile', 'Mobile') || null,
-            contract_type: getField(bestRecord, 'contract_type', 'ContractType') || null,
-            contract_end_date: getField(bestRecord, 'contract_end_date', 'ContractEndDate') || null
+            mobile: getField(bestRecord, 'mobile', 'Mobile') || null
           };
 
-          // وضع عملية "حذف الكل ثم إدخال الأفضل" في مصفوفة وعود التنفيذ
           promises.push(
             (async () => {
+              // 1. مسح جميع السجلات المرتبطة بهذا الكود
               await supabase.from('employees').delete().eq('employee_code', parseInt(code, 10));
+              // 2. إعادة إدخال السجل الأفضل فقط
               await supabase.from('employees').insert([payload]);
             })()
           );
         }
-      }
+      });
 
       if (promises.length === 0) {
         alert('لم يتم العثور على أي سجلات مكررة بنفس الكود. قاعدة بياناتك نظيفة! ✨');
@@ -591,10 +589,9 @@ export default function EmployeesPage() {
         return;
       }
 
-      // 3. تنفيذ عمليات الحذف والإضافة للنسخ السليمة
       await Promise.all(promises);
 
-      alert(`تم تنظيف قاعدة البيانات ومعالجة ${duplicateCount} تكرار بنجاح! 🧹✨`);
+      alert(`تم تنظيف قاعدة البيانات وحذف ${duplicateCount} سجل مكرر بنجاح! 🧹✨`);
       await fetchEmployees();
     } catch (err: any) {
       alert('حدث خطأ أثناء تنظيف التكرارات: ' + err.message);
@@ -614,7 +611,7 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
-      // 1. إضافة الموظف الأساسي (بدون age)
+      // 1. إضافة الموظف الأساسي
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
@@ -723,7 +720,6 @@ export default function EmployeesPage() {
         </div>
         
         <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {/* 🌟 الزر الجديد لتنظيف التكرارات */}
           <button 
             onClick={handleCleanDuplicates}
             disabled={isDeleting}
@@ -1063,7 +1059,7 @@ export default function EmployeesPage() {
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'left' }}>
-              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
+              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️️</button>
             </div>
           </div>
         </div>
@@ -1310,3 +1306,8 @@ export default function EmployeesPage() {
     </div>
   );
 }
+انا هنا لو عملت ترمنيشن لموظف عايز الايكون اللي جمب اسم الموظف دي تكون سبب الانهاء الفعلي ليه
+```typescript
+{isTransferredOrInactive && (
+                          <span style={{ marginRight: '6px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', border: '1px solid #fecaca' }}>تحويلات</span>
+                        )}
