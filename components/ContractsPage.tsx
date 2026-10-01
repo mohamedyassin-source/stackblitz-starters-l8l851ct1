@@ -31,7 +31,7 @@ export default function ContractsPage() {
   const [expiryMonth, setExpiryMonth] = useState(''); 
   const [selectedReqStatus, setSelectedReqStatus] = useState(''); 
   
-  // 🗂️️ فلتر الكروت العلوية
+  // 🗂 فلتر الكروت العلوية
   const [activeFilterCard, setActiveFilterCard] = useState<'all' | 'fixed' | 'overage' | 'expiring' | 'suspended'>('all');
 
   // 🔃 حالات الترتيب
@@ -402,7 +402,7 @@ export default function ContractsPage() {
       }
 
       const [reqId] = generateSequentialIds(1);
-      const parsedCode = parseInt(emp.employee_code, 10);
+      const parsedCode = String(emp.employee_code).trim(); // التعديل هنا ✅
 
       const payload: any = {
         request_id: reqId,
@@ -450,7 +450,9 @@ export default function ContractsPage() {
       const payloads = selectedEmps.map((emp, index) => {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
         return {
-          request_id: reqIds[index], employee_code: parseInt(emp.employee_code, 10), employee_name: emp.employee_name,
+          request_id: reqIds[index], 
+          employee_code: String(emp.employee_code).trim(), // التعديل هنا ✅
+          employee_name: emp.employee_name,
           department: emp.department, job_title: emp.job_title, company: emp.company,
           contract_end_date: emp.contract_end_date, new_contract_end_date: targetEndDate,
           renewal_months: renewalMode === 'months' ? renewalMonths : null, 
@@ -476,7 +478,7 @@ export default function ContractsPage() {
     e.preventDefault();
     if (!editModal.emp) return;
     setActionLoading(true);
-    const parsedCode = parseInt(editModal.emp.employee_code, 10);
+    const parsedCode = String(editModal.emp.employee_code).trim(); // التعديل هنا ✅
     
     try {
       if (editModal.emp.contract_id) {
@@ -508,7 +510,7 @@ export default function ContractsPage() {
   const handleDeleteSelected = async () => {
     if (!window.confirm('تأكيد الحذف؟ هذا الإجراء سيقوم بحذف الموظفين وعقودهم نهائياً.')) return;
     setIsDeleting(true);
-    const parsedCodes = selectedEmpCodes.map(c => parseInt(c, 10));
+    const parsedCodes = selectedEmpCodes.map(c => String(c).trim()); // التعديل هنا ✅
     await supabase.from('contracts').delete().in('employee_code', parsedCodes);
     await supabase.from('employees').delete().in('employee_code', parsedCodes);
     alert('تم الحذف بنجاح ✅'); setSelectedEmpCodes([]); fetchData(); setIsDeleting(false);
@@ -519,7 +521,7 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     try {
-      const parsedCode = parseInt(emp.employee_code, 10);
+      const parsedCode = String(emp.employee_code).trim(); // التعديل هنا ✅
       await supabase.from('contracts').delete().eq('employee_code', parsedCode);
       await supabase.from('employees').delete().eq('employee_code', parsedCode);
       alert('تم حذف الموظف والعقد بنجاح ✅');
@@ -536,12 +538,11 @@ export default function ContractsPage() {
     e.preventDefault();
     if (!terminateEmployeeCode) return;
     setActionLoading(true);
-    const parsedCode = parseInt(terminateEmployeeCode, 10);
+    const parsedCode = String(terminateEmployeeCode).trim(); // التعديل هنا ✅
     
     try {
       // 1. تحديث الموظف
       const { error: empError } = await supabase.from('employees').update({ 
-        employee_code: parsedCode,
         department: 'تحويلات تحت الاعتماد', 
         status: 'Inactive', 
         termination_date: terminateDate, 
@@ -552,7 +553,6 @@ export default function ContractsPage() {
         
       // 2. تحديث العقد النشط
       const { error: contractError } = await supabase.from('contracts').update({ 
-        employee_code: parsedCode,
         status: 'Inactive', 
         contract_end_date: terminateDate,
         contract_type: termReason 
@@ -594,7 +594,7 @@ export default function ContractsPage() {
 
     try {
       const [reqId] = generateSequentialIds(1);
-      const parsedCode = parseInt(emp.employee_code, 10);
+      const parsedCode = String(emp.employee_code).trim(); // التعديل هنا ✅
       
       await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending_Project_Manager', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
       
@@ -991,7 +991,7 @@ export default function ContractsPage() {
             </div>
 
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '16px', borderRadius: '12px', fontSize: '13px', color: '#1e40af', fontWeight: 'bold', textAlign: 'center' }}>
-              ℹ️ هذا النموذج معروض للمتابعة فقط. <br/>
+              ℹ️️ هذا النموذج معروض للمتابعة فقط. <br/>
               <span style={{ fontSize: '11px', color: '#3b82f6', marginTop: '8px', display: 'block' }}>
                 (صلاحيات الاعتماد متاحة في شاشة "طلبات التجديد"، وصلاحيات استلام التوقيع متاحة في شاشة "التوقيعات")
               </span>
