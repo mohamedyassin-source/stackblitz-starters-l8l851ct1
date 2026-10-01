@@ -299,7 +299,7 @@ export default function EmployeesPage() {
     setReactivateSaving(true);
     try {
       const empCode = getField(reactivateEmp, 'employee_code', 'EmployeeCode');
-      const parsedCode = parseInt(empCode, 10);
+      const parsedCode = String(empCode).trim(); // التعديل هنا ✅
 
       const { error: empError } = await supabase
         .from('employees')
@@ -352,7 +352,7 @@ export default function EmployeesPage() {
         rawEnd = ''; 
       }
 
-      const parsedCode = parseInt(empCode, 10);
+      const parsedCode = String(empCode).trim(); // التعديل هنا ✅
 
       const employeeUpdateData = {
         employee_code: parsedCode,
@@ -423,7 +423,7 @@ export default function EmployeesPage() {
     setTermSaving(true);
     try {
       const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
-      const parsedCode = parseInt(empCode, 10);
+      const parsedCode = String(empCode).trim(); // التعديل هنا ✅
 
       // 1. تحديث الموظف
       const { error: empError } = await supabase
@@ -469,7 +469,7 @@ export default function EmployeesPage() {
 
     setBulkSaving(true);
     try {
-      const parsedCodes = selectedEmpIds.map(id => parseInt(id, 10));
+      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); // التعديل هنا ✅
       const updatePayload: any = {};
       if (bulkDept) updatePayload.department = bulkDept;
       if (bulkCompany) updatePayload.company = bulkCompany;
@@ -501,7 +501,7 @@ export default function EmployeesPage() {
 
     setIsDeleting(true);
     try {
-      const parsedCodes = selectedEmpIds.map(id => parseInt(id, 10));
+      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); // التعديل هنا ✅
       await supabase.from('contracts').delete().in('employee_code', parsedCodes);
       
       const { error: empError } = await supabase.from('employees').delete().in('employee_code', parsedCodes);
@@ -557,7 +557,7 @@ export default function EmployeesPage() {
           const bestRecord = records[0];
           
           const payload = {
-            employee_code: parseInt(code, 10),
+            employee_code: String(code).trim(), // التعديل هنا ✅
             employee_name: getField(bestRecord, 'employee_name', 'ArabicName'),
             national_id: getField(bestRecord, 'national_id', 'NationalID') || null,
             birth_date: getField(bestRecord, 'birth_date', 'BirthDate') || null,
@@ -572,7 +572,7 @@ export default function EmployeesPage() {
 
           promises.push(
             (async () => {
-              await supabase.from('employees').delete().eq('employee_code', parseInt(code, 10));
+              await supabase.from('employees').delete().eq('employee_code', String(code).trim()); // التعديل هنا ✅
               await supabase.from('employees').insert([payload]);
             })()
           );
@@ -605,7 +605,7 @@ export default function EmployeesPage() {
         finalEndDate = calculateInitialEndDate(newEmp.hiring_date);
       }
 
-      const parsedCode = parseInt(newEmp.employee_code, 10);
+      const parsedCode = String(newEmp.employee_code).trim(); // التعديل هنا ✅
 
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
