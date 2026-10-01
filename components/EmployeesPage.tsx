@@ -517,7 +517,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // 🧹 دالة تنظيف التكرارات (Deduplication) مصححة - بدون الحاجة لحقل id
+  // 🧹 دالة تنظيف التكرارات (Deduplication) مصححة
   const handleCleanDuplicates = async () => {
     const confirmStr = window.prompt('🚨 تحذير: هذا الإجراء سيفحص قاعدة البيانات ويقوم بحذف السجلات المكررة للموظفين (الذين لديهم نفس الكود) مع الاحتفاظ بالنسخة الأكمل والأنشط فقط.\n\nاكتب كلمة "تأكيد" للاستمرار:');
     if (confirmStr !== 'تأكيد') return;
@@ -540,7 +540,6 @@ export default function EmployeesPage() {
         if (records.length > 1) {
           duplicateCount += (records.length - 1);
           
-          // ترتيب السجلات بناءً على النشاط واكتمال البيانات (الأفضل في الأعلى)
           records.sort((a, b) => {
             const aActive = getField(a, 'status', 'Status').toLowerCase() === 'active';
             const bActive = getField(b, 'status', 'Status').toLowerCase() === 'active';
@@ -555,7 +554,6 @@ export default function EmployeesPage() {
             return 0;
           });
 
-          // نأخذ أفضل سجل ونحتفظ به
           const bestRecord = records[0];
           
           const payload = {
@@ -574,9 +572,7 @@ export default function EmployeesPage() {
 
           promises.push(
             (async () => {
-              // 1. مسح جميع السجلات المرتبطة بهذا الكود
               await supabase.from('employees').delete().eq('employee_code', parseInt(code, 10));
-              // 2. إعادة إدخال السجل الأفضل فقط
               await supabase.from('employees').insert([payload]);
             })()
           );
@@ -611,7 +607,6 @@ export default function EmployeesPage() {
 
       const parsedCode = parseInt(newEmp.employee_code, 10);
 
-      // 1. إضافة الموظف الأساسي
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
         employee_name: newEmp.employee_name,
@@ -628,7 +623,6 @@ export default function EmployeesPage() {
 
       if (empError) throw empError;
 
-      // 2. إضافة بيانات التعاقد
       const { error: contractError } = await supabase.from('contracts').insert([{
         employee_code: parsedCode,
         contract_type: newEmp.contract_type,
@@ -940,6 +934,10 @@ export default function EmployeesPage() {
                   const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
 
                   const isTransferredOrInactive = dept.includes('تحويلات') || status.toLowerCase() !== 'active';
+                  
+                  // 🌟 إحضار سبب الإنهاء الفعلي من الداتا بيز
+                  const termReasonFromDb = getField(emp, 'termination_reason', 'TerminationReason');
+                  const displayTermReason = termReasonFromDb || 'محول / موقوف';
 
                   return (
                     <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: isTransferredOrInactive ? '#fff5f5' : selectedEmpIds.includes(empCode) ? '#f0fdf4' : 'transparent' }}>
@@ -959,8 +957,11 @@ export default function EmployeesPage() {
                         {isMissingData && (
                           <span title="بيانات غير مكتملة (ناقص الرقم القومي أو الموبايل)" style={{ marginRight: '6px', fontSize: '11px', cursor: 'help' }}>⚠️</span>
                         )}
+                        {/* 🌟 عرض سبب الإنهاء هنا بشكل ديناميكي */}
                         {isTransferredOrInactive && (
-                          <span style={{ marginRight: '6px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', border: '1px solid #fecaca' }}>تحويلات</span>
+                          <span style={{ marginRight: '6px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', border: '1px solid #fecaca' }}>
+                            {displayTermReason}
+                          </span>
                         )}
                       </td>
                       <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
@@ -1059,7 +1060,7 @@ export default function EmployeesPage() {
             </div>
 
             <div style={{ marginTop: '20px', textAlign: 'left' }}>
-              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️️</button>
+              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
             </div>
           </div>
         </div>
@@ -1306,8 +1307,3 @@ export default function EmployeesPage() {
     </div>
   );
 }
-انا هنا لو عملت ترمنيشن لموظف عايز الايكون اللي جمب اسم الموظف دي تكون سبب الانهاء الفعلي ليه
-```typescript
-{isTransferredOrInactive && (
-                          <span style={{ marginRight: '6px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', border: '1px solid #fecaca' }}>تحويلات</span>
-                        )}
