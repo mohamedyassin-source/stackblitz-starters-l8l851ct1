@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { navigateTo } from '@/lib/navigation';
+import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
 
@@ -21,7 +22,8 @@ const cleanCode = (code: any) => {
 };
 
 export default function DashboardPage() {
-  // تم فصل الداش بورد عن الـ Context للحصول على بيانات حية (Live) دائماً 🚀
+  const { employees: contextEmployees, renewals: allRenewals, loading: contextLoading, refresh: refreshContext } = useAppData();
+
   const [allEmployees, setAllEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -48,52 +50,56 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // 🚀 سحب مباشر (Live) للموظفين والعقود ودمجهم بدقة 100%
-  const fetchDashboardData = async () => {
+  // 🚀 دالة جلب العقود النشطة المحدثة ومطابقتها بالخوارزمية الجديدة
+  const fetchContractsAndMerge = async () => {
     setLoading(true);
     try {
-      // 1. جلب الموظفين
-      let fetchedEmps: any[] = [];
-      let fromE = 0;
+      let allContracts: any[] = [];
+      let from = 0;
+      const step = 1000;
+      
       while (true) {
-        const { data, error } = await supabase.from('employees').select('*').range(fromE, fromE + 999);
+        const { data, error } = await supabase
+          .from('contracts')
+          // 🚀 أضفنا contract_id عشان نستخدمه كبديل قوي في الترتيب
+          .select('contract_id, employee_code, contract_type, contract_start_date, contract_end_date, status')
+          .range(from, from + step - 1);
+
         if (error || !data || data.length === 0) break;
-        fetchedEmps = [...fetchedEmps, ...data];
-        if (data.length < 1000) break;
-        fromE += 1000;
+        allContracts = [...allContracts, ...data];
+        if (data.length < step) break;
+        from += step;
       }
 
-      // 2. جلب العقود
-      let fetchedContracts: any[] = [];
-      let fromC = 0;
-      while (true) {
-        const { data, error } = await supabase.from('contracts').select('employee_code, contract_type, contract_start_date, contract_end_date, status').range(fromC, fromC + 999);
-        if (error || !data || data.length === 0) break;
-        fetchedContracts = [...fetchedContracts, ...data];
-        if (data.length < 1000) break;
-        fromC += 1000;
-      }
-
-      // 3. ترتيب وتجميع العقود
       const contractsMap = new Map<string, any[]>();
-      fetchedContracts.forEach(c => {
+      allContracts.forEach(c => {
+        if (!c) return;
         const cCode = cleanCode(c.employee_code);
         if (!cCode) return;
         if (!contractsMap.has(cCode)) contractsMap.set(cCode, []);
         contractsMap.get(cCode)?.push(c);
       });
 
-      // 4. دمج أحدث عقد نشط مع الموظف
-      const merged = fetchedEmps.map(emp => {
-        const eCodeClean = cleanCode(emp.employee_code);
+      const merged = (contextEmployees || []).map(emp => {
+        const empCodeRaw = getField(emp, 'employee_code', 'EmployeeCode');
+        const eCodeClean = cleanCode(empCodeRaw);
+        
         const empContracts = contractsMap.get(eCodeClean) || [];
 
+        // 🚀 الخوارزمية العبقرية الجديدة للترتيب:
+        // 1. الأولوية لتاريخ بداية العقد (contract_start_date) الأحدث هو الأول.
+        // 2. لو مفيش تاريخ بداية أو التاريخ متطابق، نعطي الأولوية لرقم العقد (contract_id) الأكبر هو الأول.
         empContracts.sort((a, b) => {
-          if (a.status === 'Active' && b.status !== 'Active') return -1;
-          if (a.status !== 'Active' && b.status === 'Active') return 1;
-          const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
-          const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
-          return dateB - dateA;
+          const startA = a.contract_start_date ? new Date(a.contract_start_date).getTime() : 0;
+          const startB = b.contract_start_date ? new Date(b.contract_start_date).getTime() : 0;
+          
+          if (startA !== startB) {
+            return startB - startA;
+          }
+          
+          const idA = parseInt(a.contract_id, 10) || 0;
+          const idB = parseInt(b.contract_id, 10) || 0;
+          return idB - idA;
         });
 
         const latestContract = empContracts[0];
@@ -108,15 +114,16 @@ export default function DashboardPage() {
 
       setAllEmployees(merged);
     } catch (err) {
-      console.error('Error fetching dashboard data:', err);
+      console.error('Error merging contracts:', err);
+      setAllEmployees(contextEmployees || []);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchDashboardData();
-  }, []);
+    fetchContractsAndMerge();
+  }, [contextEmployees, contextLoading]);
 
   const getDaysRemaining = (endDateStr: string | null) => {
     if (!endDateStr) return null;
@@ -257,8 +264,7 @@ export default function DashboardPage() {
         const item = {
           ...emp, employee_code: empCode, employee_name: empName, department: dept,
           contract_type: type, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date,
-          daysLeft: ageInfo.daysUntil60, year60: ageInfo.year60, month60: ageInfo.month60,
-          contract_end_date: endDateStr // 🚀 تأكيد إضافة النهاية للموديل
+          daysLeft: ageInfo.daysUntil60, year60: ageInfo.year60, month60: ageInfo.month60
         };
         futureTurning60List.push(item);
         if (ageInfo.daysUntil60 <= 60) turning60SoonList.push(item);
@@ -469,8 +475,7 @@ export default function DashboardPage() {
           <input list="dashDeptList" className="field" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
           <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
 
-          {/* 🚀 زر التحديث يقرأ بيانات Live الآن */}
-          <button style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }} onClick={fetchDashboardData}>تحديث البيانات 🔄</button>
+          <button style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }} onClick={() => { refreshContext(); fetchContractsAndMerge(); }}>تحديث البيانات 🔄</button>
 
           {(filterCompany || filterDept || activeKpiFilter !== 'all') && (
             <button style={{ background: '#f1f5f9', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }} onClick={() => { setFilterCompany(''); setFilterDept(''); setActiveKpiFilter('all'); }}>إعادة ضبط الفلاتر</button>
@@ -855,7 +860,6 @@ export default function DashboardPage() {
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{emp.contract_type}</td>
-                        {/* 🚀 إظهار تاريخ نهاية العقد المستمد من جدول العقود */}
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>{emp.contract_end_date || '—'}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#b45309' }}>{emp.age60Date}</td>
