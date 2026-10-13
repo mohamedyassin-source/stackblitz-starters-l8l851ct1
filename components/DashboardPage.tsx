@@ -20,6 +20,7 @@ const getField = (obj: any, ...keys: string[]) => {
 const cleanCode = (code: any) =>
   code === null || code === undefined ? '' : String(code).replace(/\s+/g, '').toLowerCase().replace(/^0+(?=.)/, '');
 
+// دالة ذكية لتحويل أي صيغة تاريخ لرقم عشان الترتيب والحسابات الدقيقة
 const getTimestamp = (v: any): number => {
   if (!v) return 0;
   const s = String(v).trim();
@@ -104,7 +105,7 @@ const isPermanent = (t: string) => t.includes('دائم') || t.includes('غير 
 const isAboveAge = (t: string) => t.includes('فوق السن');
 const isFixed = (t: string) => !isPermanent(t) && !isAboveAge(t);
 
-// 🚀 خوارزمية الترتيب الصارمة التي تمنع ظهور العقود القديمة
+// 🚀 الخوارزمية الصارمة والنهائية لاختيار أحدث عقد
 const pickLatestContract = (list: any[]) => {
   if (!list || !list.length) return undefined;
   
@@ -114,27 +115,25 @@ const pickLatestContract = (list: any[]) => {
   };
 
   return [...list].sort((a, b) => {
-    // 1. الأولوية المطلقة لحالة العقد
+    // 1. الأولوية للحالة (Active الأول)
     const actA = isActive(a);
     const actB = isActive(b);
     if (actA !== actB) return actB - actA;
 
-    // 2. المعيار الذهبي: تاريخ وقت إدخال العقد في النظام (الأحدث إدخالاً يكسب)
-    if (a.created_at && b.created_at) {
-      const crA = new Date(a.created_at).getTime();
-      const crB = new Date(b.created_at).getTime();
-      if (crA !== crB) return crB - crA;
-    }
-
-    // 3. الأحدث في تاريخ البداية
+    // 2. الأحدث في تاريخ البداية يكسب
     const sA = getTimestamp(a.contract_start_date);
     const sB = getTimestamp(b.contract_start_date);
     if (sA !== sB) return sB - sA;
 
-    // 4. الأحدث في تاريخ النهاية
+    // 3. لو البداية متطابقة، الأحدث في تاريخ الانتهاء يكسب (العقد الدائم قيمته Infinity فيكسب دايماً)
     const eA = a.contract_end_date ? getTimestamp(a.contract_end_date) : Infinity;
     const eB = b.contract_end_date ? getTimestamp(b.contract_end_date) : Infinity;
     if (eA !== eB) return eB - eA;
+
+    // 4. لو كله متطابق، الأكبر في الـ ID
+    const idA = parseInt(a.contract_id || 0, 10);
+    const idB = parseInt(b.contract_id || 0, 10);
+    if (!isNaN(idA) && !isNaN(idB) && idA !== idB) return idB - idA;
 
     return 0;
   })[0];
@@ -198,11 +197,10 @@ export default function DashboardPage() {
       let from = 0;
       const step = 1000;
       
-      // 🚀 سحب كافة بيانات العقود بما فيها created_at لضمان الترتيب الزمني السليم
       while (true) {
         const { data, error } = await supabase
           .from('contracts')
-          .select('*')
+          .select('contract_id, employee_code, contract_type, contract_start_date, contract_end_date, status')
           .range(from, from + step - 1);
 
         if (error || !data || data.length === 0) break;
@@ -227,7 +225,6 @@ export default function DashboardPage() {
         const empContracts = contractsMap.get(eCodeClean) || [];
         const latestContract = pickLatestContract(empContracts);
 
-        // 🚀 معالجة الثغرة: الاعتماد الصارم (Strict) على العقد الجديد لمنع إحياء التاريخ القديم
         const finalType = latestContract ? latestContract.contract_type : emp.contract_type;
         const finalStart = latestContract ? latestContract.contract_start_date : emp.hiring_date;
         const finalEnd = latestContract ? latestContract.contract_end_date : emp.contract_end_date;
@@ -267,11 +264,7 @@ export default function DashboardPage() {
     [allEmployees]
   );
 
-  const yearOptions = useMemo(() => Array.from({ length: 6 }, (_, i) => String(currentYear + i)), [currentYear]);
-
   const dashboardData = useMemo(() => {
-    const targetExpiryYear = currentYear + 1;
-
     const activeEmployeesOnly = (allEmployees || []).filter(emp => 
       String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
       !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
@@ -609,8 +602,10 @@ export default function DashboardPage() {
               onChange={(e) => setChartYear(Number(e.target.value))}
               style={{ fontSize: '11px', fontWeight: 'bold', color: '#2563eb', background: '#eff6ff', padding: '4px 12px', borderRadius: '8px', border: '1px solid #bfdbfe', outline: 'none' }}
             >
+              <option value={currentYear - 1}>عقود {currentYear - 1} 📅</option>
               <option value={currentYear}>عقود {currentYear} 📅</option>
               <option value={currentYear + 1}>خطة عقود {currentYear + 1} 📅</option>
+              <option value={currentYear + 2}>خطة عقود {currentYear + 2} 📅</option>
             </select>
           </div>
           <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: '#e2e8f0' }}>
@@ -626,7 +621,7 @@ export default function DashboardPage() {
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                 >
                   <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? '#10b981' : 'transparent' }}>
-                    {month.count.toLocaleString('en-US')}
+                    {month.count > 0 ? month.count.toLocaleString('en-US') : ''}
                   </span>
                   <div className="w-full max-w-[32px] rounded-t-md transition-all duration-700" style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, #2dd4bf, #0d9488)' : '#f1f5f9' }} />
                   <span className="text-[10px] font-bold mt-2" style={{ color: '#64748b' }}>{month.name}</span>
@@ -823,7 +818,7 @@ export default function DashboardPage() {
                         <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
                         <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: selectedAgeGroup.color }}>{age ? `${age} سنة` : '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{getField(emp, 'contract_type', 'ContractType') || '—'}</td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{getField(emp, 'contract_end_date', 'ContractEndDate') || 'مفتوح'}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{getField(emp, 'contract_end_date', 'ContractEndDate') || '—'}</td>
                       </tr>
                     );
                   })}
