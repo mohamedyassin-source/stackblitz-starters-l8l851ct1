@@ -9,7 +9,6 @@ import Stamp from './Stamp';
 
 /* ───────────────────────── Helpers (outside the component) ───────────────────────── */
 
-// 🚀 تم التعديل إلى contract_id لتفادي إيرور column "id" does not exist
 const CONTRACTS_ORDER_COLUMN = 'contract_id';
 
 const getField = (obj: any, ...keys: string[]) => {
@@ -20,17 +19,30 @@ const getField = (obj: any, ...keys: string[]) => {
   return '';
 };
 
-// توحيد كود الموظف (لا يحوّل "0" أو "000" إلى نص فارغ)
 const cleanCode = (code: any) =>
   code === null || code === undefined ? '' : String(code).replace(/\s+/g, '').toLowerCase().replace(/^0+(?=.)/, '');
 
-// Parse yyyy-mm-dd as LOCAL midnight (new Date('yyyy-mm-dd') is UTC and shifts days)
-const parseLocalDate = (v: any): Date | null => {
-  if (!v) return null;
+// 🚀 دالة ذكية لتحويل أي صيغة تاريخ (سواء DD/MM/YYYY أو YYYY-MM-DD) إلى رقم للترتيب
+const getTimestamp = (v: any): number => {
+  if (!v) return 0;
   const s = String(v).trim();
-  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  const d = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(s);
-  return isNaN(d.getTime()) ? null : d;
+  
+  // صيغة YYYY-MM-DD أو YYYY/MM/DD
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  
+  // صيغة DD-MM-YYYY أو DD/MM/YYYY
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) {
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  
+  const fallback = new Date(s);
+  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
 };
 
 const startOfToday = () => {
@@ -44,10 +56,10 @@ const daysBetween = (a: Date, b: Date) => Math.round((b.getTime() - a.getTime())
 const fmtDate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-// Birth date from explicit field, else from the Egyptian national ID
 const resolveBirthDate = (nationalId: any, birthDateRaw?: any): Date | null => {
-  const b = parseLocalDate(birthDateRaw);
-  if (b) return b;
+  const ts = getTimestamp(birthDateRaw);
+  if (ts > 0) return new Date(ts);
+  
   const id = String(nationalId ?? '').replace(/\D/g, '');
   if (id.length !== 14) return null;
   const century = id[0] === '3' ? 2000 : id[0] === '2' ? 1900 : null;
@@ -56,12 +68,12 @@ const resolveBirthDate = (nationalId: any, birthDateRaw?: any): Date | null => {
   const mo = +id.slice(3, 5);
   const d = +id.slice(5, 7);
   const dt = new Date(y, mo - 1, d);
-  return dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null; // rejects invalid dates
+  return dt.getMonth() === mo - 1 && dt.getDate() === d ? dt : null;
 };
 
 const getDaysRemaining = (endDateStr: string | null) => {
-  const end = parseLocalDate(endDateStr);
-  return end ? daysBetween(startOfToday(), end) : null;
+  const ts = getTimestamp(endDateStr);
+  return ts > 0 ? daysBetween(startOfToday(), new Date(ts)) : null;
 };
 
 const getAge60Info = (nationalId: any, birthDateRaw?: any) => {
@@ -86,7 +98,6 @@ const calcAge = (birth: Date) => {
   return age;
 };
 
-// Computed from the birth date first; the stored age field is only a fallback (it goes stale)
 const getEmployeeAge = (emp: any) => {
   const birth = resolveBirthDate(getField(emp, 'national_id', 'NationalID'), getField(emp, 'birth_date', 'BirthDate'));
   if (birth) return calcAge(birth);
@@ -94,12 +105,10 @@ const getEmployeeAge = (emp: any) => {
   return raw !== '' && !isNaN(Number(raw)) ? Number(raw) : null;
 };
 
-// Single source of truth for contract classification
 const isPermanent = (t: string) => t.includes('دائم') || t.includes('غير محدد');
 const isAboveAge = (t: string) => t.includes('فوق السن');
 const isFixed = (t: string) => !isPermanent(t) && !isAboveAge(t);
 
-// Exact match when the filter equals a value picked from the list, otherwise substring match
 const matchText = (value: string, filter: string, options: string[]) => {
   if (!filter) return true;
   const v = value.toLowerCase();
@@ -107,37 +116,40 @@ const matchText = (value: string, filter: string, options: string[]) => {
   return options.some((o) => o.toLowerCase() === f) ? v === f : v.includes(f);
 };
 
-// 🚀 خوارزمية اختيار أحدث عقد المحسنة
+// 🚀 الخوارزمية المضادة للرصاص (Bulletproof) لاختيار أحدث وأصح عقد
 const pickLatestContract = (list: any[]) => {
-  if (!list.length) return undefined;
-  const startOf = (c: any) => parseLocalDate(c.contract_start_date)?.getTime() ?? -Infinity;
-  const endOf = (c: any) => parseLocalDate(c.contract_end_date)?.getTime() ?? Infinity;
-  const activeOf = (c: any) => (String(c.status ?? '').trim().toLowerCase() === 'active' ? 1 : 0);
+  if (!list || !list.length) return undefined;
   
+  const isActive = (c: any) => {
+    const st = String(c.status || '').trim().toLowerCase();
+    return st === 'active' || st === 'نشط' ? 1 : 0;
+  };
+
   return [...list].sort((a, b) => {
-    // 1. الأحدث كبداية
-    const s = startOf(b) - startOf(a);
-    if (s !== 0 && !isNaN(s)) return s;
-    
-    // 2. الأحدث كنهاية (والدائم يأخذ Infinity فيتفوق)
-    const e = endOf(b) - endOf(a);
-    if (e !== 0 && !isNaN(e)) return e;
-    
-    // 3. الحالة Active
-    const act = activeOf(b) - activeOf(a);
-    if (act !== 0) return act;
-    
-    // 4. مرجح نهائي: رقم العقد الأكبر هو الأحدث إدخالاً
-    const idA = parseInt(a.contract_id || 0, 10);
-    const idB = parseInt(b.contract_id || 0, 10);
-    return idB - idA;
+    // 1. الأولوية المطلقة لحالة العقد (Active يأتي أولاً)
+    const actA = isActive(a);
+    const actB = isActive(b);
+    if (actA !== actB) return actB - actA;
+
+    // 2. إذا تساوت الحالة، نختار الأحدث في تاريخ الانتهاء (عقد بدون نهاية أو دائم يأخذ Infinity ليفوز)
+    const eA = a.contract_end_date ? getTimestamp(a.contract_end_date) : Infinity;
+    const eB = b.contract_end_date ? getTimestamp(b.contract_end_date) : Infinity;
+    if (eA !== eB) return eB - eA;
+
+    // 3. ثم الأحدث في تاريخ البداية
+    const sA = getTimestamp(a.contract_start_date);
+    const sB = getTimestamp(b.contract_start_date);
+    if (sA !== sB) return sB - sA;
+
+    // 4. مرجح أخير وآمن للـ UUID
+    return String(b.contract_id || '').localeCompare(String(a.contract_id || ''));
   })[0];
 };
 
 const getType = (emp: any) => String(getField(emp, 'contract_type', 'ContractType') || 'محدد المدة').trim();
 const getDept = (emp: any) => String(getField(emp, 'department', 'Department') || 'غير محدد').trim();
 
-/* ───────────────────────── Clock (isolated so it doesn't re-render the dashboard) ───────────────────────── */
+/* ───────────────────────── Clock ───────────────────────── */
 
 function Clock() {
   const [now, setNow] = useState(new Date());
@@ -156,42 +168,22 @@ function Clock() {
   );
 }
 
-/* ───────────────────────── Contracts fetching ───────────────────────── */
-
-const fetchAllContracts = async () => {
-  const rows: any[] = [];
-  const step = 1000;
-  for (let from = 0; ; from += step) {
-    const { data, error } = await supabase
-      .from('contracts')
-      .select('contract_id, employee_code, contract_type, contract_start_date, contract_end_date, status')
-      .order(CONTRACTS_ORDER_COLUMN, { ascending: true })
-      .range(from, from + step - 1);
-    if (error) throw error;
-    if (!data?.length) break;
-    rows.push(...data);
-    if (data.length < step) break;
-  }
-  return rows;
-};
-
 /* ───────────────────────── Component ───────────────────────── */
 
 export default function DashboardPage() {
   const { employees: contextEmployees, loading: contextLoading, refresh: refreshContext } = useAppData();
 
-  const [contracts, setContracts] = useState<any[]>([]);
-  const [contractsLoading, setContractsLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [allEmployees, setAllEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
-
+  
   const [activeKpiFilter, setActiveKpiFilter] = useState<'all' | 'fixed' | 'perm' | 'aboveAge' | 'expiring' | 'turning60'>('all');
 
   const [showAgeModal, setShowAgeModal] = useState(false);
-
+  
   const currentYear = new Date().getFullYear();
   const currentYearStr = String(currentYear);
   const [ageFilterYear, setAgeFilterYear] = useState<string>(currentYearStr);
@@ -201,58 +193,71 @@ export default function DashboardPage() {
 
   const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<{ label: string; count: number; color: string; emps: any[] } | null>(null);
-
+  
   const [ageSortCol, setAgeSortCol] = useState<string>('employee_name');
   const [ageSortDir, setAgeSortDir] = useState<'asc' | 'desc'>('asc');
 
-  // Fetch contracts independently of employees
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setContractsLoading(true);
-      setLoadError(null);
-      try {
-        const rows = await fetchAllContracts();
-        if (!cancelled) setContracts(rows);
-      } catch (err) {
-        if (cancelled) return;
-        console.error('Error loading contracts:', err);
-        setContracts([]);
-        setLoadError('تعذر تحميل العقود، البيانات المعروضة قد تكون غير مكتملة');
-      } finally {
-        if (!cancelled) setContractsLoading(false);
+  // 🚀 السحب والدمج مع إضافة reloadKey لضمان التحديث عند الضغط على زر "تحديث البيانات"
+  const fetchContractsAndMerge = async () => {
+    setLoading(true);
+    try {
+      let allContracts: any[] = [];
+      let from = 0;
+      const step = 1000;
+      
+      while (true) {
+        const { data, error } = await supabase
+          .from('contracts')
+          .select('contract_id, employee_code, contract_type, contract_start_date, contract_end_date, status')
+          .range(from, from + step - 1);
+
+        if (error || !data || data.length === 0) break;
+        allContracts = [...allContracts, ...data];
+        if (data.length < step) break;
+        from += step;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [reloadKey]);
 
-  const loading = contextLoading || contractsLoading;
+      const contractsMap = new Map<string, any[]>();
+      allContracts.forEach(c => {
+        if (!c) return;
+        const cCode = cleanCode(c.employee_code);
+        if (!cCode) return;
+        if (!contractsMap.has(cCode)) contractsMap.set(cCode, []);
+        contractsMap.get(cCode)?.push(c);
+      });
 
-  // Merge latest contract into each employee
-  const allEmployees = useMemo(() => {
-    const contractsMap = new Map<string, any[]>();
-    contracts.forEach((c) => {
-      if (!c) return;
-      const code = cleanCode(c.employee_code);
-      if (!code) return;
-      if (!contractsMap.has(code)) contractsMap.set(code, []);
-      contractsMap.get(code)!.push(c);
-    });
+      const merged = (contextEmployees || []).map(emp => {
+        const empCodeRaw = getField(emp, 'employee_code', 'EmployeeCode');
+        const eCodeClean = cleanCode(empCodeRaw);
+        
+        const empContracts = contractsMap.get(eCodeClean) || [];
+        const latestContract = pickLatestContract(empContracts);
 
-    return (contextEmployees || []).map((emp: any) => {
-      const code = cleanCode(getField(emp, 'employee_code', 'EmployeeCode'));
-      const latest = pickLatestContract(contractsMap.get(code) || []);
+        return {
+          ...emp,
+          contract_type: latestContract?.contract_type || emp.contract_type || '—',
+          contract_start_date: latestContract?.contract_start_date || emp.hiring_date || null,
+          contract_end_date: latestContract?.contract_end_date || emp.contract_end_date || null,
+        };
+      });
 
-      return {
-        ...emp,
-        contract_type: latest ? latest.contract_type || '—' : emp.contract_type || '—',
-        contract_start_date: latest ? latest.contract_start_date || null : emp.hiring_date || null,
-        contract_end_date: latest ? latest.contract_end_date || null : emp.contract_end_date || null,
-      };
-    });
-  }, [contextEmployees, contracts]);
+      setAllEmployees(merged);
+    } catch (err) {
+      console.error('Error merging contracts:', err);
+      setAllEmployees(contextEmployees || []);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchContractsAndMerge();
+  }, [contextEmployees, contextLoading, reloadKey]); // 👈 reloadKey ensures manual refresh works
+
+  const handleRefresh = () => {
+    refreshContext();
+    setReloadKey((k) => k + 1); // 👈 يجبر التحديث فوراً
+  };
 
   const companiesList = useMemo(
     () => Array.from(new Set(allEmployees.map((e: any) => getField(e, 'company', 'Company')).filter(Boolean))) as string[],
@@ -266,109 +271,112 @@ export default function DashboardPage() {
   const yearOptions = useMemo(() => Array.from({ length: 6 }, (_, i) => String(currentYear + i)), [currentYear]);
 
   const dashboardData = useMemo(() => {
-    const activeEmployeesOnly = allEmployees.filter(
-      (emp: any) =>
-        String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' &&
-        !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
+    const targetExpiryYear = currentYear + 1;
+
+    const activeEmployeesOnly = (allEmployees || []).filter(emp => 
+      String(getField(emp, 'status', 'Status') || 'Active').toLowerCase() === 'active' && 
+      !String(getField(emp, 'department', 'Department') || '').includes('تحويلات')
     );
 
-    const matchesKpi = (emp: any) => {
-      const type = getType(emp);
-      const days = getDaysRemaining(getField(emp, 'contract_end_date', 'ContractEndDate'));
-      switch (activeKpiFilter) {
-        case 'fixed':
-          return isFixed(type);
-        case 'perm':
-          return isPermanent(type);
-        case 'aboveAge':
-          return isAboveAge(type);
-        case 'expiring':
-          return !isPermanent(type) && days !== null && days >= 0 && days <= 60;
-        case 'turning60': {
-          const a = getAge60Info(getField(emp, 'national_id', 'NationalID'), getField(emp, 'birth_date', 'BirthDate'));
-          return !!a && a.daysUntil60 >= 0 && a.daysUntil60 <= 60;
-        }
-        default:
-          return true;
-      }
-    };
+    const baseFilteredEmps = activeEmployeesOnly.filter((emp) => {
+      const empComp = String(getField(emp, 'company', 'Company') || '').toLowerCase();
+      const empDept = String(getField(emp, 'department', 'Department') || '').toLowerCase();
+      
+      const matchesComp = !filterCompany || empComp.includes(filterCompany.toLowerCase());
+      const matchesDept = !filterDept || empDept.includes(filterDept.toLowerCase());
+      return matchesComp && matchesDept;
+    });
 
-    const companyFiltered = activeEmployeesOnly.filter((e: any) =>
-      matchText(getField(e, 'company', 'Company'), filterCompany, companiesList)
-    );
-    const baseFilteredEmps = companyFiltered.filter((e: any) => matchText(getDept(e), filterDept, deptsList));
-    const kpiFilteredEmps = baseFilteredEmps.filter(matchesKpi);
-
-    let totalFixed = 0,
-      totalPerm = 0,
-      totalAboveAge = 0,
-      totalExpiringSoon = 0;
+    let totalFixed = 0, totalPerm = 0, totalAboveAge = 0, totalExpiringSoon = 0;
     const futureTurning60List: any[] = [];
-    let turning60SoonCount = 0;
+    const turning60SoonList: any[] = [];
 
-    baseFilteredEmps.forEach((emp: any) => {
+    baseFilteredEmps.forEach((emp) => {
       const type = getType(emp);
+      const nationalId = getField(emp, 'national_id', 'NationalID');
+      const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
+      const dept = getDept(emp);
 
       if (isPermanent(type)) totalPerm++;
       else if (isAboveAge(type)) totalAboveAge++;
       else totalFixed++;
 
-      const days = getDaysRemaining(getField(emp, 'contract_end_date', 'ContractEndDate'));
-      if (!isPermanent(type) && days !== null && days >= 0 && days <= 60) totalExpiringSoon++;
+      const days = getDaysRemaining(endDateStr);
+      if (!isPermanent(type) && days !== null && days >= 0 && days <= 60) {
+        totalExpiringSoon++;
+      }
 
-      const ageInfo = getAge60Info(getField(emp, 'national_id', 'NationalID'), getField(emp, 'birth_date', 'BirthDate'));
+      const ageInfo = getAge60Info(nationalId, birthDateRaw);
       if (ageInfo && ageInfo.daysUntil60 >= 0) {
-        futureTurning60List.push({
-          ...emp,
-          employee_code: empCode,
-          employee_name: empName,
-          department: getDept(emp),
-          contract_type: type,
-          birthDate: ageInfo.birthDate,
-          age60Date: ageInfo.age60Date,
-          daysLeft: ageInfo.daysUntil60,
-          year60: ageInfo.year60,
-          month60: ageInfo.month60,
-        });
-        if (ageInfo.daysUntil60 <= 60) turning60SoonCount++;
+        const item = {
+          ...emp, employee_code: empCode, employee_name: empName, department: dept,
+          contract_type: type, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date,
+          daysLeft: ageInfo.daysUntil60, year60: ageInfo.year60, month60: ageInfo.month60,
+          contract_end_date: endDateStr
+        };
+        futureTurning60List.push(item);
+        if (ageInfo.daysUntil60 <= 60) turning60SoonList.push(item);
       }
     });
 
-    const deptsCount: Record<string, number> = {};
-    companyFiltered.filter(matchesKpi).forEach((emp: any) => {
-      const d = getDept(emp);
-      deptsCount[d] = (deptsCount[d] || 0) + 1;
+    const kpiFilteredEmps = baseFilteredEmps.filter((emp) => {
+      const type = getType(emp);
+      const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
+      const days = getDaysRemaining(endDateStr);
+      const nationalId = getField(emp, 'national_id', 'NationalID');
+      const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
+      const ageInfo = getAge60Info(nationalId, birthDateRaw);
+
+      if (activeKpiFilter === 'fixed') return isFixed(type);
+      if (activeKpiFilter === 'perm') return isPermanent(type);
+      if (activeKpiFilter === 'aboveAge') return isAboveAge(type);
+      if (activeKpiFilter === 'expiring') return !isPermanent(type) && days !== null && days >= 0 && days <= 60;
+      if (activeKpiFilter === 'turning60') return ageInfo !== null && ageInfo.daysUntil60 >= 0 && ageInfo.daysUntil60 <= 60;
+
+      return true;
     });
 
+    const deptsCount: Record<string, number> = {};
     const alerts: any[] = [];
+
     const monthsNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const contractsByMonth = monthsNames.map((name) => ({ name, count: 0, emps: [] as any[] }));
 
-    kpiFilteredEmps.forEach((emp: any) => {
+    kpiFilteredEmps.forEach((emp) => {
       const type = getType(emp);
       const dept = getDept(emp);
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
 
-      if (!isPermanent(type)) {
-        const endDate = parseLocalDate(endDateStr);
-        if (endDate && endDate.getFullYear() === chartYear) {
-          const m = endDate.getMonth();
-          contractsByMonth[m].count++;
-          contractsByMonth[m].emps.push({
-            employee_code: empCode,
-            employee_name: empName,
-            department: dept,
-            contract_end_date: endDateStr,
-          });
-        }
+      deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
+      if (endDateStr && !isPermanent(type)) {
+        const ts = getTimestamp(endDateStr);
+        if (ts > 0) {
+          const endDate = new Date(ts);
+          if (endDate.getFullYear() === chartYear) {
+            const monthIdx = endDate.getMonth();
+            if (monthIdx >= 0 && monthIdx < 12) {
+              contractsByMonth[monthIdx].count++;
+              contractsByMonth[monthIdx].emps.push({
+                employee_code: empCode,
+                employee_name: empName,
+                department: dept,
+                contract_end_date: endDateStr
+              });
+            }
+          }
+        }
+      }
+
+      if (!isPermanent(type)) {
         const days = getDaysRemaining(endDateStr);
         if (days !== null && days >= 0 && days <= 60) {
-          alerts.push({ ...emp, employee_code: empCode, employee_name: empName, department: dept, contract_end_date: endDateStr, days, status: 'expiring' });
+          alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
         }
       }
     });
@@ -393,15 +401,15 @@ export default function DashboardPage() {
       aboveAgePct: calcPct(totalAboveAge),
       expiringSoonCount: totalExpiringSoon,
       expiringSoonPct: calcPct(totalExpiringSoon),
-      turning60SoonCount,
-      allDepts,
+      turning60SoonCount: turning60SoonList.length,
+      allDepts, 
       alertsTotal: alerts.length,
       urgentAlerts: alerts.slice(0, 20),
       contractsByMonth,
       futureTurning60List,
-      kpiFilteredEmps,
+      kpiFilteredEmps
     };
-  }, [allEmployees, filterCompany, filterDept, activeKpiFilter, chartYear, companiesList, deptsList]);
+  }, [allEmployees, filterCompany, filterDept, activeKpiFilter, chartYear]);
 
   const filteredAge60ModalList = useMemo(() => {
     return dashboardData.futureTurning60List.filter((emp) => {
@@ -418,10 +426,10 @@ export default function DashboardPage() {
       from40: { label: 'موظفين أعمارهم (40 - 49)', count: 0, color: '#8b5cf6', emps: [] as any[] },
       from50: { label: 'موظفين أعمارهم (50 - 59)', count: 0, color: '#f59e0b', emps: [] as any[] },
       over60: { label: 'فوق السن (60+)', count: 0, color: '#ef4444', emps: [] as any[] },
-      unrecorded: { label: 'غير مسجل', count: 0, color: '#94a3b8', emps: [] as any[] },
+      unrecorded: { label: 'غير مسجل', count: 0, color: '#94a3b8', emps: [] as any[] }
     };
-
-    dashboardData.kpiFilteredEmps.forEach((emp: any) => {
+    
+    dashboardData.kpiFilteredEmps.forEach(emp => {
       const age = getEmployeeAge(emp);
       if (age === null) { groups.unrecorded.count++; groups.unrecorded.emps.push(emp); }
       else if (age < 30) { groups.u30.count++; groups.u30.emps.push(emp); }
@@ -432,16 +440,16 @@ export default function DashboardPage() {
     });
 
     const total = dashboardData.kpiFilteredEmps.length || 1;
-    const validGroups = Object.values(groups).filter((g) => g.count > 0);
-
+    const validGroups = Object.values(groups).filter(g => g.count > 0);
+    
     let currentOffset = 100;
     let currentTextPct = 0;
 
-    return validGroups.map((g) => {
+    return validGroups.map(g => {
       const pct = (g.count / total) * 100;
       const dashOffset = currentOffset;
       currentOffset -= pct;
-
+      
       const midPct = currentTextPct + pct / 2;
       currentTextPct += pct;
 
@@ -459,22 +467,22 @@ export default function DashboardPage() {
         return ageSortDir === 'asc' ? valA - valB : valB - valA;
       }
       const keyMap: Record<string, string[]> = {
-        employee_code: ['employee_code', 'EmployeeCode'],
-        employee_name: ['employee_name', 'ArabicName', 'EmployeeName'],
-        department: ['department', 'Department'],
-        job_title: ['job_title', 'JobTitle'],
-        contract_type: ['contract_type', 'ContractType'],
-        contract_end_date: ['contract_end_date', 'ContractEndDate'],
+        'employee_code': ['employee_code', 'EmployeeCode'],
+        'employee_name': ['employee_name', 'ArabicName'],
+        'department': ['department', 'Department'],
+        'job_title': ['job_title', 'JobTitle'],
+        'contract_type': ['contract_type', 'ContractType'],
+        'contract_end_date': ['contract_end_date', 'ContractEndDate']
       };
       const keys = keyMap[ageSortCol] || [ageSortCol];
-      const res = getField(a, ...keys).localeCompare(getField(b, ...keys), 'ar', { numeric: true });
+      const res = String(getField(a, ...keys)).localeCompare(String(getField(b, ...keys)), 'ar', { numeric: true });
       return ageSortDir === 'asc' ? res : -res;
     });
   }, [selectedAgeGroup, ageSortCol, ageSortDir]);
 
   const handleAgeSort = (col: string) => {
     if (ageSortCol === col) {
-      setAgeSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      setAgeSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
       setAgeSortCol(col);
       setAgeSortDir('asc');
@@ -483,23 +491,16 @@ export default function DashboardPage() {
 
   const renderAgeSortArrow = (col: string) => {
     if (ageSortCol !== col) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
-    return ageSortDir === 'asc'
-      ? <span style={{ color: '#0d9488', marginRight: '4px' }}>▲</span>
-      : <span style={{ color: '#0d9488', marginRight: '4px' }}>▼</span>;
+    return ageSortDir === 'asc' ? <span style={{ color: '#0d9488', marginRight: '4px' }}>▲</span> : <span style={{ color: '#0d9488', marginRight: '4px' }}>▼</span>;
   };
 
   const handleRowClick = (empCode: string) => navigateTo('contracts', { jumpSearch: empCode });
 
-  const handleRefresh = () => {
-    refreshContext();
-    setReloadKey((k) => k + 1);
-  };
-
-  const maxMonthCount = Math.max(...dashboardData.contractsByMonth.map((m) => m.count), 1);
+  const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
   return (
     <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
-
+      
       {/* رأس الصفحة */}
       <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px 24px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
@@ -511,11 +512,12 @@ export default function DashboardPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <input list="dashCompList" className="field" placeholder="🏢 كل الشركات (ابحث...)" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
-          <datalist id="dashCompList">{companiesList.map((c, i) => <option key={i} value={c} />)}</datalist>
+          <datalist id="dashCompList">{companiesList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
 
           <input list="dashDeptList" className="field" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
-          <datalist id="dashDeptList">{deptsList.map((d, i) => <option key={i} value={d} />)}</datalist>
+          <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
 
+          {/* 🚀 الزر السحري الجديد */}
           <button style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }} onClick={handleRefresh}>تحديث البيانات 🔄</button>
 
           {(filterCompany || filterDept || activeKpiFilter !== 'all') && (
@@ -524,89 +526,25 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {loadError && (
-        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', padding: '10px 16px', borderRadius: '12px', fontSize: '12px', fontWeight: 'bold' }}>
-          ⚠️ {loadError}
-        </div>
-      )}
-
       {/* 🌟 الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard
-            loading={loading}
-            tone="brass"
-            title="إجمالي الموظفين"
-            value={dashboardData.totalEmps}
-            sub={activeKpiFilter === 'all' ? 'المعروض (الكل)' : 'اضغط لعرض الكل'}
-            icon="👥"
-            onClick={() => setActiveKpiFilter('all')}
-          />
+          <KpiCard loading={loading} tone="brass" title="إجمالي الموظفين" value={dashboardData.totalEmps} sub={activeKpiFilter === 'all' ? "المعروض (الكل)" : "اضغط لعرض الكل"} icon="👥" onClick={() => setActiveKpiFilter('all')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'fixed' ? '2px solid #3b82f6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard
-            loading={loading}
-            tone="blue"
-            title="عقود محددة المدة"
-            value={dashboardData.fixedCount}
-            sub={`نسبة ${dashboardData.fixedPct}% من القوة`}
-            icon="📂"
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'fixed' ? 'all' : 'fixed')}
-          />
+          <KpiCard loading={loading} tone="blue" title="عقود محددة المدة" value={dashboardData.fixedCount} sub={`نسبة ${dashboardData.fixedPct}% من القوة`} icon="📂" onClick={() => setActiveKpiFilter(activeKpiFilter === 'fixed' ? 'all' : 'fixed')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'perm' ? '2px solid #10b981' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard
-            loading={loading}
-            tone="green"
-            title="عقود دائمة"
-            value={dashboardData.permCount}
-            sub={`نسبة ${dashboardData.permPct}% من القوة`}
-            icon="🛡️"
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'perm' ? 'all' : 'perm')}
-          />
+          <KpiCard loading={loading} tone="green" title="عقود دائمة" value={dashboardData.permCount} sub={`نسبة ${dashboardData.permPct}% من القوة`} icon="🛡️" onClick={() => setActiveKpiFilter(activeKpiFilter === 'perm' ? 'all' : 'perm')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'aboveAge' ? '2px solid #8b5cf6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard
-            loading={loading}
-            tone="purple"
-            title="فوق السن (60+)"
-            value={dashboardData.aboveAgeCount}
-            sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`}
-            icon="💼"
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')}
-          />
+          <KpiCard loading={loading} tone="purple" title="فوق السن (60+)" value={dashboardData.aboveAgeCount} sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} icon="💼" onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard
-            loading={loading}
-            tone="amber"
-            title="تنتهي قريباً (60 يوم)"
-            value={dashboardData.expiringSoonCount}
-            sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`}
-            icon="⏳"
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')}
-          />
+          <KpiCard loading={loading} tone="amber" title="تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} icon="⏳" onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard
-            loading={loading}
-            tone="red"
-            title="سيبلغون الـ 60 (60 يوم)"
-            value={dashboardData.turning60SoonCount}
-            sub="عرض الجدول والنافذة 🎂"
-            icon="🎂"
-            onClick={() => {
-              setActiveKpiFilter('turning60');
-              setAgeFilterYear(''); 
-              setAgeFilterMonth('');
-              setShowAgeModal(true);
-            }}
-          />
+          <KpiCard loading={loading} tone="red" title="سيبلغون الـ 60 (60 يوم)" value={dashboardData.turning60SoonCount} sub="عرض الجدول والنافذة 🎂" icon="🎂" onClick={() => { setActiveKpiFilter('turning60'); setAgeFilterYear(''); setAgeFilterMonth(''); setShowAgeModal(true); }} />
         </div>
       </div>
 
@@ -643,17 +581,10 @@ export default function DashboardPage() {
               const percentage = (dept.count / max) * 100;
               const isActiveDept = filterDept === dept.name;
               return (
-                <div
-                  key={idx}
+                <div 
+                  key={idx} 
                   onClick={() => setFilterDept(isActiveDept ? '' : dept.name)}
-                  style={{
-                    cursor: 'pointer',
-                    padding: '8px',
-                    borderRadius: '8px',
-                    background: isActiveDept ? '#f0fdf4' : 'transparent',
-                    border: isActiveDept ? '1px solid #86efac' : '1px solid transparent',
-                    transition: 'all 0.2s',
-                  }}
+                  style={{ cursor: 'pointer', padding: '8px', borderRadius: '8px', background: isActiveDept ? '#f0fdf4' : 'transparent', border: isActiveDept ? '1px solid #86efac' : '1px solid transparent', transition: 'all 0.2s' }}
                   onMouseEnter={(e) => !isActiveDept && (e.currentTarget.style.background = '#f8fafc')}
                   onMouseLeave={(e) => !isActiveDept && (e.currentTarget.style.background = 'transparent')}
                 >
@@ -688,8 +619,8 @@ export default function DashboardPage() {
             {dashboardData.contractsByMonth.map((month, idx) => {
               const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
               return (
-                <div
-                  key={idx}
+                <div 
+                  key={idx} 
                   className="flex-1 flex flex-col items-center justify-end h-full"
                   onClick={() => month.count > 0 && setSelectedChartMonth(month)}
                   style={{ cursor: month.count > 0 ? 'pointer' : 'default', transition: 'all 0.2s' }}
@@ -709,8 +640,8 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5">
-
-        {/* 🎂 كارت التوزيع العمري */}
+        
+        {/* 🎂 كارت التوزيع العمري التفاعلي المدمج مباشرة */}
         <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-1">
           <div className="flex items-center justify-between mb-2">
             <h3 style={{ margin: 0, fontSize: '13.5px', color: '#0f172a', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -718,14 +649,14 @@ export default function DashboardPage() {
             </h3>
             <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>تفاعلي 👆</span>
           </div>
-
+          
           <div style={{ height: '330px', width: '100%' }}>
             {ageData.length > 0 ? (
               <div className="flex flex-col items-center justify-center w-full h-full gap-6 mt-4">
                 <div style={{ position: 'relative', width: '200px', height: '200px' }}>
                   <svg width="100%" height="100%" viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
                     <circle cx="21" cy="21" r="15.91549431" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
-
+                    
                     {ageData.map((slice, idx) => (
                       <circle
                         key={`slice-${idx}`}
@@ -753,7 +684,7 @@ export default function DashboardPage() {
                     {ageData.map((slice, idx) => {
                       if (slice.pct < 1) return null;
                       const angle = (slice.midPct / 100) * 2 * Math.PI;
-                      const r = 15.91549431;
+                      const r = 15.91549431; 
                       const x = 21 + r * Math.cos(angle);
                       const y = 21 + r * Math.sin(angle);
 
@@ -775,23 +706,23 @@ export default function DashboardPage() {
                       );
                     })}
                   </svg>
-
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>تصفية الفلتر</span>
+                  
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', pointerEvents: 'none' }}>
+                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginTop: '70px' }}>تصفية الفلتر</span>
                     <span style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
                   </div>
                 </div>
 
                 <div className="w-full grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] font-bold px-2">
                   {ageData.map((slice, idx) => (
-                    <div
-                      key={idx}
-                      className="flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors"
+                    <div 
+                      key={idx} 
+                      className="flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors" 
                       title="اضغط لعرض الموظفين"
                       onClick={() => setSelectedAgeGroup(slice)}
                       style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = slice.color)}
-                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = slice.color}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
                     >
                       <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: slice.color }} />
                       <span className="text-[#334155] truncate flex-1">{slice.label}</span>
@@ -812,7 +743,7 @@ export default function DashboardPage() {
         <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: '#dc2626' }}>
-              <span className="text-base">🚨</span> مهام عاجلة للمجموعة العاملة (تنتهي خلال 60 يوم) ({dashboardData.alertsTotal})
+              <span className="text-base">🚨</span> مهام عاجلة للمجموعة العاملة (تنتهي خلال 60 يوم)
               {dashboardData.alertsTotal > dashboardData.urgentAlerts.length && (
                 <span style={{ fontSize: '10px', color: '#64748b', fontWeight: 'bold' }}>— عرض أول {dashboardData.urgentAlerts.length}</span>
               )}
@@ -836,7 +767,7 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {dashboardData.urgentAlerts.map((alert) => (
-                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')} onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}>
+                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <td style={{ padding: '8px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(alert, 'employee_code', 'EmployeeCode')}</td>
                       <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{getField(alert, 'employee_name', 'ArabicName')}</td>
                       <td style={{ padding: '8px', color: '#64748b', fontSize: '11px' }}>{alert.department || '—'}</td>
@@ -855,7 +786,7 @@ export default function DashboardPage() {
 
       {selectedAgeGroup && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: 'min(900px, 100%)', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '900px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
               <div className="flex items-center gap-3">
                 <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: selectedAgeGroup.color }} />
@@ -892,7 +823,7 @@ export default function DashboardPage() {
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'department', 'Department') || '—'}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
-                        <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: selectedAgeGroup.color }}>{age !== null ? `${age} سنة` : '—'}</td>
+                        <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: selectedAgeGroup.color }}>{age ? `${age} سنة` : '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{getField(emp, 'contract_type', 'ContractType') || '—'}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{getField(emp, 'contract_end_date', 'ContractEndDate') || '—'}</td>
                       </tr>
@@ -905,9 +836,10 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* 🎂 نافذة بلوغ سن الـ 60 المنبثقة المحدثة */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: 'min(850px, 100%)', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '16px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '900' }}>
                 🎂 جدولة الموظفين القادمين لسن الـ 60 (المتقاعدون مستقبلاً)
@@ -917,12 +849,14 @@ export default function DashboardPage() {
 
             <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>فلترة موعد التقاعد القادم:</span>
-
+              
               <select value={ageFilterYear} onChange={(e) => setAgeFilterYear(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}>
-                {yearOptions.map((y) => (
-                  <option key={y} value={y}>سنة {y}</option>
-                ))}
-                <option value="">كل السنوات</option>
+                <option value="2026">سنة 2026 (الافتراضي)</option>
+                <option value="2027">سنة 2027</option>
+                <option value="2028">سنة 2028</option>
+                <option value="2029">سنة 2029</option>
+                <option value="2030">سنة 2030</option>
+                <option value="">كل السنوات (حتى 2030)</option>
               </select>
 
               <select value={ageFilterMonth} onChange={(e) => setAgeFilterMonth(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}>
@@ -963,8 +897,7 @@ export default function DashboardPage() {
                       <th style={{ padding: '10px' }}>الموظف</th>
                       <th style={{ padding: '10px' }}>الإدارة</th>
                       <th style={{ padding: '10px' }}>نوع العقد</th>
-                      <th style={{ padding: '10px' }}>بداية العقد</th>
-                      <th style={{ padding: '10px' }}>نهاية العقد</th>
+                      <th style={{ padding: '10px', color: '#0f172a' }}>نهاية العقد</th>
                       <th style={{ padding: '10px' }}>تاريخ الميلاد</th>
                       <th style={{ padding: '10px' }}>تاريخ بلوغ الـ 60</th>
                       <th style={{ padding: '10px', textAlign: 'center' }}>المتبقي لبلوغ الـ 60</th>
@@ -978,8 +911,7 @@ export default function DashboardPage() {
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{emp.contract_type}</td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace' }}>{getField(emp, 'contract_start_date') || '—'}</td>
-                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'contract_end_date', 'ContractEndDate') || '—'}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>{emp.contract_end_date || '—'}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#b45309' }}>{emp.age60Date}</td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
@@ -1004,7 +936,7 @@ export default function DashboardPage() {
 
       {selectedChartMonth && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: 'min(700px, 100%)', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
               <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>
                 🗓️ عقود تنتهي في {selectedChartMonth.name} {chartYear}
