@@ -20,7 +20,6 @@ const getField = (obj: any, ...keys: string[]) => {
 const cleanCode = (code: any) =>
   code === null || code === undefined ? '' : String(code).replace(/\s+/g, '').toLowerCase().replace(/^0+(?=.)/, '');
 
-// دالة ذكية لتحويل أي صيغة تاريخ لرقم عشان الترتيب والحسابات الدقيقة
 const getTimestamp = (v: any): number => {
   if (!v) return 0;
   const s = String(v).trim();
@@ -105,7 +104,6 @@ const isPermanent = (t: string) => t.includes('دائم') || t.includes('غير 
 const isAboveAge = (t: string) => t.includes('فوق السن');
 const isFixed = (t: string) => !isPermanent(t) && !isAboveAge(t);
 
-// 🚀 الخوارزمية الصارمة والنهائية لاختيار أحدث عقد
 const pickLatestContract = (list: any[]) => {
   if (!list || !list.length) return undefined;
   
@@ -115,22 +113,18 @@ const pickLatestContract = (list: any[]) => {
   };
 
   return [...list].sort((a, b) => {
-    // 1. الأولوية للحالة (Active الأول)
     const actA = isActive(a);
     const actB = isActive(b);
     if (actA !== actB) return actB - actA;
 
-    // 2. الأحدث في تاريخ البداية يكسب
     const sA = getTimestamp(a.contract_start_date);
     const sB = getTimestamp(b.contract_start_date);
     if (sA !== sB) return sB - sA;
 
-    // 3. لو البداية متطابقة، الأحدث في تاريخ الانتهاء يكسب (العقد الدائم قيمته Infinity فيكسب دايماً)
     const eA = a.contract_end_date ? getTimestamp(a.contract_end_date) : Infinity;
     const eB = b.contract_end_date ? getTimestamp(b.contract_end_date) : Infinity;
     if (eA !== eB) return eB - eA;
 
-    // 4. لو كله متطابق، الأكبر في الـ ID
     const idA = parseInt(a.contract_id || 0, 10);
     const idB = parseInt(b.contract_id || 0, 10);
     if (!isNaN(idA) && !isNaN(idB) && idA !== idB) return idB - idA;
@@ -182,7 +176,8 @@ export default function DashboardPage() {
   const [ageFilterYear, setAgeFilterYear] = useState<string>(currentYearStr);
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
-  const [chartYear, setChartYear] = useState<number>(currentYear);
+  // 🚀 التعديل هنا: السنة الافتراضية للرسم البياني أصبحت (السنة الحالية + 1) يعني خطة 2027
+  const [chartYear, setChartYear] = useState<number>(currentYear + 1);
 
   const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
   const [selectedAgeGroup, setSelectedAgeGroup] = useState<{ label: string; count: number; color: string; emps: any[] } | null>(null);
