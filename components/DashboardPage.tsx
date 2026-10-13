@@ -15,7 +15,7 @@ const getField = (obj: any, ...keys: string[]) => {
   return '';
 };
 
-// 🌟 دالة توحيد وتنظيف كود الموظف لضمان تطابق المقارنة 100%
+// دالة توحيد وتنظيف كود الموظف
 const cleanCode = (code: any) => {
   if (!code && code !== 0) return '';
   return String(code).trim().replace(/^0+/, '');
@@ -50,7 +50,6 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  // 🚀 دالة جلب العقود النشطة المحدثة ومطابقتها بأمان تام
   const fetchContractsAndMerge = async () => {
     setLoading(true);
     try {
@@ -58,7 +57,6 @@ export default function DashboardPage() {
       let from = 0;
       const step = 1000;
       
-      // جلب كافة العقود المتاحة من جدول contracts
       while (true) {
         const { data, error } = await supabase
           .from('contracts')
@@ -71,7 +69,6 @@ export default function DashboardPage() {
         from += step;
       }
 
-      // تجميع العقود حسب كود الموظف
       const contractsMap = new Map<string, any[]>();
       allContracts.forEach(c => {
         if (!c) return;
@@ -81,14 +78,12 @@ export default function DashboardPage() {
         contractsMap.get(cCode)?.push(c);
       });
 
-      // الدمج المباشر مع بيانات الموظفين
       const merged = (contextEmployees || []).map(emp => {
         const empCodeRaw = getField(emp, 'employee_code', 'EmployeeCode');
         const eCodeClean = cleanCode(empCodeRaw);
         
         const empContracts = contractsMap.get(eCodeClean) || [];
 
-        // إعطاء الأولوية للعقود النشطة أولاً، ثم ترتيبها بالأحدث تاريخ نهاية
         empContracts.sort((a, b) => {
           if (a.status === 'Active' && b.status !== 'Active') return -1;
           if (a.status !== 'Active' && b.status === 'Active') return 1;
@@ -103,7 +98,6 @@ export default function DashboardPage() {
           ...emp,
           contract_type: latestContract?.contract_type || emp.contract_type || '—',
           contract_start_date: latestContract?.contract_start_date || emp.hiring_date || null,
-          // 🚀 قراءة القيمة الحقيقية للانتهاء من جدول العقود فوراً
           contract_end_date: latestContract?.contract_end_date || emp.contract_end_date || null,
         };
       });
@@ -362,6 +356,7 @@ export default function DashboardPage() {
     });
   }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
+  // تجهيز وحسابات التوزيع العمري بشكل محمي من أخطاء الريندر
   const ageData = useMemo(() => {
     const groups = {
       u30: { label: 'موظفين أعمارهم (أقل من 30)', count: 0, color: '#10b981', emps: [] as any[] },
@@ -383,9 +378,21 @@ export default function DashboardPage() {
     });
 
     const total = dashboardData.kpiFilteredEmps.length || 1;
-    return Object.values(groups)
-      .filter(g => g.count > 0)
-      .map(g => ({ ...g, pct: (g.count / total) * 100 }));
+    const validGroups = Object.values(groups).filter(g => g.count > 0);
+    
+    let currentOffset = 100;
+    let currentTextPct = 0;
+
+    return validGroups.map(g => {
+      const pct = (g.count / total) * 100;
+      const dashOffset = currentOffset;
+      currentOffset -= pct;
+      
+      const midPct = currentTextPct + pct / 2;
+      currentTextPct += pct;
+
+      return { ...g, pct, dashOffset, midPct };
+    });
   }, [dashboardData.kpiFilteredEmps]);
 
   const sortedAgeGroupEmps = useMemo(() => {
@@ -436,105 +443,8 @@ export default function DashboardPage() {
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  const renderInteractiveDonutChart = () => {
-    let cumulativePercentForSlices = 0;
-    let cumulativePercentForText = 0;
-    
-    return (
-      <div className="flex flex-col items-center justify-center w-full h-full gap-6 mt-4">
-        <div style={{ position: 'relative', width: '200px', height: '200px' }}>
-          <svg width="100%" height="100%" viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
-            <circle cx="21" cy="21" r="15.91549431" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
-            
-            {ageData.map((slice, idx) => {
-              const dashArray = `${slice.pct} ${100 - slice.pct}`;
-              const dashOffset = 100 - cumulativePercentForSlices;
-              cumulativePercentForSlices += slice.pct;
-              
-              return (
-                <circle
-                  key={`slice-${idx}`}
-                  cx="21"
-                  cy="21"
-                  r="15.91549431"
-                  fill="transparent"
-                  stroke={slice.color}
-                  strokeWidth="6"
-                  strokeDasharray={dashArray}
-                  strokeDashoffset={dashOffset}
-                  onClick={() => setSelectedAgeGroup(slice)}
-                  style={{ cursor: 'pointer', transition: 'stroke-width 0.2s ease-in-out, filter 0.2s' }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.strokeWidth = '8';
-                    e.currentTarget.style.filter = 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.strokeWidth = '6';
-                    e.currentTarget.style.filter = 'none';
-                  }}
-                />
-              );
-            })}
-
-            {ageData.map((slice, idx) => {
-              const midPct = cumulativePercentForText + slice.pct / 2;
-              cumulativePercentForText += slice.pct;
-
-              if (slice.pct < 1) return null;
-
-              const angle = (midPct / 100) * 2 * Math.PI;
-              const r = 15.91549431; 
-              const x = 21 + r * Math.cos(angle);
-              const y = 21 + r * Math.sin(angle);
-
-              return (
-                <text
-                  key={`text-${idx}`}
-                  x={x}
-                  y={y}
-                  fill="#ffffff"
-                  fontSize="2.5"
-                  fontWeight="bold"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  transform={`rotate(90 ${x} ${y})`}
-                  style={{ pointerEvents: 'none', textShadow: '0px 1px 2px rgba(0,0,0,0.6)' }}
-                >
-                  {Math.round(slice.pct)}%
-                </text>
-              );
-            })}
-          </svg>
-          
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', pointerEvents: 'none' }}>
-            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginTop: '70px' }}>تصفية الفلتر</span>
-            <span style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
-          </div>
-        </div>
-
-        <div className="w-full grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] font-bold px-2">
-          {ageData.map((slice, idx) => (
-            <div 
-              key={idx} 
-              className="flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors" 
-              title="اضغط لعرض الموظفين"
-              onClick={() => setSelectedAgeGroup(slice)}
-              style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
-              onMouseEnter={(e) => e.currentTarget.style.borderColor = slice.color}
-              onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
-            >
-              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: slice.color }} />
-              <span className="text-[#334155] truncate flex-1">{slice.label}</span>
-              <span className="text-[#0f172a] font-mono bg-white px-2 py-0.5 rounded shadow-sm">({slice.count})</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   return (
-    <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
+    <div className="flex flex-col gap-5" style={{ direction: 'rtl', paddingBottom: '40px' }}>
       
       {/* رأس الصفحة */}
       <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px 24px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -550,4 +460,520 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <input list="dashCompList" className="field" placeholder="🏢 كل الشركات (ابحث...)" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1',
+          <input list="dashCompList" className="field" placeholder="🏢 كل الشركات (ابحث...)" value={filterCompany} onChange={(e) => setFilterCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
+          <datalist id="dashCompList">{companiesList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
+
+          <input list="dashDeptList" className="field" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
+          <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
+
+          <button style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }} onClick={() => { refreshContext(); fetchContractsAndMerge(); }}>تحديث البيانات 🔄</button>
+
+          {(filterCompany || filterDept || activeKpiFilter !== 'all') && (
+            <button style={{ background: '#f1f5f9', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }} onClick={() => { setFilterCompany(''); setFilterDept(''); setActiveKpiFilter('all'); }}>إعادة ضبط الفلاتر</button>
+          )}
+        </div>
+      </div>
+
+      {/* 🌟 الكروت السريعة */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+        <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="brass" 
+            title="إجمالي الموظفين" 
+            value={dashboardData.totalEmps} 
+            sub={activeKpiFilter === 'all' ? "المعروض (الكل)" : "اضغط لعرض الكل"} 
+            icon="👥" 
+            onClick={() => setActiveKpiFilter('all')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'fixed' ? '2px solid #3b82f6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="blue" 
+            title="عقود محددة المدة" 
+            value={dashboardData.fixedCount} 
+            sub={`نسبة ${dashboardData.fixedPct}% من القوة`} 
+            icon="📂" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'fixed' ? 'all' : 'fixed')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'perm' ? '2px solid #10b981' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="green" 
+            title="عقود دائمة" 
+            value={dashboardData.permCount} 
+            sub={`نسبة ${dashboardData.permPct}% من القوة`} 
+            icon="🛡️" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'perm' ? 'all' : 'perm')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'aboveAge' ? '2px solid #8b5cf6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="purple" 
+            title="فوق السن (60+)" 
+            value={dashboardData.aboveAgeCount} 
+            sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} 
+            icon="💼" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="amber" 
+            title="تنتهي قريباً (60 يوم)" 
+            value={dashboardData.expiringSoonCount} 
+            sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} 
+            icon="⏳" 
+            onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} 
+          />
+        </div>
+
+        <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
+          <KpiCard 
+            loading={loading} 
+            tone="red" 
+            title="سيبلغون الـ 60 (60 يوم)" 
+            value={dashboardData.turning60SoonCount} 
+            sub="عرض الجدول والنافذة 🎂" 
+            icon="🎂" 
+            onClick={() => {
+              setActiveKpiFilter('turning60');
+              setShowAgeModal(true);
+            }} 
+          />
+        </div>
+      </div>
+
+      {/* شريط الإشعار بالفلتر النشط */}
+      {activeKpiFilter !== 'all' && (
+        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '10px 16px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', color: '#166534', fontWeight: 'bold' }}>
+          <span>
+            🔍 تم تصفية الشاشة والرسوم البيانية لعرض: <strong>
+              {activeKpiFilter === 'fixed' && 'العقود محددة المدة'}
+              {activeKpiFilter === 'perm' && 'العقود الدائمة'}
+              {activeKpiFilter === 'aboveAge' && 'العمالة فوق السن (60+)'}
+              {activeKpiFilter === 'expiring' && 'العقود التي تنتهي خلال 60 يوم'}
+              {activeKpiFilter === 'turning60' && 'الموظفين البالغين لسن التقاعد قريباً'}
+            </strong> ({dashboardData.kpiFilteredCount} موظف)
+          </span>
+          <button onClick={() => setActiveKpiFilter('all')} style={{ background: '#ffffff', border: '1px solid #86efac', color: '#15803d', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize: '11px' }}>
+            عرض الكل ✕
+          </button>
+        </div>
+      )}
+
+      {/* الرسوم البيانية المتفاعلة */}
+      <div className="grid lg:grid-cols-3 gap-5">
+        <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)', display: 'flex', flexDirection: 'column' }}>
+          <div className="flex items-center justify-between mb-5">
+            <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>📊 توزيع الموظفين على الإدارات</h4>
+            <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>اضغط للفلترة 🖱️</span>
+          </div>
+          <div className="flex flex-col gap-3 overflow-y-auto pr-1" style={{ maxHeight: '250px' }}>
+            {dashboardData.allDepts.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#64748b', fontSize: '12px', padding: '20px' }}>لا توجد بيانات مطابقة لهذا الفلتر</div>
+            ) : dashboardData.allDepts.map((dept, idx) => {
+              const max = dashboardData.allDepts[0]?.count || 1;
+              const percentage = (dept.count / max) * 100;
+              const isActiveDept = filterDept === dept.name;
+              return (
+                <div 
+                  key={idx} 
+                  onClick={() => setFilterDept(isActiveDept ? '' : dept.name)}
+                  style={{ 
+                    cursor: 'pointer', 
+                    padding: '8px', 
+                    borderRadius: '8px', 
+                    background: isActiveDept ? '#f0fdf4' : 'transparent',
+                    border: isActiveDept ? '1px solid #86efac' : '1px solid transparent',
+                    transition: 'all 0.2s'
+                  }}
+                  onMouseEnter={(e) => !isActiveDept && (e.currentTarget.style.background = '#f8fafc')}
+                  onMouseLeave={(e) => !isActiveDept && (e.currentTarget.style.background = 'transparent')}
+                >
+                  <div className="flex justify-between text-[11px] font-bold mb-1.5" style={{ color: isActiveDept ? '#15803d' : '#334155' }}>
+                    <span className="truncate pl-2" title={dept.name}>{dept.name}</span>
+                    <span className="font-mono bg-white px-2 py-0.5 rounded border shadow-sm">{dept.count.toLocaleString('en-US')}</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: '#f1f5f9' }}>
+                    <div className="h-full rounded-full transition-all duration-700" style={{ width: `${percentage}%`, background: isActiveDept ? '#10b981' : 'linear-gradient(90deg, #14b8a6, #0d9488)' }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="flex flex-col lg:col-span-2">
+          <div className="flex items-center justify-between mb-5">
+            <h4 className="m-0 text-[13.5px] font-extrabold" style={{ color: '#0f172a' }}>
+              📈 توزيع تجديد عقود المجموعه لعام {dashboardData.currentYear}
+            </h4>
+            <span style={{ fontSize: '11px', fontWeight: 'bold', color: '#2563eb', background: '#eff6ff', padding: '4px 12px', borderRadius: '8px', border: '1px solid #bfdbfe' }}>
+              خطة عقود {dashboardData.targetExpiryYear} 📅
+            </span>
+          </div>
+          <div className="flex-1 flex items-end gap-1.5 sm:gap-2 h-[150px] pb-4 border-b" style={{ borderColor: '#e2e8f0' }}>
+            {dashboardData.contractsByMonth.map((month, idx) => {
+              const height = maxMonthCount > 0 ? (month.count / maxMonthCount) * 100 : 0;
+              return (
+                <div 
+                  key={idx} 
+                  className="flex-1 flex flex-col items-center justify-end h-full"
+                  onClick={() => month.count > 0 && setSelectedChartMonth(month)}
+                  style={{ cursor: month.count > 0 ? 'pointer' : 'default', transition: 'all 0.2s' }}
+                  onMouseEnter={(e) => month.count > 0 && (e.currentTarget.style.opacity = '0.8')}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
+                  <span className="text-[10px] font-mono font-bold mb-1" style={{ color: month.count > 0 ? '#10b981' : 'transparent' }}>
+                    {month.count.toLocaleString('en-US')}
+                  </span>
+                  <div className="w-full max-w-[32px] rounded-t-md transition-all duration-700" style={{ height: `${height}%`, minHeight: month.count > 0 ? '4px' : '0', background: month.count > 0 ? 'linear-gradient(180deg, #2dd4bf, #0d9488)' : '#f1f5f9' }} />
+                  <span className="text-[10px] font-bold mt-2" style={{ color: '#64748b' }}>{month.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-3 gap-5">
+        
+        {/* 🎂 كارت التوزيع العمري التفاعلي المدمج مباشرة */}
+        <div style={{ background: '#ffffff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-1">
+          <div className="flex items-center justify-between mb-2">
+            <h3 style={{ margin: 0, fontSize: '13.5px', color: '#0f172a', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🎂 التوزيع العمري للقوة العاملة
+            </h3>
+            <span style={{ fontSize: '10px', background: '#f1f5f9', color: '#64748b', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>تفاعلي 👆</span>
+          </div>
+          
+          <div style={{ height: '330px', width: '100%' }}>
+            {ageData.length > 0 ? (
+              <div className="flex flex-col items-center justify-center w-full h-full gap-6 mt-4">
+                <div style={{ position: 'relative', width: '200px', height: '200px' }}>
+                  <svg width="100%" height="100%" viewBox="0 0 42 42" style={{ transform: 'rotate(-90deg)', overflow: 'visible' }}>
+                    <circle cx="21" cy="21" r="15.91549431" fill="transparent" stroke="#f1f5f9" strokeWidth="6" />
+                    
+                    {ageData.map((slice, idx) => (
+                      <circle
+                        key={`slice-${idx}`}
+                        cx="21"
+                        cy="21"
+                        r="15.91549431"
+                        fill="transparent"
+                        stroke={slice.color}
+                        strokeWidth="6"
+                        strokeDasharray={`${slice.pct} ${100 - slice.pct}`}
+                        strokeDashoffset={slice.dashOffset}
+                        onClick={() => setSelectedAgeGroup(slice)}
+                        style={{ cursor: 'pointer', transition: 'stroke-width 0.2s ease-in-out, filter 0.2s' }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.strokeWidth = '8';
+                          e.currentTarget.style.filter = 'drop-shadow(0px 0px 4px rgba(0,0,0,0.2))';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.strokeWidth = '6';
+                          e.currentTarget.style.filter = 'none';
+                        }}
+                      />
+                    ))}
+
+                    {ageData.map((slice, idx) => {
+                      if (slice.pct < 1) return null;
+                      const angle = (slice.midPct / 100) * 2 * Math.PI;
+                      const r = 15.91549431; 
+                      const x = 21 + r * Math.cos(angle);
+                      const y = 21 + r * Math.sin(angle);
+
+                      return (
+                        <text
+                          key={`text-${idx}`}
+                          x={x}
+                          y={y}
+                          fill="#ffffff"
+                          fontSize="2.5"
+                          fontWeight="bold"
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          transform={`rotate(90 ${x} ${y})`}
+                          style={{ pointerEvents: 'none', textShadow: '0px 1px 2px rgba(0,0,0,0.6)' }}
+                        >
+                          {Math.round(slice.pct)}%
+                        </text>
+                      );
+                    })}
+                  </svg>
+                  
+                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyItems: 'center', pointerEvents: 'none' }}>
+                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 'bold', marginTop: '70px' }}>تصفية الفلتر</span>
+                    <span style={{ fontSize: '24px', fontWeight: '900', color: '#0f172a' }}>{dashboardData.kpiFilteredCount.toLocaleString('en-US')}</span>
+                  </div>
+                </div>
+
+                <div className="w-full grid grid-cols-2 gap-y-3 gap-x-2 text-[11px] font-bold px-2">
+                  {ageData.map((slice, idx) => (
+                    <div 
+                      key={idx} 
+                      className="flex items-center gap-2 p-1.5 rounded-lg cursor-pointer transition-colors" 
+                      title="اضغط لعرض الموظفين"
+                      onClick={() => setSelectedAgeGroup(slice)}
+                      style={{ background: '#f8fafc', border: '1px solid #e2e8f0' }}
+                      onMouseEnter={(e) => e.currentTarget.style.borderColor = slice.color}
+                      onMouseLeave={(e) => e.currentTarget.style.borderColor = '#e2e8f0'}
+                    >
+                      <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: slice.color }} />
+                      <span className="text-[#334155] truncate flex-1">{slice.label}</span>
+                      <span className="text-[#0f172a] font-mono bg-white px-2 py-0.5 rounded shadow-sm">({slice.count})</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '13px', fontWeight: 'bold' }}>
+                لا توجد بيانات عمرية متاحة للفئة المحددة
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 🚨 المهام العاجلة */}
+        <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }} className="lg:col-span-2">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="m-0 text-[13.5px] font-extrabold flex items-center gap-2" style={{ color: '#dc2626' }}>
+              <span className="text-base">🚨</span> مهام عاجلة للمجموعة العاملة (تنتهي خلال 60 يوم)
+            </h4>
+          </div>
+          {dashboardData.urgentAlerts.length === 0 ? (
+            <div className="text-center py-8 rounded-xl text-[13px] font-bold" style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+              لا توجد مهام عاجلة طبقاً للفلتر! 🎉
+            </div>
+          ) : (
+            <div className="overflow-y-auto pr-1" style={{ maxHeight: '290px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', position: 'sticky', top: 0, zIndex: 10 }}>
+                    <th style={{ padding: '8px' }}>الكود</th>
+                    <th style={{ padding: '8px' }}>الموظف</th>
+                    <th style={{ padding: '8px' }}>الإدارة</th>
+                    <th style={{ padding: '8px' }}>الانتهاء</th>
+                    <th style={{ padding: '8px' }}>الحالة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboardData.urgentAlerts.map((alert) => (
+                    <tr key={alert.id || alert.employee_code} onClick={() => handleRowClick(alert.employee_code)} style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer', transition: 'background 0.2s' }} onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                      <td style={{ padding: '8px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(alert, 'employee_code', 'EmployeeCode')}</td>
+                      <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{getField(alert, 'employee_name', 'ArabicName')}</td>
+                      <td style={{ padding: '8px', color: '#64748b', fontSize: '11px' }}>{alert.department || '—'}</td>
+                      <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>{alert.contract_end_date}</td>
+                      <td style={{ padding: '8px' }}>
+                        <Stamp color="amber">متبقي {alert.days} يوم</Stamp>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {selectedAgeGroup && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '900px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
+              <div className="flex items-center gap-3">
+                <div style={{ width: '16px', height: '16px', borderRadius: '50%', background: selectedAgeGroup.color }} />
+                <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>
+                  موظفين في شريحة: {selectedAgeGroup.label}
+                </h3>
+              </div>
+              <button onClick={() => setSelectedAgeGroup(null)} style={{ background: '#f1f5f9', border: 0, color: '#64748b', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            
+            <div style={{ background: '#f8fafc', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', fontSize: '12px', fontWeight: 'bold', color: '#334155' }}>
+              العدد الإجمالي: <span style={{ color: selectedAgeGroup.color, fontSize: '16px' }}>{selectedAgeGroup.count}</span> موظف
+            </div>
+
+            <div className="table-responsive">
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+                <thead>
+                  <tr style={{ background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', color: '#475569', userSelect: 'none' }}>
+                    <th onClick={() => handleAgeSort('employee_code')} style={{ padding: '10px', cursor: 'pointer' }}>الكود {renderAgeSortArrow('employee_code')}</th>
+                    <th onClick={() => handleAgeSort('employee_name')} style={{ padding: '10px', cursor: 'pointer' }}>الموظف {renderAgeSortArrow('employee_name')}</th>
+                    <th onClick={() => handleAgeSort('department')} style={{ padding: '10px', cursor: 'pointer' }}>الإدارة {renderAgeSortArrow('department')}</th>
+                    <th onClick={() => handleAgeSort('job_title')} style={{ padding: '10px', cursor: 'pointer' }}>الوظيفة {renderAgeSortArrow('job_title')}</th>
+                    <th onClick={() => handleAgeSort('age')} style={{ padding: '10px', textAlign: 'center', cursor: 'pointer' }}>السن {renderAgeSortArrow('age')}</th>
+                    <th onClick={() => handleAgeSort('contract_type')} style={{ padding: '10px', cursor: 'pointer' }}>نوع العقد {renderAgeSortArrow('contract_type')}</th>
+                    <th onClick={() => handleAgeSort('contract_end_date')} style={{ padding: '10px', cursor: 'pointer' }}>نهاية العقد {renderAgeSortArrow('contract_end_date')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedAgeGroupEmps.map((emp: any, idx: number) => {
+                    const age = getEmployeeAge(emp);
+                    return (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
+                        <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'department', 'Department') || '—'}</td>
+                        <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
+                        <td style={{ padding: '10px', textAlign: 'center', fontWeight: 'bold', color: selectedAgeGroup.color }}>{age ? `${age} سنة` : '—'}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{getField(emp, 'contract_type', 'ContractType') || '—'}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{getField(emp, 'contract_end_date', 'ContractEndDate') || '—'}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAgeModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#d97706', fontWeight: '900' }}>
+                🎂 جدولة الموظفين القادمين لسن الـ 60 (المتقاعدون مستقبلاً)
+              </h3>
+              <button onClick={() => setShowAgeModal(false)} style={{ background: '#fef3c7', border: 0, color: '#b45309', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', padding: '12px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#475569' }}>فلترة موعد التقاعد القادم:</span>
+              
+              <select value={ageFilterYear} onChange={(e) => setAgeFilterYear(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}>
+                <option value="2026">سنة 2026 (الافتراضي)</option>
+                <option value="2027">سنة 2027</option>
+                <option value="2028">سنة 2028</option>
+                <option value="2029">سنة 2029</option>
+                <option value="2030">سنة 2030</option>
+                <option value="">كل السنوات (حتى 2030)</option>
+              </select>
+
+              <select value={ageFilterMonth} onChange={(e) => setAgeFilterMonth(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', fontWeight: 'bold', outline: 'none' }}>
+                <option value="">كل الشهور</option>
+                <option value="1">يناير (01)</option>
+                <option value="2">فبراير (02)</option>
+                <option value="3">مارس (03)</option>
+                <option value="4">أبريل (04)</option>
+                <option value="5">مايو (05)</option>
+                <option value="6">يونيو (06)</option>
+                <option value="7">يوليو (07)</option>
+                <option value="8">أغسطس (08)</option>
+                <option value="9">سبتمبر (09)</option>
+                <option value="10">أكتوبر (10)</option>
+                <option value="11">نوفمبر (11)</option>
+                <option value="12">ديسمبر (12)</option>
+              </select>
+
+              {(ageFilterYear !== currentYearStr || ageFilterMonth !== '') && (
+                <button onClick={() => { setAgeFilterYear(currentYearStr); setAgeFilterMonth(''); }} style={{ background: '#e2e8f0', border: 0, padding: '8px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
+                  إعادة ضبط الفلتر
+                </button>
+              )}
+
+              <div style={{ marginRight: 'auto', fontSize: '12px', fontWeight: 'bold', color: '#0d9488' }}>
+                عدد الموظفين: {filteredAge60ModalList.length}
+              </div>
+            </div>
+
+            {filteredAge60ModalList.length === 0 ? (
+              <div style={{ padding: '40px', textAlign: 'center', color: '#64748b', fontWeight: 'bold' }}>لا يوجد موظفون سيبلغون الـ 60 في التاريخ المحدد. 🎉</div>
+            ) : (
+              <div className="table-responsive">
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                      <th style={{ padding: '10px' }}>الكود</th>
+                      <th style={{ padding: '10px' }}>الموظف</th>
+                      <th style={{ padding: '10px' }}>الإدارة</th>
+                      <th style={{ padding: '10px' }}>نوع العقد</th>
+                      <th style={{ padding: '10px' }}>تاريخ الميلاد</th>
+                      <th style={{ padding: '10px' }}>تاريخ بلوغ الـ 60</th>
+                      <th style={{ padding: '10px', textAlign: 'center' }}>المتبقي لبلوغ الـ 60</th>
+                      <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAge60ModalList.map((emp: any, idx: number) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9', background: emp.daysLeft <= 60 ? '#fffbe1' : 'transparent' }}>
+                        <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
+                        <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
+                        <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{emp.contract_type}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate}</td>
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#b45309' }}>{emp.age60Date}</td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          {emp.daysLeft <= 60 ? (
+                            <span style={{ background: '#fffbe1', color: '#b45309', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>⏳ متبقي {emp.daysLeft} يوم</span>
+                          ) : (
+                            <span style={{ color: '#0d9488', fontWeight: 'bold' }}>📅 متبقي {emp.daysLeft} يوم</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '10px', textAlign: 'center' }}>
+                          <button onClick={() => { setShowAgeModal(false); handleRowClick(getField(emp, 'employee_code', 'EmployeeCode')); }} style={{ background: '#ffffff', color: '#0d9488', border: '1px solid #99f6e4', padding: '5px 10px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل العقد ✏️</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedChartMonth && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
+          <div style={{ width: '700px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '14px', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>
+                🗓️ عقود تنتهي في {selectedChartMonth.name} {dashboardData.targetExpiryYear}
+              </h3>
+              <button onClick={() => setSelectedChartMonth(null)} style={{ background: '#f1f5f9', border: 0, color: '#64748b', padding: '6px 14px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
+            </div>
+            
+            <div className="table-responsive">
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
+                <thead>
+                  <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                    <th style={{ padding: '10px' }}>الكود</th>
+                    <th style={{ padding: '10px' }}>الموظف</th>
+                    <th style={{ padding: '10px' }}>الإدارة</th>
+                    <th style={{ padding: '10px' }}>تاريخ الانتهاء</th>
+                    <th style={{ padding: '10px', textAlign: 'center' }}>إجراء</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedChartMonth.emps.map((emp: any, idx: number) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
+                      <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
+                      <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>{emp.contract_end_date}</td>
+                      <td style={{ padding: '10px', textAlign: 'center' }}>
+                        <button onClick={() => { setSelectedChartMonth(null); handleRowClick(getField(emp, 'employee_code', 'EmployeeCode')); }} style={{ background: '#ffffff', color: '#2563eb', border: '1px solid #bfdbfe', padding: '5px 12px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>إدارة العقد ↗️</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
