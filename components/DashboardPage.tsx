@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { supabase } from '@/lib/supabase'; // 👈 أضفنا استدعاء قاعدة البيانات هنا
 import { navigateTo } from '@/lib/navigation';
 import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
@@ -15,7 +16,12 @@ const getField = (obj: any, ...keys: string[]) => {
 };
 
 export default function DashboardPage() {
-  const { employees: allEmployees, renewals: allRenewals, loading } = useAppData();
+  // غيرنا الأسماء عشان ندمج العقود الحقيقية براحتنا
+  const { employees: contextEmployees, renewals: allRenewals, loading: contextLoading } = useAppData();
+
+  // 🌟 حالات جديدة لتخزين الموظفين بعد دمج أحدث العقود
+  const [allEmployees, setAllEmployees] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   const [filterCompany, setFilterCompany] = useState('');
   const [filterDept, setFilterDept] = useState('');
@@ -45,6 +51,69 @@ export default function DashboardPage() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // 🚀 دالة جلب العقود النشطة ودمجها مع الموظفين (لحل مشكلة التواريخ القديمة)
+  useEffect(() => {
+    const fetchContractsAndMerge = async () => {
+      if (contextLoading) return;
+      setLoading(true);
+      try {
+        let allContracts: any[] = [];
+        let from = 0;
+        const step = 1000;
+        
+        // جلب كافة العقود النشطة
+        while (true) {
+          const { data, error } = await supabase
+            .from('contracts')
+            .select('employee_code, contract_type, contract_start_date, contract_end_date')
+            .eq('status', 'Active')
+            .range(from, from + step - 1);
+
+          if (error || !data || data.length === 0) break;
+          allContracts = [...allContracts, ...data];
+          if (data.length < step) break;
+          from += step;
+        }
+
+        // ترتيب وتجميع العقود للاحتفاظ بالعقد الأحدث لكل موظف
+        const contractsMap = new Map<string, any>();
+        allContracts.forEach(c => {
+          const code = String(c.employee_code || '').trim();
+          if (!contractsMap.has(code)) {
+            contractsMap.set(code, c);
+          } else {
+            const existing = contractsMap.get(code);
+            const dateA = existing.contract_end_date ? new Date(existing.contract_end_date).getTime() : 0;
+            const dateB = c.contract_end_date ? new Date(c.contract_end_date).getTime() : 0;
+            if (dateB > dateA) contractsMap.set(code, c);
+          }
+        });
+
+        // الدمج الذكي مع القائمة الرئيسية
+        const merged = (contextEmployees || []).map(emp => {
+          const code = String(emp.employee_code || '').trim();
+          const latestContract = contractsMap.get(code);
+          return {
+            ...emp,
+            contract_type: latestContract?.contract_type || emp.contract_type || '—',
+            contract_start_date: latestContract?.contract_start_date || emp.hiring_date || null,
+            // 🚀 هنا نقرأ التاريخ من جدول العقود لضمان الدقة
+            contract_end_date: latestContract?.contract_end_date || emp.contract_end_date || null,
+          };
+        });
+
+        setAllEmployees(merged);
+      } catch (err) {
+        console.error('Error fetching contracts for dashboard:', err);
+        setAllEmployees(contextEmployees || []);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchContractsAndMerge();
+  }, [contextEmployees, contextLoading]);
 
   const getDaysRemaining = (endDateStr: string | null) => {
     if (!endDateStr) return null;
@@ -366,7 +435,7 @@ export default function DashboardPage() {
 
   const maxMonthCount = Math.max(...(dashboardData?.contractsByMonth.map((m) => m.count) || []), 1);
 
-  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG (الآن يدعم ظهور النسبة المئوية فوق الشريحة)
+  // 🍩 دالة رسم الدونت التفاعلي الأصلي باستخدام SVG
   const renderInteractiveDonutChart = () => {
     let cumulativePercentForSlices = 0;
     let cumulativePercentForText = 0;
@@ -412,14 +481,11 @@ export default function DashboardPage() {
 
             {/* رسم النصوص المئوية فوق الشرائح */}
             {ageData.map((slice, idx) => {
-              // تحديد منتصف الشريحة (زاوية)
               const midPct = cumulativePercentForText + slice.pct / 2;
               cumulativePercentForText += slice.pct;
 
-              // إخفاء النص لو الشريحة صغيرة جداً (< 1%) عشان الشكل ميبقاش زحمة
               if (slice.pct < 1) return null;
 
-              // تحويل النسبة لزاوية بالراديان وحساب الإحداثيات (x, y)
               const angle = (midPct / 100) * 2 * Math.PI;
               const r = 15.91549431; 
               const x = 21 + r * Math.cos(angle);
@@ -435,7 +501,6 @@ export default function DashboardPage() {
                   fontWeight="bold"
                   textAnchor="middle"
                   dominantBaseline="central"
-                  // تدوير النص بـ 90 درجة عشان يعوض الدوران السالب لـ SVG نفسه
                   transform={`rotate(90 ${x} ${y})`}
                   style={{ pointerEvents: 'none', textShadow: '0px 1px 2px rgba(0,0,0,0.6)' }}
                 >
