@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { navigateTo } from '@/lib/navigation';
-import { useAppData } from '@/lib/DataContext';
 import KpiCard from './KpiCard';
 import Stamp from './Stamp';
 
@@ -22,8 +21,7 @@ const cleanCode = (code: any) => {
 };
 
 export default function DashboardPage() {
-  const { employees: contextEmployees, renewals: allRenewals, loading: contextLoading, refresh: refreshContext } = useAppData();
-
+  // تم فصل الداش بورد عن الـ Context للحصول على بيانات حية (Live) دائماً 🚀
   const [allEmployees, setAllEmployees] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -50,38 +48,44 @@ export default function DashboardPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const fetchContractsAndMerge = async () => {
+  // 🚀 سحب مباشر (Live) للموظفين والعقود ودمجهم بدقة 100%
+  const fetchDashboardData = async () => {
     setLoading(true);
     try {
-      let allContracts: any[] = [];
-      let from = 0;
-      const step = 1000;
-      
+      // 1. جلب الموظفين
+      let fetchedEmps: any[] = [];
+      let fromE = 0;
       while (true) {
-        const { data, error } = await supabase
-          .from('contracts')
-          .select('employee_code, contract_type, contract_start_date, contract_end_date, status')
-          .range(from, from + step - 1);
-
+        const { data, error } = await supabase.from('employees').select('*').range(fromE, fromE + 999);
         if (error || !data || data.length === 0) break;
-        allContracts = [...allContracts, ...data];
-        if (data.length < step) break;
-        from += step;
+        fetchedEmps = [...fetchedEmps, ...data];
+        if (data.length < 1000) break;
+        fromE += 1000;
       }
 
+      // 2. جلب العقود
+      let fetchedContracts: any[] = [];
+      let fromC = 0;
+      while (true) {
+        const { data, error } = await supabase.from('contracts').select('employee_code, contract_type, contract_start_date, contract_end_date, status').range(fromC, fromC + 999);
+        if (error || !data || data.length === 0) break;
+        fetchedContracts = [...fetchedContracts, ...data];
+        if (data.length < 1000) break;
+        fromC += 1000;
+      }
+
+      // 3. ترتيب وتجميع العقود
       const contractsMap = new Map<string, any[]>();
-      allContracts.forEach(c => {
-        if (!c) return;
+      fetchedContracts.forEach(c => {
         const cCode = cleanCode(c.employee_code);
         if (!cCode) return;
         if (!contractsMap.has(cCode)) contractsMap.set(cCode, []);
         contractsMap.get(cCode)?.push(c);
       });
 
-      const merged = (contextEmployees || []).map(emp => {
-        const empCodeRaw = getField(emp, 'employee_code', 'EmployeeCode');
-        const eCodeClean = cleanCode(empCodeRaw);
-        
+      // 4. دمج أحدث عقد نشط مع الموظف
+      const merged = fetchedEmps.map(emp => {
+        const eCodeClean = cleanCode(emp.employee_code);
         const empContracts = contractsMap.get(eCodeClean) || [];
 
         empContracts.sort((a, b) => {
@@ -104,16 +108,15 @@ export default function DashboardPage() {
 
       setAllEmployees(merged);
     } catch (err) {
-      console.error('Error merging contracts:', err);
-      setAllEmployees(contextEmployees || []);
+      console.error('Error fetching dashboard data:', err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchContractsAndMerge();
-  }, [contextEmployees, contextLoading]);
+    fetchDashboardData();
+  }, []);
 
   const getDaysRemaining = (endDateStr: string | null) => {
     if (!endDateStr) return null;
@@ -254,7 +257,8 @@ export default function DashboardPage() {
         const item = {
           ...emp, employee_code: empCode, employee_name: empName, department: dept,
           contract_type: type, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date,
-          daysLeft: ageInfo.daysUntil60, year60: ageInfo.year60, month60: ageInfo.month60
+          daysLeft: ageInfo.daysUntil60, year60: ageInfo.year60, month60: ageInfo.month60,
+          contract_end_date: endDateStr // 🚀 تأكيد إضافة النهاية للموديل
         };
         futureTurning60List.push(item);
         if (ageInfo.daysUntil60 <= 60) turning60SoonList.push(item);
@@ -356,7 +360,6 @@ export default function DashboardPage() {
     });
   }, [dashboardData.futureTurning60List, ageFilterYear, ageFilterMonth]);
 
-  // تجهيز وحسابات التوزيع العمري بشكل محمي من أخطاء الريندر
   const ageData = useMemo(() => {
     const groups = {
       u30: { label: 'موظفين أعمارهم (أقل من 30)', count: 0, color: '#10b981', emps: [] as any[] },
@@ -466,7 +469,8 @@ export default function DashboardPage() {
           <input list="dashDeptList" className="field" placeholder="💼 كل الإدارات (ابحث...)" value={filterDept} onChange={(e) => setFilterDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px' }} />
           <datalist id="dashDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
 
-          <button style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }} onClick={() => { refreshContext(); fetchContractsAndMerge(); }}>تحديث البيانات 🔄</button>
+          {/* 🚀 زر التحديث يقرأ بيانات Live الآن */}
+          <button style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }} onClick={fetchDashboardData}>تحديث البيانات 🔄</button>
 
           {(filterCompany || filterDept || activeKpiFilter !== 'all') && (
             <button style={{ background: '#f1f5f9', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }} onClick={() => { setFilterCompany(''); setFilterDept(''); setActiveKpiFilter('all'); }}>إعادة ضبط الفلاتر</button>
@@ -477,78 +481,22 @@ export default function DashboardPage() {
       {/* 🌟 الكروت السريعة */}
       <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
         <div style={{ outline: activeKpiFilter === 'all' ? '2px solid #0d9488' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard 
-            loading={loading} 
-            tone="brass" 
-            title="إجمالي الموظفين" 
-            value={dashboardData.totalEmps} 
-            sub={activeKpiFilter === 'all' ? "المعروض (الكل)" : "اضغط لعرض الكل"} 
-            icon="👥" 
-            onClick={() => setActiveKpiFilter('all')} 
-          />
+          <KpiCard loading={loading} tone="brass" title="إجمالي الموظفين" value={dashboardData.totalEmps} sub={activeKpiFilter === 'all' ? "المعروض (الكل)" : "اضغط لعرض الكل"} icon="👥" onClick={() => setActiveKpiFilter('all')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'fixed' ? '2px solid #3b82f6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard 
-            loading={loading} 
-            tone="blue" 
-            title="عقود محددة المدة" 
-            value={dashboardData.fixedCount} 
-            sub={`نسبة ${dashboardData.fixedPct}% من القوة`} 
-            icon="📂" 
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'fixed' ? 'all' : 'fixed')} 
-          />
+          <KpiCard loading={loading} tone="blue" title="عقود محددة المدة" value={dashboardData.fixedCount} sub={`نسبة ${dashboardData.fixedPct}% من القوة`} icon="📂" onClick={() => setActiveKpiFilter(activeKpiFilter === 'fixed' ? 'all' : 'fixed')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'perm' ? '2px solid #10b981' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard 
-            loading={loading} 
-            tone="green" 
-            title="عقود دائمة" 
-            value={dashboardData.permCount} 
-            sub={`نسبة ${dashboardData.permPct}% من القوة`} 
-            icon="🛡️" 
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'perm' ? 'all' : 'perm')} 
-          />
+          <KpiCard loading={loading} tone="green" title="عقود دائمة" value={dashboardData.permCount} sub={`نسبة ${dashboardData.permPct}% من القوة`} icon="🛡️" onClick={() => setActiveKpiFilter(activeKpiFilter === 'perm' ? 'all' : 'perm')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'aboveAge' ? '2px solid #8b5cf6' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard 
-            loading={loading} 
-            tone="purple" 
-            title="فوق السن (60+)" 
-            value={dashboardData.aboveAgeCount} 
-            sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} 
-            icon="💼" 
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')} 
-          />
+          <KpiCard loading={loading} tone="purple" title="فوق السن (60+)" value={dashboardData.aboveAgeCount} sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} icon="💼" onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard 
-            loading={loading} 
-            tone="amber" 
-            title="تنتهي قريباً (60 يوم)" 
-            value={dashboardData.expiringSoonCount} 
-            sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} 
-            icon="⏳" 
-            onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} 
-          />
+          <KpiCard loading={loading} tone="amber" title="تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} icon="⏳" onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} />
         </div>
-
         <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard 
-            loading={loading} 
-            tone="red" 
-            title="سيبلغون الـ 60 (60 يوم)" 
-            value={dashboardData.turning60SoonCount} 
-            sub="عرض الجدول والنافذة 🎂" 
-            icon="🎂" 
-            onClick={() => {
-              setActiveKpiFilter('turning60');
-              setShowAgeModal(true);
-            }} 
-          />
+          <KpiCard loading={loading} tone="red" title="سيبلغون الـ 60 (60 يوم)" value={dashboardData.turning60SoonCount} sub="عرض الجدول والنافذة 🎂" icon="🎂" onClick={() => { setActiveKpiFilter('turning60'); setShowAgeModal(true); }} />
         </div>
       </div>
 
@@ -588,14 +536,7 @@ export default function DashboardPage() {
                 <div 
                   key={idx} 
                   onClick={() => setFilterDept(isActiveDept ? '' : dept.name)}
-                  style={{ 
-                    cursor: 'pointer', 
-                    padding: '8px', 
-                    borderRadius: '8px', 
-                    background: isActiveDept ? '#f0fdf4' : 'transparent',
-                    border: isActiveDept ? '1px solid #86efac' : '1px solid transparent',
-                    transition: 'all 0.2s'
-                  }}
+                  style={{ cursor: 'pointer', padding: '8px', borderRadius: '8px', background: isActiveDept ? '#f0fdf4' : 'transparent', border: isActiveDept ? '1px solid #86efac' : '1px solid transparent', transition: 'all 0.2s' }}
                   onMouseEnter={(e) => !isActiveDept && (e.currentTarget.style.background = '#f8fafc')}
                   onMouseLeave={(e) => !isActiveDept && (e.currentTarget.style.background = 'transparent')}
                 >
@@ -821,7 +762,7 @@ export default function DashboardPage() {
                   {sortedAgeGroupEmps.map((emp: any, idx: number) => {
                     const age = getEmployeeAge(emp);
                     return (
-                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }} className="hover:bg-slate-50 transition-colors">
                         <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(emp, 'employee_code', 'EmployeeCode')}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{getField(emp, 'department', 'Department') || '—'}</td>
@@ -839,6 +780,7 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* 🎂 نافذة بلوغ سن الـ 60 المنبثقة المحدثة */}
       {showAgeModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
           <div style={{ width: '850px', maxHeight: '85vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
@@ -899,6 +841,7 @@ export default function DashboardPage() {
                       <th style={{ padding: '10px' }}>الموظف</th>
                       <th style={{ padding: '10px' }}>الإدارة</th>
                       <th style={{ padding: '10px' }}>نوع العقد</th>
+                      <th style={{ padding: '10px', color: '#0f172a' }}>نهاية العقد</th>
                       <th style={{ padding: '10px' }}>تاريخ الميلاد</th>
                       <th style={{ padding: '10px' }}>تاريخ بلوغ الـ 60</th>
                       <th style={{ padding: '10px', textAlign: 'center' }}>المتبقي لبلوغ الـ 60</th>
@@ -912,6 +855,8 @@ export default function DashboardPage() {
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>{getField(emp, 'employee_name', 'ArabicName')}</td>
                         <td style={{ padding: '10px', color: '#64748b' }}>{emp.department || '—'}</td>
                         <td style={{ padding: '10px', fontWeight: 'bold', color: '#2563eb' }}>{emp.contract_type}</td>
+                        {/* 🚀 إظهار تاريخ نهاية العقد المستمد من جدول العقود */}
+                        <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#0f172a' }}>{emp.contract_end_date || '—'}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#b45309' }}>{emp.age60Date}</td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
