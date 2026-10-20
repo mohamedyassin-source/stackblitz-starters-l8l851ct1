@@ -17,6 +17,27 @@ const TERMINATION_REASONS = [
   'عدم اجتياز فترة الاختبار', 'أجازة بدون راتب'
 ];
 
+// دالة ذكية لتحويل أي صيغة تاريخ لرقم عشان الترتيب والحسابات الدقيقة
+const getTimestamp = (v: any): number => {
+  if (!v) return 0;
+  const s = String(v).trim();
+  
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) {
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  
+  const fallback = new Date(s);
+  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+};
+
 export default function ContractsPage() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [renewals, setRenewals] = useState<any[]>([]);
@@ -69,6 +90,14 @@ export default function ContractsPage() {
   // 🌟 نافذة المتابعة
   const [workflowModal, setWorkflowModal] = useState<{ isOpen: boolean; emp?: any; req?: any }>({ isOpen: false });
 
+  const getField = (obj: any, ...keys: string[]) => {
+    if (!obj) return '';
+    for (const key of keys) {
+      if (obj[key] !== undefined && obj[key] !== null) return String(obj[key]).trim();
+    }
+    return '';
+  };
+
   // 🎂 دالة حساب العمر
   const calculateAge = (birthDateRaw: string | null | undefined) => {
     if (!birthDateRaw) return null;
@@ -120,7 +149,7 @@ export default function ContractsPage() {
     try {
       const [allEmps, allContracts, allRens] = await Promise.all([
         fetchAllRows('employees'),
-        fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }),
+        fetchAllRows('contracts'), 
         fetchAllRows('renewal_requests')
       ]);
 
@@ -136,10 +165,19 @@ export default function ContractsPage() {
         const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
         const empContracts = contractsMap.get(empCodeClean) || [];
 
+        // 🚀 ترتيب صارم لاختيار العقد الأحدث
         empContracts.sort((a, b) => {
-          const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
-          const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
-          return dateB - dateA;
+          const actA = String(a.status || '').trim().toLowerCase() === 'active' ? 1 : 0;
+          const actB = String(b.status || '').trim().toLowerCase() === 'active' ? 1 : 0;
+          if (actA !== actB) return actB - actA; 
+
+          const dateA = a.contract_end_date ? getTimestamp(a.contract_end_date) : Infinity;
+          const dateB = b.contract_end_date ? getTimestamp(b.contract_end_date) : Infinity;
+          if (dateA !== dateB) return dateB - dateA;
+
+          const startA = getTimestamp(a.contract_start_date);
+          const startB = getTimestamp(b.contract_start_date);
+          return startB - startA;
         });
 
         const latestContract = empContracts[0];
@@ -149,7 +187,7 @@ export default function ContractsPage() {
           contract_id: latestContract?.contract_id,
           contract_type: latestContract?.contract_type || emp.contract_type || '—',
           contract_start_date: latestContract?.contract_start_date || emp.hiring_date || null,
-          contract_end_date: latestContract?.contract_end_date || null,
+          contract_end_date: latestContract?.contract_end_date || emp.contract_end_date || null,
         };
       });
 
@@ -402,7 +440,7 @@ export default function ContractsPage() {
       }
 
       const [reqId] = generateSequentialIds(1);
-      const parsedCode = String(emp.employee_code).trim(); // التعديل هنا ✅
+      const parsedCode = String(emp.employee_code).trim();
 
       const payload: any = {
         request_id: reqId,
@@ -451,7 +489,7 @@ export default function ContractsPage() {
         const targetEndDate = renewalMode === 'months' ? calculateNewEndDate(emp.contract_end_date, renewalMonths) : customEndDate;
         return {
           request_id: reqIds[index], 
-          employee_code: String(emp.employee_code).trim(), // التعديل هنا ✅
+          employee_code: String(emp.employee_code).trim(),
           employee_name: emp.employee_name,
           department: emp.department, job_title: emp.job_title, company: emp.company,
           contract_end_date: emp.contract_end_date, new_contract_end_date: targetEndDate,
@@ -473,12 +511,11 @@ export default function ContractsPage() {
     setEditModal({ isOpen: true, emp });
   };
 
-  // 🌟 تعديل العقد - إزالة .select() لتفادي الخطأ
   const handleEditContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editModal.emp) return;
     setActionLoading(true);
-    const parsedCode = String(editModal.emp.employee_code).trim(); // التعديل هنا ✅
+    const parsedCode = String(editModal.emp.employee_code).trim();
     
     try {
       if (editModal.emp.contract_id) {
@@ -510,7 +547,7 @@ export default function ContractsPage() {
   const handleDeleteSelected = async () => {
     if (!window.confirm('تأكيد الحذف؟ هذا الإجراء سيقوم بحذف الموظفين وعقودهم نهائياً.')) return;
     setIsDeleting(true);
-    const parsedCodes = selectedEmpCodes.map(c => String(c).trim()); // التعديل هنا ✅
+    const parsedCodes = selectedEmpCodes.map(c => String(c).trim()); 
     await supabase.from('contracts').delete().in('employee_code', parsedCodes);
     await supabase.from('employees').delete().in('employee_code', parsedCodes);
     alert('تم الحذف بنجاح ✅'); setSelectedEmpCodes([]); fetchData(); setIsDeleting(false);
@@ -521,7 +558,7 @@ export default function ContractsPage() {
     
     setActionLoading(true);
     try {
-      const parsedCode = String(emp.employee_code).trim(); // التعديل هنا ✅
+      const parsedCode = String(emp.employee_code).trim(); 
       await supabase.from('contracts').delete().eq('employee_code', parsedCode);
       await supabase.from('employees').delete().eq('employee_code', parsedCode);
       alert('تم حذف الموظف والعقد بنجاح ✅');
@@ -533,15 +570,13 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 دالة الإنهاء المحدثة لتخطي خطأ الـ ID نهائياً (بإزالة select)
   const handleTerminateContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!terminateEmployeeCode) return;
     setActionLoading(true);
-    const parsedCode = String(terminateEmployeeCode).trim(); // التعديل هنا ✅
+    const parsedCode = String(terminateEmployeeCode).trim(); 
     
     try {
-      // 1. تحديث الموظف
       const { error: empError } = await supabase.from('employees').update({ 
         department: 'تحويلات تحت الاعتماد', 
         status: 'Inactive', 
@@ -551,7 +586,6 @@ export default function ContractsPage() {
       
       if (empError) throw empError;
         
-      // 2. تحديث العقد النشط
       const { error: contractError } = await supabase.from('contracts').update({ 
         status: 'Inactive', 
         contract_end_date: terminateDate,
@@ -572,7 +606,6 @@ export default function ContractsPage() {
     }
   };
 
-  // 🌟 دالة العقد الجديد - تم إزالة select
   const handleCreateBrandNewContract = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedEmployeeCode) return;
@@ -594,7 +627,7 @@ export default function ContractsPage() {
 
     try {
       const [reqId] = generateSequentialIds(1);
-      const parsedCode = String(emp.employee_code).trim(); // التعديل هنا ✅
+      const parsedCode = String(emp.employee_code).trim(); 
       
       await supabase.from('renewal_requests').insert([{ request_id: reqId, employee_code: parsedCode, employee_name: emp.employee_name, department: emp.department, job_title: emp.job_title, company: emp.company, contract_end_date: emp.contract_end_date || newContractStartDate, new_contract_end_date: newContractEndDate, status: 'Pending_Project_Manager', signature_status: 'قيد التوقيع', request_date: new Date().toISOString().split('T')[0] }]);
       
@@ -639,9 +672,12 @@ export default function ContractsPage() {
       const empJob = String(emp.job_title || '');
       const empType = String(emp.contract_type || '');
       const empStatus = String(emp.status || '');
-      const termReasonFromDb = String(emp.termination_reason || ''); 
-      const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
+      const termReasonFromDb = String(getField(emp, 'termination_reason', 'TerminationReason')); 
+      const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType) || empDept.includes('تحويلات');
       
+      const termDateFromDb = String(getField(emp, 'termination_date', 'TerminationDate'));
+      const finalEndDate = (isTerminated && termDateFromDb) ? termDateFromDb : (emp.contract_end_date || '—');
+
       return [
         emp.employee_code,
         emp.employee_name,
@@ -649,7 +685,7 @@ export default function ContractsPage() {
         empJob || '—',
         isTerminated ? (termReasonFromDb || empType) : empType,
         age !== null ? age : '—',
-        emp.contract_end_date || '—',
+        finalEndDate,
         daysLeft !== null ? daysLeft : '—',
         reqInfo
       ];
@@ -876,12 +912,16 @@ export default function ContractsPage() {
                 const empJob = String(emp.job_title || '');
                 const empType = String(emp.contract_type || '');
                 const empStatus = String(emp.status || '');
-                const termReasonFromDb = String(emp.termination_reason || ''); 
+                const termReasonFromDb = String(getField(emp, 'termination_reason', 'TerminationReason')); 
+                const termDateFromDb = String(getField(emp, 'termination_date', 'TerminationDate'));
                 
                 const isHiddenDept = empDept.includes('تحويلات');
                 const isHiddenJob = empJob.startsWith('ايقاف راتب');
                 const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
                 const isInactiveVisual = isHiddenDept || isHiddenJob || isTerminated;
+
+                // 🚀 عرض تاريخ الإنهاء الفعلي في خانة النهاية لو الموظف موقوف
+                const displayedEndDate = (isInactiveVisual && termDateFromDb) ? termDateFromDb : (emp.contract_end_date || '—');
 
                 const daysLeft = getDaysRemaining(emp.contract_end_date);
                 const age = calculateAge(emp.birth_date);
@@ -890,7 +930,11 @@ export default function ContractsPage() {
                 const isNearSixty = age !== null && age >= 59 && age < 60;
 
                 let remainingLabel = <span style={{ color: '#64748b' }}>—</span>;
-                if (daysLeft !== null) {
+                
+                // 🚀 عرض رسالة واضحة في خانة المتبقي
+                if (isInactiveVisual && termDateFromDb) {
+                  remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>أُنهي في {termDateFromDb}</span>;
+                } else if (daysLeft !== null) {
                   if (daysLeft < 0) remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>منتهي ({Math.abs(daysLeft)} يوم)</span>;
                   else if (daysLeft <= 60) remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>متبقي {daysLeft} يوم</span>;
                   else remainingLabel = <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>متبقي {daysLeft} يوم</span>;
@@ -915,7 +959,6 @@ export default function ContractsPage() {
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empDept || '—'}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{empJob || '—'}</td>
                     
-                    {/* 🌟 إظهار سبب الإيقاف الحقيقي في عمود النوع */}
                     <td style={{ padding: '12px', fontWeight: 'bold', color: isTerminated ? '#ef4444' : '#334155' }}>
                       {isTerminated ? (termReasonFromDb || empType) : empType}
                     </td>
@@ -940,7 +983,7 @@ export default function ContractsPage() {
                       )}
                     </td>
 
-                    <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace' }}>{emp.contract_end_date || '—'}</td>
+                    <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace' }}>{displayedEndDate}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>{remainingLabel}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>{reqBadge}</td>
                     <td style={{ padding: '12px', textAlign: 'center' }}>
@@ -991,7 +1034,7 @@ export default function ContractsPage() {
             </div>
 
             <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', padding: '16px', borderRadius: '12px', fontSize: '13px', color: '#1e40af', fontWeight: 'bold', textAlign: 'center' }}>
-              ℹ️️ هذا النموذج معروض للمتابعة فقط. <br/>
+              ℹ هذا النموذج معروض للمتابعة فقط. <br/>
               <span style={{ fontSize: '11px', color: '#3b82f6', marginTop: '8px', display: 'block' }}>
                 (صلاحيات الاعتماد متاحة في شاشة "طلبات التجديد"، وصلاحيات استلام التوقيع متاحة في شاشة "التوقيعات")
               </span>
