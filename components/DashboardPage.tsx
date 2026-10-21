@@ -101,7 +101,6 @@ const getEmployeeAge = (emp: any) => {
 };
 
 const isPermanent = (t: string) => t.includes('دائم') || t.includes('غير محدد');
-// 🚀 تحديث الدالة لضم "المكافأة الشاملة" لتكون في نفس تصنيف "فوق السن"
 const isAboveAge = (t: string) => t.includes('فوق السن') || t.includes('مكافأة شاملة');
 const isFixed = (t: string) => !isPermanent(t) && !isAboveAge(t);
 
@@ -298,14 +297,14 @@ export default function DashboardPage() {
       const ageInfo = getAge60Info(nationalId, birthDateRaw);
       const d60 = ageInfo ? ageInfo.daysUntil60 : null;
 
-      // 🚀 تطبيق الأوزان لعد إحصائيات "ينتهي قريباً"
+      // 🚀 تطبيق الأوزان لعد إحصائيات "ينتهي قريباً" مع السماح بالأيام السالبة في السن
       let effectivelyExpiring = false;
       if (isPerm) {
-        effectivelyExpiring = d60 !== null && d60 >= 0 && d60 <= 60;
+        effectivelyExpiring = d60 !== null && d60 <= 60;
       } else if (isOver) {
         effectivelyExpiring = dC !== null && dC <= 60;
       } else {
-        const aCrit = d60 !== null && d60 >= 0 && d60 <= 60;
+        const aCrit = d60 !== null && d60 <= 60;
         const cCrit = dC !== null && dC <= 60;
         effectivelyExpiring = aCrit || cCrit;
       }
@@ -313,8 +312,8 @@ export default function DashboardPage() {
         totalExpiringSoon++;
       }
 
-      // 🚀 إضافة الناس لجدول "رادار المعاشات" فقط إذا لم يكونوا فوق السن ولم يتجاوزوا السن (أيام سلبية)
-      if (!isOver && ageInfo && ageInfo.daysUntil60 >= 0) {
+      // 🚀 إضافة الناس لجدول "رادار المعاشات" (بما فيهم السالب) طالما لم يغيروا العقد لـ "فوق السن"
+      if (!isOver && ageInfo) {
         const item = {
           ...emp, employee_code: empCode, employee_name: empName, department: dept,
           contract_type: type, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date,
@@ -342,13 +341,14 @@ export default function DashboardPage() {
       if (activeKpiFilter === 'perm') return isPerm;
       if (activeKpiFilter === 'aboveAge') return isOver;
       if (activeKpiFilter === 'expiring') {
-        if (isPerm) return d60 !== null && d60 >= 0 && d60 <= 60;
+        if (isPerm) return d60 !== null && d60 <= 60;
         if (isOver) return dC !== null && dC <= 60;
-        const aCrit = d60 !== null && d60 >= 0 && d60 <= 60;
+        const aCrit = d60 !== null && d60 <= 60;
         const cCrit = dC !== null && dC <= 60;
         return aCrit || cCrit;
       }
-      if (activeKpiFilter === 'turning60') return !isOver && d60 !== null && d60 >= 0 && d60 <= 60;
+      // 🚀 السماح للناس السالبة بالظهور في كارت المعاشات
+      if (activeKpiFilter === 'turning60') return !isOver && d60 !== null && d60 <= 60;
 
       return true;
     });
@@ -407,7 +407,7 @@ export default function DashboardPage() {
         activeReason = 'contract';
         effectiveDays = dC;
       } else {
-        const aCrit = d60 !== null && d60 >= 0 && d60 <= 60;
+        const aCrit = d60 !== null && d60 <= 60; // 👈 شلت الـ >= 0
         const cCrit = dC !== null && dC <= 60;
 
         if (aCrit && cCrit) {
@@ -427,10 +427,8 @@ export default function DashboardPage() {
         }
       }
 
-      // التنبيه يظهر في العاجل لو كان السن (0 لـ 60)، أو لو العقد (< 60 شامل السالب)
-      const isUrgent = activeReason === 'age' 
-        ? (effectiveDays !== null && effectiveDays >= 0 && effectiveDays <= 60)
-        : (effectiveDays !== null && effectiveDays <= 60);
+      // 🚀 التنبيه يظهر في العاجل لو كان السن (أقل من أو يساوي 60)، أو العقد (أقل من 60 شامل السالب)
+      const isUrgent = effectiveDays !== null && effectiveDays <= 60;
 
       if (isUrgent) {
         alerts.push({ 
@@ -496,7 +494,6 @@ export default function DashboardPage() {
     dashboardData.kpiFilteredEmps.forEach(emp => {
       const type = getType(emp);
       
-      // 🚀 إجبار أي موظف عقده فوق السن أو مكافأة إلى شريحة 60+
       if (isAboveAge(type)) {
         groups.over60.count++; 
         groups.over60.emps.push(emp);
@@ -835,7 +832,7 @@ export default function DashboardPage() {
                     <th style={{ padding: '8px' }}>الكود</th>
                     <th style={{ padding: '8px' }}>الموظف</th>
                     <th style={{ padding: '8px' }}>الإدارة</th>
-                    <th style={{ padding: '8px' }}>تاريخ الانتهاء</th>
+                    <th style={{ padding: '8px' }}>الانتهاء</th>
                     <th style={{ padding: '8px' }}>الحالة</th>
                   </tr>
                 </thead>
@@ -848,7 +845,11 @@ export default function DashboardPage() {
                       <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>{alert.contract_end_date || '—'}</td>
                       <td style={{ padding: '8px' }}>
                         {alert.activeReason === 'age' ? (
-                          <Stamp color="purple">يبلغ 60 ({alert.days} يوم)</Stamp>
+                          (alert.days ?? 0) < 0 ? (
+                            <Stamp color="red">تجاوز 60 ({Math.abs(alert.days ?? 0)} يوم)</Stamp>
+                          ) : (
+                            <Stamp color="purple">يبلغ 60 ({alert.days} يوم)</Stamp>
+                          )
                         ) : (
                           (alert.days ?? 0) < 0 ? (
                             <Stamp color="red">منتهي ({Math.abs(alert.days ?? 0)} يوم)</Stamp>
@@ -997,7 +998,9 @@ export default function DashboardPage() {
                         <td style={{ padding: '10px', fontFamily: 'monospace' }}>{emp.birthDate}</td>
                         <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold', color: '#b45309' }}>{emp.age60Date}</td>
                         <td style={{ padding: '10px', textAlign: 'center' }}>
-                          {emp.daysLeft <= 60 ? (
+                          {emp.daysLeft < 0 ? (
+                            <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>🔴 تجاوز {Math.abs(emp.daysLeft)} يوم</span>
+                          ) : emp.daysLeft <= 60 ? (
                             <span style={{ background: '#fffbe1', color: '#b45309', padding: '3px 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>⏳ متبقي {emp.daysLeft} يوم</span>
                           ) : (
                             <span style={{ color: '#0d9488', fontWeight: 'bold' }}>📅 متبقي {emp.daysLeft} يوم</span>
