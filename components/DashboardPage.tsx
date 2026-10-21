@@ -101,7 +101,8 @@ const getEmployeeAge = (emp: any) => {
 };
 
 const isPermanent = (t: string) => t.includes('دائم') || t.includes('غير محدد');
-const isAboveAge = (t: string) => t.includes('فوق السن');
+// 🚀 تحديث الدالة لضم "المكافأة الشاملة" لتكون في نفس تصنيف "فوق السن"
+const isAboveAge = (t: string) => t.includes('فوق السن') || t.includes('مكافأة شاملة');
 const isFixed = (t: string) => !isPermanent(t) && !isAboveAge(t);
 
 const pickLatestContract = (list: any[]) => {
@@ -176,7 +177,6 @@ export default function DashboardPage() {
   const [ageFilterYear, setAgeFilterYear] = useState<string>(currentYearStr);
   const [ageFilterMonth, setAgeFilterMonth] = useState<string>('');
 
-  // 🚀 التعديل هنا: السنة الافتراضية للرسم البياني أصبحت (السنة الحالية + 1) يعني خطة 2027
   const [chartYear, setChartYear] = useState<number>(currentYear + 1);
 
   const [selectedChartMonth, setSelectedChartMonth] = useState<{ name: string; emps: any[] } | null>(null);
@@ -287,17 +287,34 @@ export default function DashboardPage() {
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
       const dept = getDept(emp);
 
-      if (isPermanent(type)) totalPerm++;
-      else if (isAboveAge(type)) totalAboveAge++;
+      const isPerm = isPermanent(type);
+      const isOver = isAboveAge(type);
+
+      if (isPerm) totalPerm++;
+      else if (isOver) totalAboveAge++;
       else totalFixed++;
 
-      const days = getDaysRemaining(endDateStr);
-      if (!isPermanent(type) && days !== null && days >= 0 && days <= 60) {
+      const dC = getDaysRemaining(endDateStr);
+      const ageInfo = getAge60Info(nationalId, birthDateRaw);
+      const d60 = ageInfo ? ageInfo.daysUntil60 : null;
+
+      // 🚀 تطبيق الأوزان لعد إحصائيات "ينتهي قريباً"
+      let effectivelyExpiring = false;
+      if (isPerm) {
+        effectivelyExpiring = d60 !== null && d60 >= 0 && d60 <= 60;
+      } else if (isOver) {
+        effectivelyExpiring = dC !== null && dC <= 60;
+      } else {
+        const aCrit = d60 !== null && d60 >= 0 && d60 <= 60;
+        const cCrit = dC !== null && dC <= 60;
+        effectivelyExpiring = aCrit || cCrit;
+      }
+      if (effectivelyExpiring) {
         totalExpiringSoon++;
       }
 
-      const ageInfo = getAge60Info(nationalId, birthDateRaw);
-      if (ageInfo && ageInfo.daysUntil60 >= 0) {
+      // 🚀 إضافة الناس لجدول "رادار المعاشات" فقط إذا لم يكونوا فوق السن ولم يتجاوزوا السن (أيام سلبية)
+      if (!isOver && ageInfo && ageInfo.daysUntil60 >= 0) {
         const item = {
           ...emp, employee_code: empCode, employee_name: empName, department: dept,
           contract_type: type, birthDate: ageInfo.birthDate, age60Date: ageInfo.age60Date,
@@ -312,16 +329,26 @@ export default function DashboardPage() {
     const kpiFilteredEmps = baseFilteredEmps.filter((emp) => {
       const type = getType(emp);
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
-      const days = getDaysRemaining(endDateStr);
       const nationalId = getField(emp, 'national_id', 'NationalID');
       const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
       const ageInfo = getAge60Info(nationalId, birthDateRaw);
+      
+      const isPerm = isPermanent(type);
+      const isOver = isAboveAge(type);
+      const dC = getDaysRemaining(endDateStr);
+      const d60 = ageInfo ? ageInfo.daysUntil60 : null;
 
       if (activeKpiFilter === 'fixed') return isFixed(type);
-      if (activeKpiFilter === 'perm') return isPermanent(type);
-      if (activeKpiFilter === 'aboveAge') return isAboveAge(type);
-      if (activeKpiFilter === 'expiring') return !isPermanent(type) && days !== null && days >= 0 && days <= 60;
-      if (activeKpiFilter === 'turning60') return ageInfo !== null && ageInfo.daysUntil60 >= 0 && ageInfo.daysUntil60 <= 60;
+      if (activeKpiFilter === 'perm') return isPerm;
+      if (activeKpiFilter === 'aboveAge') return isOver;
+      if (activeKpiFilter === 'expiring') {
+        if (isPerm) return d60 !== null && d60 >= 0 && d60 <= 60;
+        if (isOver) return dC !== null && dC <= 60;
+        const aCrit = d60 !== null && d60 >= 0 && d60 <= 60;
+        const cCrit = dC !== null && dC <= 60;
+        return aCrit || cCrit;
+      }
+      if (activeKpiFilter === 'turning60') return !isOver && d60 !== null && d60 >= 0 && d60 <= 60;
 
       return true;
     });
@@ -338,10 +365,13 @@ export default function DashboardPage() {
       const endDateStr = getField(emp, 'contract_end_date', 'ContractEndDate');
       const empCode = getField(emp, 'employee_code', 'EmployeeCode');
       const empName = getField(emp, 'employee_name', 'ArabicName', 'EmployeeName');
+      
+      const isPerm = isPermanent(type);
+      const isOver = isAboveAge(type);
 
       deptsCount[dept] = (deptsCount[dept] || 0) + 1;
 
-      if (endDateStr && !isPermanent(type)) {
+      if (endDateStr && !isPerm) {
         const ts = getTimestamp(endDateStr);
         if (ts > 0) {
           const endDate = new Date(ts);
@@ -360,15 +390,62 @@ export default function DashboardPage() {
         }
       }
 
-      if (!isPermanent(type)) {
-        const days = getDaysRemaining(endDateStr);
-        if (days !== null && days >= 0 && days <= 60) {
-          alerts.push({ ...emp, employee_code: empCode, employee_name: empName, contract_end_date: endDateStr, days, status: 'expiring' });
+      // 🚀 تطبيق الأوزان لجدول "المهام العاجلة" في الداش بورد
+      const dC = getDaysRemaining(endDateStr);
+      const nationalId = getField(emp, 'national_id', 'NationalID');
+      const birthDateRaw = getField(emp, 'birth_date', 'BirthDate');
+      const ageInfo = getAge60Info(nationalId, birthDateRaw);
+      const d60 = ageInfo ? ageInfo.daysUntil60 : null;
+
+      let activeReason: 'contract' | 'age' = 'contract';
+      let effectiveDays: number | null = null;
+
+      if (isPerm) {
+        activeReason = 'age';
+        effectiveDays = d60;
+      } else if (isOver) {
+        activeReason = 'contract';
+        effectiveDays = dC;
+      } else {
+        const aCrit = d60 !== null && d60 >= 0 && d60 <= 60;
+        const cCrit = dC !== null && dC <= 60;
+
+        if (aCrit && cCrit) {
+          if (d60 <= (dC ?? 999)) {
+            activeReason = 'age';
+            effectiveDays = d60;
+          } else {
+            activeReason = 'contract';
+            effectiveDays = dC;
+          }
+        } else if (aCrit) {
+          activeReason = 'age';
+          effectiveDays = d60;
+        } else if (dC !== null) {
+          activeReason = 'contract';
+          effectiveDays = dC;
         }
+      }
+
+      // التنبيه يظهر في العاجل لو كان السن (0 لـ 60)، أو لو العقد (< 60 شامل السالب)
+      const isUrgent = activeReason === 'age' 
+        ? (effectiveDays !== null && effectiveDays >= 0 && effectiveDays <= 60)
+        : (effectiveDays !== null && effectiveDays <= 60);
+
+      if (isUrgent) {
+        alerts.push({ 
+          ...emp, 
+          employee_code: empCode, 
+          employee_name: empName, 
+          contract_end_date: endDateStr, 
+          days: effectiveDays,
+          activeReason: activeReason,
+          status: 'expiring' 
+        });
       }
     });
 
-    alerts.sort((a, b) => a.days - b.days);
+    alerts.sort((a, b) => (a.days ?? 999) - (b.days ?? 999));
 
     const allDepts = Object.entries(deptsCount)
       .sort((a, b) => b[1] - a[1])
@@ -417,6 +494,15 @@ export default function DashboardPage() {
     };
     
     dashboardData.kpiFilteredEmps.forEach(emp => {
+      const type = getType(emp);
+      
+      // 🚀 إجبار أي موظف عقده فوق السن أو مكافأة إلى شريحة 60+
+      if (isAboveAge(type)) {
+        groups.over60.count++; 
+        groups.over60.emps.push(emp);
+        return;
+      }
+      
       const age = getEmployeeAge(emp);
       if (age === null) { groups.unrecorded.count++; groups.unrecorded.emps.push(emp); }
       else if (age < 30) { groups.u30.count++; groups.u30.emps.push(emp); }
@@ -527,7 +613,7 @@ export default function DashboardPage() {
           <KpiCard loading={loading} tone="purple" title="فوق السن (60+)" value={dashboardData.aboveAgeCount} sub={`نسبة ${dashboardData.aboveAgePct}% من القوة`} icon="💼" onClick={() => setActiveKpiFilter(activeKpiFilter === 'aboveAge' ? 'all' : 'aboveAge')} />
         </div>
         <div style={{ outline: activeKpiFilter === 'expiring' ? '2px solid #f59e0b' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
-          <KpiCard loading={loading} tone="amber" title="تنتهي قريباً (60 يوم)" value={dashboardData.expiringSoonCount} sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} icon="⏳" onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} />
+          <KpiCard loading={loading} tone="amber" title="إجراء مطلوب (60 يوم)" value={dashboardData.expiringSoonCount} sub={`نسبة ${dashboardData.expiringSoonPct}% من القوة`} icon="⏳" onClick={() => setActiveKpiFilter(activeKpiFilter === 'expiring' ? 'all' : 'expiring')} />
         </div>
         <div style={{ outline: activeKpiFilter === 'turning60' ? '2px solid #ef4444' : 'none', borderRadius: '12px', transition: 'all 0.2s' }}>
           <KpiCard loading={loading} tone="red" title="سيبلغون الـ 60 (60 يوم)" value={dashboardData.turning60SoonCount} sub="عرض الجدول والنافذة 🎂" icon="🎂" onClick={() => { setActiveKpiFilter('turning60'); setAgeFilterYear(''); setAgeFilterMonth(''); setShowAgeModal(true); }} />
@@ -542,7 +628,7 @@ export default function DashboardPage() {
               {activeKpiFilter === 'fixed' && 'العقود محددة المدة'}
               {activeKpiFilter === 'perm' && 'العقود الدائمة'}
               {activeKpiFilter === 'aboveAge' && 'العمالة فوق السن (60+)'}
-              {activeKpiFilter === 'expiring' && 'العقود التي تنتهي خلال 60 يوم'}
+              {activeKpiFilter === 'expiring' && 'إجراءات مطلوبة خلال 60 يوم'}
               {activeKpiFilter === 'turning60' && 'الموظفين البالغين لسن التقاعد قريباً'}
             </strong> ({dashboardData.kpiFilteredCount} موظف)
           </span>
@@ -749,7 +835,7 @@ export default function DashboardPage() {
                     <th style={{ padding: '8px' }}>الكود</th>
                     <th style={{ padding: '8px' }}>الموظف</th>
                     <th style={{ padding: '8px' }}>الإدارة</th>
-                    <th style={{ padding: '8px' }}>الانتهاء</th>
+                    <th style={{ padding: '8px' }}>تاريخ الانتهاء</th>
                     <th style={{ padding: '8px' }}>الحالة</th>
                   </tr>
                 </thead>
@@ -759,9 +845,17 @@ export default function DashboardPage() {
                       <td style={{ padding: '8px', fontWeight: 'bold', fontFamily: 'monospace', color: '#0d9488' }}>{getField(alert, 'employee_code', 'EmployeeCode')}</td>
                       <td style={{ padding: '8px', fontWeight: 'bold', color: '#0f172a' }}>{getField(alert, 'employee_name', 'ArabicName')}</td>
                       <td style={{ padding: '8px', color: '#64748b', fontSize: '11px' }}>{alert.department || '—'}</td>
-                      <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>{alert.contract_end_date}</td>
+                      <td style={{ padding: '8px', fontFamily: 'monospace', fontWeight: 'bold' }}>{alert.contract_end_date || '—'}</td>
                       <td style={{ padding: '8px' }}>
-                        <Stamp color="amber">متبقي {alert.days} يوم</Stamp>
+                        {alert.activeReason === 'age' ? (
+                          <Stamp color="purple">يبلغ 60 ({alert.days} يوم)</Stamp>
+                        ) : (
+                          (alert.days ?? 0) < 0 ? (
+                            <Stamp color="red">منتهي ({Math.abs(alert.days ?? 0)} يوم)</Stamp>
+                          ) : (
+                            <Stamp color="amber">متبقي {alert.days} يوم</Stamp>
+                          )
+                        )}
                       </td>
                     </tr>
                   ))}
