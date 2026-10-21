@@ -112,7 +112,7 @@ export default function ContractsPage() {
     return age;
   };
 
-  // 🚀 دالة جديدة لحساب الأيام المتبقية على بلوغ سن الـ 60 (حتى لو بالسالب)
+  // 🚀 دالة حساب الأيام المتبقية على بلوغ سن الـ 60
   const getDaysToSixty = (birthDateRaw: string | null | undefined) => {
     const ts = getTimestamp(birthDateRaw);
     if (ts === 0) return null;
@@ -285,10 +285,10 @@ export default function ContractsPage() {
       if (activeFilterCard === 'fixed') matchesCard = empType.includes('محدد');
       if (activeFilterCard === 'overage') matchesCard = empType.includes('فوق السن') || (calculateAge(emp.birth_date) ?? 0) >= 60;
       
-      // 🚀 التحديث هنا: يشمل من ينتهي عقده ومن يبلغ السن حتى لو دائم وأيامه بالسالب
       if (activeFilterCard === 'expiring') {
         const contractExpiring = !empType.includes('دائم') && days !== null && days <= 60;
-        const ageExpiring = !empType.includes('فوق السن') && daysTo60 !== null && daysTo60 <= 60;
+        // يظهر في المنتهي فقط لو لم يتجاوز الستين بكثير (أكبر من 0)
+        const ageExpiring = !empType.includes('فوق السن') && daysTo60 !== null && daysTo60 >= 0 && daysTo60 <= 60;
         matchesCard = contractExpiring || ageExpiring;
       }
 
@@ -319,11 +319,11 @@ export default function ContractsPage() {
       }
 
       if (sortColumn === 'days_left') {
-        // ترتيب ذكي بناءً على الأيام المؤثرة (سن الستين أو نهاية العقد)
         const getEffectiveDays = (emp: any) => {
            const type = String(emp.contract_type || '');
            const d60 = getDaysToSixty(emp.birth_date);
-           const needsAgeAction = !type.includes('فوق السن') && d60 !== null && d60 <= 60;
+           // 🚀 التعديل هنا: التنبيه يشتغل بس لو المتبقي من 0 لـ 60 يوم
+           const needsAgeAction = !type.includes('فوق السن') && d60 !== null && d60 >= 0 && d60 <= 60;
            if (needsAgeAction) return d60;
            const d = getDaysRemaining(emp.contract_end_date);
            if (!type.includes('دائم') && d !== null) return d;
@@ -365,13 +365,13 @@ export default function ContractsPage() {
   const totalFixedContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('محدد')).length;
   const overAgeContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('فوق السن') || (calculateAge(e.birth_date) ?? 0) >= 60).length;
   
-  // 🚀 التحديث هنا: يشمل من ينتهي عقده ومن يبلغ السن حتى لو دائم وأيامه بالسالب
   const expiringSoonCount = activeEmployees.filter(e => { 
     const type = String(e.contract_type || '');
     const d = getDaysRemaining(e.contract_end_date); 
     const d60 = getDaysToSixty(e.birth_date);
     const contractExpiring = !type.includes('دائم') && d !== null && d <= 60;
-    const ageExpiring = !type.includes('فوق السن') && d60 !== null && d60 <= 60;
+    // 🚀 تحديث إحصائيات الكارت ليطابق التعديل
+    const ageExpiring = !type.includes('فوق السن') && d60 !== null && d60 >= 0 && d60 <= 60;
     return contractExpiring || ageExpiring;
   }).length;
   
@@ -703,10 +703,10 @@ export default function ContractsPage() {
     const rows = sortedContracts.map(emp => {
       const age = calculateAge(emp.birth_date);
       
-      // 🚀 حساب الأيام الفعالة للإكسيل (بياخد في اعتباره الموقوف والمستمر والبالغ للسن)
       const empType = String(emp.contract_type || '');
       const d60 = getDaysToSixty(emp.birth_date);
-      const needsAgeAction = !empType.includes('فوق السن') && d60 !== null && d60 <= 60;
+      // 🚀 مطابقة الإكسيل لنفس التعديل
+      const needsAgeAction = !empType.includes('فوق السن') && d60 !== null && d60 >= 0 && d60 <= 60;
       const daysLeft = needsAgeAction ? d60 : getDaysRemaining(emp.contract_end_date);
       
       const reqInfo = getRenewalStatusInfo(String(emp.employee_code || '')).text;
@@ -970,20 +970,15 @@ export default function ContractsPage() {
                 const isAgeSixtyOrAbove = age !== null && age >= 60;
                 const isNearSixty = age !== null && age >= 59 && age < 60;
 
-                // 🚀 تحديد إذا كان الموظف مطلوب منه إجراء بسبب السن
-                const needsAgeAction = !isOverAgeContract && daysTo60 !== null && daysTo60 <= 60;
+                // 🚀 التعديل هنا: مطلوب إجراء للسن فقط لو كان المتبقي من 0 لـ 60 يوم ولم يتم تغيير نوع العقد
+                const needsAgeAction = !isOverAgeContract && daysTo60 !== null && daysTo60 >= 0 && daysTo60 <= 60;
 
                 let remainingLabel = <span style={{ color: '#64748b' }}>—</span>;
                 
                 if (isInactiveVisual && termDateFromDb) {
                   remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>أُنهي في {termDateFromDb}</span>;
                 } else if (needsAgeAction) {
-                  // 🚀 رسالة تحذيرية لبلوغ أو تجاوز الـ 60
-                  if (daysTo60 < 0) {
-                    remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>تجاوز الـ 60 ({Math.abs(daysTo60)} يوم)</span>;
-                  } else {
-                    remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>يبلغ الـ 60 ({daysTo60} يوم)</span>;
-                  }
+                  remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>يبلغ الـ 60 ({daysTo60} يوم)</span>;
                 } else if (daysLeft !== null && !empType.includes('دائم')) {
                   if (daysLeft < 0) remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>منتهي ({Math.abs(daysLeft)} يوم)</span>;
                   else if (daysLeft <= 60) remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>متبقي {daysLeft} يوم</span>;
