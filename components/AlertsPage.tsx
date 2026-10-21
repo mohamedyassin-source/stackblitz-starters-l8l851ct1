@@ -162,13 +162,14 @@ export default function AlertsPage() {
         const job = String(emp.job_title || '');
 
         const isPermanent = cType.includes('دائم') || job.includes('دائم');
-        const isAlreadyOverAge = cType.includes('فوق السن');
+        
+        // 🚀 إضافة "مكافأة شاملة" لقائمة الاستثناءات من حسبة السن
+        const isAlreadyOverAge = cType.includes('فوق السن') || cType.includes('مكافأة شاملة');
 
         const days = getDaysRemaining(emp.contract_end_date);
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
 
-        // 🌟 تقييم مستوى خطر السن
         let ageLevel: 'critical' | 'warning' | 'retirement' | 'safe' = 'safe';
         if (!isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90) {
           if (daysToRetirement < 0) ageLevel = 'critical';
@@ -176,7 +177,6 @@ export default function AlertsPage() {
           else ageLevel = 'retirement';
         }
 
-        // 🌟 تقييم مستوى خطر العقد
         let contractLevel: 'critical' | 'warning' | 'notice' | 'safe' = 'safe';
         if (!isPermanent && days !== null && days <= 90) {
           if (days < 0) contractLevel = 'critical';
@@ -184,7 +184,6 @@ export default function AlertsPage() {
           else contractLevel = 'notice';
         }
 
-        // 🌟 دمج الأولويات حسب نوع العقد
         let finalLevel: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
         let alertReason: 'age' | 'contract' = 'contract';
         const weights = { critical: 4, warning: 3, notice: 2, retirement: 1, safe: 0 };
@@ -196,7 +195,6 @@ export default function AlertsPage() {
           finalLevel = contractLevel;
           alertReason = 'contract';
         } else {
-          // للعقود محددة المدة العادية: اختار الأخطر (السن أم نهاية العقد)
           if (weights[ageLevel] > weights[contractLevel]) {
             finalLevel = ageLevel;
             alertReason = 'age';
@@ -222,7 +220,7 @@ export default function AlertsPage() {
           daysToRetirement: daysToRetirement,
           retirementDateStr: retirementDate ? retirementDate.toISOString().split('T')[0] : null,
           alertLevel: finalLevel,
-          alertReason: alertReason, // 👈 تحديد سبب التنبيه لطباعته في الجدول
+          alertReason: alertReason,
           hasActiveRequest: hasActiveRequest,
           requestStatus: latestRenewal?.status || 'لا يوجد',
         };
@@ -232,7 +230,6 @@ export default function AlertsPage() {
         if (a.alertLevel === 'critical' && b.alertLevel !== 'critical') return -1;
         if (b.alertLevel === 'critical' && a.alertLevel !== 'critical') return 1;
         
-        // الترتيب حسب الأيام بناءً على نوع التنبيه المعروض
         const aDays = a.alertReason === 'age' ? a.daysToRetirement : a.daysRemaining;
         const bDays = b.alertReason === 'age' ? b.daysToRetirement : b.daysRemaining;
         return (aDays ?? 999) - (bDays ?? 999);
@@ -266,8 +263,9 @@ export default function AlertsPage() {
     setActionLoading(true);
     try {
       const contractType = String(emp.contract_type || '');
+      const isAlreadyOverAge = contractType.includes('فوق السن') || contractType.includes('مكافأة شاملة');
 
-      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365 && !contractType.includes('فوق السن')) {
+      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365 && !isAlreadyOverAge) {
         alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ (أو تجاوز) سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده، أو تجديده بنوع عقد "فوق السن".`);
         setActionLoading(false);
         return;
@@ -533,7 +531,6 @@ export default function AlertsPage() {
                     </td>
 
                     <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {/* 🌟 عرض التنبيه بناءً على وزن المشكلة الحقيقي */}
                       {item.alertReason === 'age' ? (
                         (item.daysToRetirement ?? 0) < 0 ? (
                           <span style={{ fontWeight: 'bold', color: '#dc2626' }}>تجاوز 60 بـ {Math.abs(item.daysToRetirement ?? 0)} يوم</span>
