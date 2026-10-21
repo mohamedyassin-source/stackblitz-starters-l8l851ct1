@@ -8,7 +8,6 @@ import { supabase } from '@/lib/supabase';
 const cleanCode = (code: any) =>
   code === null || code === undefined ? '' : String(code).replace(/\s+/g, '').toLowerCase().replace(/^0+(?=.)/, '');
 
-// دالة ذكية لتحويل أي صيغة تاريخ لرقم (تدعم النصوص وكائنات Date)
 const getTimestamp = (v: any): number => {
   if (!v) return 0;
   if (v instanceof Date) return isNaN(v.getTime()) ? 0 : v.getTime();
@@ -31,7 +30,6 @@ const getTimestamp = (v: any): number => {
   return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
 };
 
-// 🚀 الخوارزمية الصارمة لاختيار أحدث عقد بدقة
 const pickLatestContract = (list: any[]) => {
   if (!list || !list.length) return undefined;
   
@@ -61,7 +59,6 @@ const pickLatestContract = (list: any[]) => {
   })[0];
 };
 
-// دالة حساب تاريخ التقاعد (60 سنة)
 const getRetirementDate = (birthDateRaw: any) => {
   const ts = getTimestamp(birthDateRaw);
   if (ts === 0) return null;
@@ -86,15 +83,12 @@ export default function AlertsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // 🌟 الديفولت بقى يفتح على الحرج جداً (الإنذار الاستباقي)
   const [severityTab, setSeverityTab] = useState<'all' | 'critical' | 'warning' | 'notice' | 'retirement'>('warning');
 
-  // الفلاتر
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCompany, setSelectedCompany] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
 
-  // 🌟 دالة السحب التكرارية
   const fetchAllRows = async (tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) => {
     let allRows: any[] = [];
     let from = 0;
@@ -116,7 +110,7 @@ export default function AlertsPage() {
     try {
       const [empData, contData, renData] = await Promise.all([
         fetchAllRows('employees'),
-        fetchAllRows('contracts'), 
+        fetchAllRows('contracts'),
         fetchAllRows('renewal_requests')
       ]);
 
@@ -131,7 +125,6 @@ export default function AlertsPage() {
       const mergedEmployees = empData.filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد').map(emp => {
         const empCodeClean = cleanCode(emp.employee_code);
         const empContracts = contractsMap.get(empCodeClean) || [];
-
         const latestContract = pickLatestContract(empContracts);
 
         const finalType = latestContract ? latestContract.contract_type : emp.contract_type;
@@ -172,13 +165,46 @@ export default function AlertsPage() {
         const isAlreadyOverAge = cType.includes('فوق السن');
 
         const days = getDaysRemaining(emp.contract_end_date);
-
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
 
-        // 🚀 التعديل الجراحي: التنبيه يظهر لو هيبلغ السن خلال 90 يوم، 
-        // أو لو عدى السن (أيام بالسالب) وعقده لسه مش "فوق السن"
-        const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90;
+        // 🌟 تقييم مستوى خطر السن
+        let ageLevel: 'critical' | 'warning' | 'retirement' | 'safe' = 'safe';
+        if (!isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90) {
+          if (daysToRetirement < 0) ageLevel = 'critical';
+          else if (daysToRetirement <= 30) ageLevel = 'warning';
+          else ageLevel = 'retirement';
+        }
+
+        // 🌟 تقييم مستوى خطر العقد
+        let contractLevel: 'critical' | 'warning' | 'notice' | 'safe' = 'safe';
+        if (!isPermanent && days !== null && days <= 90) {
+          if (days < 0) contractLevel = 'critical';
+          else if (days <= 30) contractLevel = 'warning';
+          else contractLevel = 'notice';
+        }
+
+        // 🌟 دمج الأولويات حسب نوع العقد
+        let finalLevel: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
+        let alertReason: 'age' | 'contract' = 'contract';
+        const weights = { critical: 4, warning: 3, notice: 2, retirement: 1, safe: 0 };
+
+        if (isPermanent) {
+          finalLevel = ageLevel;
+          alertReason = 'age';
+        } else if (isAlreadyOverAge) {
+          finalLevel = contractLevel;
+          alertReason = 'contract';
+        } else {
+          // للعقود محددة المدة العادية: اختار الأخطر (السن أم نهاية العقد)
+          if (weights[ageLevel] > weights[contractLevel]) {
+            finalLevel = ageLevel;
+            alertReason = 'age';
+          } else {
+            finalLevel = contractLevel;
+            alertReason = 'contract';
+          }
+        }
 
         const safeCode = String(emp.employee_code).trim().replace(/^0+/, '');
         const empRens = renewals
@@ -190,22 +216,13 @@ export default function AlertsPage() {
           && !String(latestRenewal.status || '').includes('Rejected')
           && !String(latestRenewal.signature_status || '').includes('تم التوقيع');
 
-        let level: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
-
-        if (isRetiringSoon) {
-          level = 'retirement';
-        } else if (!isPermanent && days !== null) {
-          if (days < 0) level = 'critical';
-          else if (days <= 30) level = 'warning';
-          else if (days <= 90) level = 'notice';
-        }
-
         return {
           ...emp,
           daysRemaining: days,
           daysToRetirement: daysToRetirement,
           retirementDateStr: retirementDate ? retirementDate.toISOString().split('T')[0] : null,
-          alertLevel: level,
+          alertLevel: finalLevel,
+          alertReason: alertReason, // 👈 تحديد سبب التنبيه لطباعته في الجدول
           hasActiveRequest: hasActiveRequest,
           requestStatus: latestRenewal?.status || 'لا يوجد',
         };
@@ -214,7 +231,11 @@ export default function AlertsPage() {
       .sort((a, b) => {
         if (a.alertLevel === 'critical' && b.alertLevel !== 'critical') return -1;
         if (b.alertLevel === 'critical' && a.alertLevel !== 'critical') return 1;
-        return (a.daysRemaining ?? 999) - (b.daysRemaining ?? 999);
+        
+        // الترتيب حسب الأيام بناءً على نوع التنبيه المعروض
+        const aDays = a.alertReason === 'age' ? a.daysToRetirement : a.daysRemaining;
+        const bDays = b.alertReason === 'age' ? b.daysToRetirement : b.daysRemaining;
+        return (aDays ?? 999) - (bDays ?? 999);
       });
   }, [employees, renewals]);
 
@@ -246,7 +267,6 @@ export default function AlertsPage() {
     try {
       const contractType = String(emp.contract_type || '');
 
-      // 🚀 منع السيستم من عمل عقد سنة كاملة لأي حد هيبلغ الستين أو عدى الستين وعقده مش "فوق السن"
       if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365 && !contractType.includes('فوق السن')) {
         alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ (أو تجاوز) سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده، أو تجديده بنوع عقد "فوق السن".`);
         setActionLoading(false);
@@ -317,28 +337,23 @@ export default function AlertsPage() {
   return (
     <div style={{ paddingBottom: '40px', direction: 'rtl' }}>
       <style>{`
-        /* 🌟 انيميشن النبض (Pulse) للحرج جداً (باللون البرتقالي) */
         @keyframes pulse-border {
           0% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.4); border-color: #f97316; }
           70% { box-shadow: 0 0 0 15px rgba(249, 115, 22, 0); border-color: #fdba74; }
           100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); border-color: #f97316; }
         }
-
         @keyframes pulse-row-bg {
           0% { background-color: #fff7ed; }
           50% { background-color: #ffedd5; }
           100% { background-color: #fff7ed; }
         }
-
         .pulse-critical-card {
           animation: pulse-border 2s infinite !important;
           border-width: 2px !important;
         }
-
         .pulse-critical-row {
           animation: pulse-row-bg 2s infinite;
         }
-
         .modern-stat-card {
           background: #ffffff;
           border-radius: 8px;
@@ -381,21 +396,15 @@ export default function AlertsPage() {
         </div>
 
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            onClick={handleSendEmailReport}
-            disabled={actionLoading}
-            style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
-          >
+          <button onClick={handleSendEmailReport} disabled={actionLoading} style={{ background: '#10b981', color: '#fff', border: 0, padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', opacity: actionLoading ? 0.7 : 1, boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             {getButtonText()}
           </button>
-
           <button onClick={fetchAllData} disabled={actionLoading} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '10px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: actionLoading ? 'not-allowed' : 'pointer', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
             🔄 فحص السجلات الآن
           </button>
         </div>
       </div>
 
-      {/* 🚨 شريط التنبيه الاستباقي العاجل (يظهر لعقود مرحلة الحرج جداً) 🚨 */}
       {counts.warning > 0 && (
         <div style={{ background: 'linear-gradient(90deg, #f97316, #c2410c)', color: '#fff', padding: '16px 24px', borderRadius: '12px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px', boxShadow: '0 10px 15px -3px rgba(249, 115, 22, 0.3)', border: '1px solid #fb923c' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -407,30 +416,24 @@ export default function AlertsPage() {
               </div>
             </div>
           </div>
-          <button
-            onClick={() => setSeverityTab('warning')}
-            style={{ background: '#ffffff', color: '#ea580c', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}
-          >
+          <button onClick={() => setSeverityTab('warning')} style={{ background: '#ffffff', color: '#ea580c', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: '900', fontSize: '13px', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
             عرض العقود الحرجة 🏃‍♂️
           </button>
         </div>
       )}
 
-      {/* الكروت الإحصائية */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-
         <div className={`modern-stat-card ${severityTab === 'critical' ? 'active' : ''}`} style={{ '--theme-color': '#ef4444', '--icon-bg': '#fef2f2' } as React.CSSProperties} onClick={() => setSeverityTab('critical')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>خطر قانوني (منتهية)</span>
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>خطر قانوني</span>
             <div className="card-icon-box">🔴</div>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.critical}</div>
-            <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 'bold' }}>تجاوزت التاريخ</div>
+            <div style={{ fontSize: '11px', color: '#ef4444', fontWeight: 'bold' }}>تجاوزت التاريخ أو السن</div>
           </div>
         </div>
 
-        {/* الكارت اللي بينبض هو الحرج جداً */}
         <div className={`modern-stat-card ${severityTab === 'warning' ? 'active' : ''} ${counts.warning > 0 ? 'pulse-critical-card' : ''}`} style={{ '--theme-color': '#f97316', '--icon-bg': '#fff7ed' } as React.CSSProperties} onClick={() => setSeverityTab('warning')}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>حرج جداً</span>
@@ -460,7 +463,7 @@ export default function AlertsPage() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.retirement}</div>
-            <div style={{ fontSize: '11px', color: '#8b5cf6', fontWeight: 'bold' }}>إجراء بسبب السن</div>
+            <div style={{ fontSize: '11px', color: '#8b5cf6', fontWeight: 'bold' }}>يبلغون السن قريباً</div>
           </div>
         </div>
 
@@ -476,30 +479,20 @@ export default function AlertsPage() {
         </div>
       </div>
 
-      {/* شريط الفلاتر */}
       <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         <input type="text" placeholder="بحث باسم الموظف أو الكود..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '220px', fontWeight: 'bold' }} />
-
         <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
           <option value="">🏢 كل الشركات</option>
           {companiesList.map((c: any, i) => <option key={i} value={c}>{c}</option>)}
         </select>
-
         <select value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontWeight: 'bold' }}>
           <option value="">💼 كل الإدارات</option>
           {deptsList.map((d: any, i) => <option key={i} value={d}>{d}</option>)}
         </select>
-
-        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>
-          إعادة ضبط
-        </button>
-
-        <div style={{ flex: 1, textAlign: 'left', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>
-          تنبيهات بالقائمة: <span style={{ color: '#4f46e5' }}>{filteredAlerts.length}</span>
-        </div>
+        <button onClick={() => { setSearchTerm(''); setSelectedCompany(''); setSelectedDept(''); }} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer', color: '#334155' }}>إعادة ضبط</button>
+        <div style={{ flex: 1, textAlign: 'left', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>تنبيهات بالقائمة: <span style={{ color: '#4f46e5' }}>{filteredAlerts.length}</span></div>
       </div>
 
-      {/* الجدول */}
       <div className="table-responsive" style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}>
         {loading ? (
           <div style={{ padding: '60px', textAlign: 'center', fontSize: '14px', fontWeight: 'bold', color: '#64748b' }}>جاري فحص السجلات وتحليل البيانات... ⏳</div>
@@ -511,7 +504,7 @@ export default function AlertsPage() {
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الكود</th>
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الموظف</th>
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>الإدارة</th>
-                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>انتهاء العقد</th>
+                <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>النوع / الانتهاء</th>
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>الإنذار الزمني</th>
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>حالة الإجراء</th>
                 <th style={{ padding: '14px 12px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b', textAlign: 'center' }}>قرار الـ HR</th>
@@ -522,29 +515,26 @@ export default function AlertsPage() {
                 <tr><td colSpan={8} style={{ padding: '40px', textAlign: 'center', color: '#10b981', fontWeight: 'bold' }}>لا توجد مخاطر أو تنبيهات.. وضع السجلات ممتاز! 🎉</td></tr>
               ) : (
                 filteredAlerts.map(item => (
-                  // 🌟 السطر اللي بينبض هو "حرج جداً" (warning)
                   <tr key={item.employee_code} className={item.alertLevel === 'warning' ? 'pulse-critical-row' : ''} style={{ borderBottom: '1px solid #f1f5f9', background: item.alertLevel === 'critical' ? '#fef2f2' : 'transparent', transition: 'background-color 0.3s' }}>
-
                     <td style={{ padding: '12px' }}>
                       {item.alertLevel === 'critical' && <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🔴 كارثي</span>}
                       {item.alertLevel === 'warning' && <span style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🟠 حرج</span>}
                       {item.alertLevel === 'notice' && <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🟡 تنبيه</span>}
-                      {item.alertLevel === 'retirement' && (
-                        (item.daysToRetirement ?? 0) < 0 ? (
-                          <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🔴 تجاوز الـ 60</span>
-                        ) : (
-                          <span style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>👴 سن معاش</span>
-                        )
-                      )}
+                      {item.alertLevel === 'retirement' && <span style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>👴 سن معاش</span>}
                     </td>
 
                     <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace', color: '#4f46e5' }}>{item.employee_code}</td>
                     <td style={{ padding: '12px', fontWeight: 'bold', color: '#0f172a' }}>{item.employee_name}</td>
                     <td style={{ padding: '12px', color: '#64748b', fontWeight: '500' }}>{item.department || '—'}</td>
-                    <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>{item.contract_end_date || '—'}</td>
+                    
+                    <td style={{ padding: '12px', fontFamily: 'monospace', fontWeight: 'bold' }}>
+                      <div style={{ color: '#2563eb', fontSize: '10px', marginBottom: '2px' }}>{item.contract_type}</div>
+                      {item.contract_end_date || '—'}
+                    </td>
 
                     <td style={{ padding: '12px', textAlign: 'center' }}>
-                      {item.alertLevel === 'retirement' ? (
+                      {/* 🌟 عرض التنبيه بناءً على وزن المشكلة الحقيقي */}
+                      {item.alertReason === 'age' ? (
                         (item.daysToRetirement ?? 0) < 0 ? (
                           <span style={{ fontWeight: 'bold', color: '#dc2626' }}>تجاوز 60 بـ {Math.abs(item.daysToRetirement ?? 0)} يوم</span>
                         ) : (
