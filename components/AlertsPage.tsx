@@ -116,7 +116,7 @@ export default function AlertsPage() {
     try {
       const [empData, contData, renData] = await Promise.all([
         fetchAllRows('employees'),
-        fetchAllRows('contracts'), // 🚀 سحب كل العقود لتطبيق خوارزمية الاختيار بذكاء
+        fetchAllRows('contracts'), 
         fetchAllRows('renewal_requests')
       ]);
 
@@ -132,7 +132,6 @@ export default function AlertsPage() {
         const empCodeClean = cleanCode(emp.employee_code);
         const empContracts = contractsMap.get(empCodeClean) || [];
 
-        // 🚀 استخدام الخوارزمية الصارمة لمعرفة العقد الفعلي
         const latestContract = pickLatestContract(empContracts);
 
         const finalType = latestContract ? latestContract.contract_type : emp.contract_type;
@@ -177,8 +176,9 @@ export default function AlertsPage() {
         const retirementDate = getRetirementDate(emp.birth_date);
         const daysToRetirement = getDaysRemaining(retirementDate);
 
-        // 🌟 التعديل الجراحي: يجب أن يكون المتبقي أكبر من أو يساوي الصفر، وأقل من 90 يوم
-        const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement >= 0 && daysToRetirement <= 90;
+        // 🚀 التعديل الجراحي: التنبيه يظهر لو هيبلغ السن خلال 90 يوم، 
+        // أو لو عدى السن (أيام بالسالب) وعقده لسه مش "فوق السن"
+        const isRetiringSoon = !isAlreadyOverAge && daysToRetirement !== null && daysToRetirement <= 90;
 
         const safeCode = String(emp.employee_code).trim().replace(/^0+/, '');
         const empRens = renewals
@@ -246,8 +246,9 @@ export default function AlertsPage() {
     try {
       const contractType = String(emp.contract_type || '');
 
-      if (emp.daysToRetirement !== null && emp.daysToRetirement >= 0 && emp.daysToRetirement <= 365 && !contractType.includes('فوق السن')) {
-        alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده، أو تجديده بنوع عقد "فوق السن".`);
+      // 🚀 منع السيستم من عمل عقد سنة كاملة لأي حد هيبلغ الستين أو عدى الستين وعقده مش "فوق السن"
+      if (emp.daysToRetirement !== null && emp.daysToRetirement <= 365 && !contractType.includes('فوق السن')) {
+        alert(`🚨 تنبيه خطر!\n\nالموظف (${emp.employee_name}) سيبلغ (أو تجاوز) سن التقاعد (60) بتاريخ ${emp.retirementDateStr}.\n\nلا يمكن للسيستم إنشاء تجديد آلي بسنة كاملة. يرجى التوجه لصفحة "العقود" لإنشاء نموذج بمدة مخصصة لا تتجاوز تاريخ تقاعده، أو تجديده بنوع عقد "فوق السن".`);
         setActionLoading(false);
         return;
       }
@@ -459,7 +460,7 @@ export default function AlertsPage() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div style={{ fontSize: '26px', fontWeight: '900', color: '#0f172a', lineHeight: '1' }}>{counts.retirement}</div>
-            <div style={{ fontSize: '11px', color: '#8b5cf6', fontWeight: 'bold' }}>يبلغون السن قريباً</div>
+            <div style={{ fontSize: '11px', color: '#8b5cf6', fontWeight: 'bold' }}>إجراء بسبب السن</div>
           </div>
         </div>
 
@@ -528,7 +529,13 @@ export default function AlertsPage() {
                       {item.alertLevel === 'critical' && <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🔴 كارثي</span>}
                       {item.alertLevel === 'warning' && <span style={{ background: '#fff7ed', color: '#ea580c', border: '1px solid #fed7aa', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🟠 حرج</span>}
                       {item.alertLevel === 'notice' && <span style={{ background: '#fffbeb', color: '#d97706', border: '1px solid #fde68a', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🟡 تنبيه</span>}
-                      {item.alertLevel === 'retirement' && <span style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>👴 سن معاش</span>}
+                      {item.alertLevel === 'retirement' && (
+                        (item.daysToRetirement ?? 0) < 0 ? (
+                          <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>🔴 تجاوز الـ 60</span>
+                        ) : (
+                          <span style={{ background: '#f3e8ff', color: '#7e22ce', border: '1px solid #e9d5ff', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold' }}>👴 سن معاش</span>
+                        )
+                      )}
                     </td>
 
                     <td style={{ padding: '12px', fontWeight: 'bold', fontFamily: 'monospace', color: '#4f46e5' }}>{item.employee_code}</td>
@@ -538,7 +545,11 @@ export default function AlertsPage() {
 
                     <td style={{ padding: '12px', textAlign: 'center' }}>
                       {item.alertLevel === 'retirement' ? (
-                        <span style={{ fontWeight: 'bold', color: '#7e22ce' }}>يبلغ 60 بعد {item.daysToRetirement} يوم</span>
+                        (item.daysToRetirement ?? 0) < 0 ? (
+                          <span style={{ fontWeight: 'bold', color: '#dc2626' }}>تجاوز 60 بـ {Math.abs(item.daysToRetirement ?? 0)} يوم</span>
+                        ) : (
+                          <span style={{ fontWeight: 'bold', color: '#7e22ce' }}>يبلغ 60 بعد {item.daysToRetirement} يوم</span>
+                        )
                       ) : (
                         <span style={{ fontWeight: 'bold', color: (item.daysRemaining ?? 0) < 0 ? '#dc2626' : (item.daysRemaining ?? 0) <= 30 ? '#ea580c' : '#10b981' }}>
                           {(item.daysRemaining ?? 0) < 0 ? `منتهي منذ ${Math.abs(item.daysRemaining ?? 0)} يوم` : `متبقي ${item.daysRemaining ?? 0} يوم`}
