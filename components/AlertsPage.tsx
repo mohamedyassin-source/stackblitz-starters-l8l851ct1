@@ -3,13 +3,82 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
+/* ───────────────────────── Helpers ───────────────────────── */
+
+const cleanCode = (code: any) =>
+  code === null || code === undefined ? '' : String(code).replace(/\s+/g, '').toLowerCase().replace(/^0+(?=.)/, '');
+
+// دالة ذكية لتحويل أي صيغة تاريخ لرقم (تدعم النصوص وكائنات Date)
+const getTimestamp = (v: any): number => {
+  if (!v) return 0;
+  if (v instanceof Date) return isNaN(v.getTime()) ? 0 : v.getTime();
+  
+  const s = String(v).trim();
+  
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) {
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  
+  m = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})/);
+  if (m) {
+    const d = new Date(+m[3], +m[2] - 1, +m[1]);
+    if (!isNaN(d.getTime())) return d.getTime();
+  }
+  
+  const fallback = new Date(s);
+  return isNaN(fallback.getTime()) ? 0 : fallback.getTime();
+};
+
+// 🚀 الخوارزمية الصارمة لاختيار أحدث عقد بدقة
+const pickLatestContract = (list: any[]) => {
+  if (!list || !list.length) return undefined;
+  
+  const isActive = (c: any) => {
+    const st = String(c.status || '').trim().toLowerCase();
+    return st === 'active' || st === 'نشط' ? 1 : 0;
+  };
+
+  return [...list].sort((a, b) => {
+    const actA = isActive(a);
+    const actB = isActive(b);
+    if (actA !== actB) return actB - actA;
+
+    const sA = getTimestamp(a.contract_start_date);
+    const sB = getTimestamp(b.contract_start_date);
+    if (sA !== sB) return sB - sA;
+
+    const eA = a.contract_end_date ? getTimestamp(a.contract_end_date) : Infinity;
+    const eB = b.contract_end_date ? getTimestamp(b.contract_end_date) : Infinity;
+    if (eA !== eB) return eB - eA;
+
+    const idA = parseInt(a.contract_id || 0, 10);
+    const idB = parseInt(b.contract_id || 0, 10);
+    if (!isNaN(idA) && !isNaN(idB) && idA !== idB) return idB - idA;
+
+    return 0;
+  })[0];
+};
+
 // دالة حساب تاريخ التقاعد (60 سنة)
-const getRetirementDate = (birthDateRaw: string | null | undefined) => {
-  if (!birthDateRaw) return null;
-  const birthDate = new Date(birthDateRaw);
-  if (isNaN(birthDate.getTime())) return null;
+const getRetirementDate = (birthDateRaw: any) => {
+  const ts = getTimestamp(birthDateRaw);
+  if (ts === 0) return null;
+  const birthDate = new Date(ts);
   return new Date(birthDate.getFullYear() + 60, birthDate.getMonth(), birthDate.getDate());
 };
+
+const getDaysRemaining = (dateInput: any) => {
+  const ts = getTimestamp(dateInput);
+  if (ts === 0) return null;
+  const end = new Date(ts);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
+};
+
+/* ───────────────────────── Component ───────────────────────── */
 
 export default function AlertsPage() {
   const [employees, setEmployees] = useState<any[]>([]);
@@ -47,35 +116,34 @@ export default function AlertsPage() {
     try {
       const [empData, contData, renData] = await Promise.all([
         fetchAllRows('employees'),
-        fetchAllRows('contracts', '*', { col: 'status', val: 'Active' }),
+        fetchAllRows('contracts'), // 🚀 سحب كل العقود لتطبيق خوارزمية الاختيار بذكاء
         fetchAllRows('renewal_requests')
       ]);
 
       const contractsMap = new Map<string, any[]>();
       contData.forEach(c => {
         if (!c) return;
-        const code = String(c.employee_code || '').trim().replace(/^0+/, '');
+        const code = cleanCode(c.employee_code);
         if (!contractsMap.has(code)) contractsMap.set(code, []);
         contractsMap.get(code)?.push(c);
       });
 
       const mergedEmployees = empData.filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد').map(emp => {
-        const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
+        const empCodeClean = cleanCode(emp.employee_code);
         const empContracts = contractsMap.get(empCodeClean) || [];
 
-        empContracts.sort((a, b) => {
-          const dateA = a.contract_end_date ? new Date(a.contract_end_date).getTime() : 0;
-          const dateB = b.contract_end_date ? new Date(b.contract_end_date).getTime() : 0;
-          return dateB - dateA;
-        });
+        // 🚀 استخدام الخوارزمية الصارمة لمعرفة العقد الفعلي
+        const latestContract = pickLatestContract(empContracts);
 
-        const activeContract = empContracts[0] || {};
+        const finalType = latestContract ? latestContract.contract_type : emp.contract_type;
+        const finalStart = latestContract ? latestContract.contract_start_date : emp.contract_start_date || emp.hiring_date;
+        const finalEnd = latestContract ? latestContract.contract_end_date : emp.contract_end_date;
 
         return {
           ...emp,
-          contract_type: activeContract.contract_type || emp.contract_type || '—',
-          contract_start_date: activeContract.contract_start_date || emp.contract_start_date || emp.hiring_date || null,
-          contract_end_date: activeContract.contract_end_date || emp.contract_end_date || null,
+          contract_type: finalType || '—',
+          contract_start_date: finalStart || null,
+          contract_end_date: finalEnd || null,
         };
       });
 
@@ -91,15 +159,6 @@ export default function AlertsPage() {
   useEffect(() => {
     fetchAllData();
   }, []);
-
-  const getDaysRemaining = (dateStr: string | Date | null) => {
-    if (!dateStr) return null;
-    const end = new Date(dateStr);
-    if (isNaN(end.getTime())) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
-  };
 
   const companiesList = Array.from(new Set(employees.map(e => e.company).filter(Boolean)));
   const deptsList = Array.from(new Set(employees.map(e => e.department).filter(Boolean)));
