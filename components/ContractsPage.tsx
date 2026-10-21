@@ -100,9 +100,9 @@ export default function ContractsPage() {
 
   // 🎂 دالة حساب العمر
   const calculateAge = (birthDateRaw: string | null | undefined) => {
-    if (!birthDateRaw) return null;
-    const birthDate = new Date(birthDateRaw);
-    if (isNaN(birthDate.getTime())) return null;
+    const ts = getTimestamp(birthDateRaw);
+    if (ts === 0) return null;
+    const birthDate = new Date(ts);
     const today = new Date();
     let age = today.getFullYear() - birthDate.getFullYear();
     const m = today.getMonth() - birthDate.getMonth();
@@ -110,6 +110,26 @@ export default function ContractsPage() {
       age--;
     }
     return age;
+  };
+
+  // 🚀 دالة جديدة لحساب الأيام المتبقية على بلوغ سن الـ 60 (حتى لو بالسالب)
+  const getDaysToSixty = (birthDateRaw: string | null | undefined) => {
+    const ts = getTimestamp(birthDateRaw);
+    if (ts === 0) return null;
+    const b = new Date(ts);
+    const age60Date = new Date(b.getFullYear() + 60, b.getMonth(), b.getDate());
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
+  };
+
+  const getDaysRemaining = (endDateStr: string | null | undefined) => {
+    const ts = getTimestamp(endDateStr);
+    if (ts === 0) return null;
+    const end = new Date(ts);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
   };
 
   useEffect(() => {
@@ -165,7 +185,6 @@ export default function ContractsPage() {
         const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
         const empContracts = contractsMap.get(empCodeClean) || [];
 
-        // 🚀 ترتيب صارم لاختيار العقد الأحدث
         empContracts.sort((a, b) => {
           const actA = String(a.status || '').trim().toLowerCase() === 'active' ? 1 : 0;
           const actB = String(b.status || '').trim().toLowerCase() === 'active' ? 1 : 0;
@@ -200,15 +219,6 @@ export default function ContractsPage() {
     }
   };
 
-  const getDaysRemaining = (endDateStr: string | null | undefined) => {
-    if (!endDateStr) return null;
-    const end = new Date(endDateStr);
-    if (isNaN(end.getTime())) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
-  };
-
   const getRenewalStatusInfo = (empCode: string) => {
     if (!empCode) return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
     const empRens = renewals
@@ -227,7 +237,7 @@ export default function ContractsPage() {
     return { text: 'متاح للطلب', color: 'var(--muted)', locked: false };
   };
 
-  // 🌟 نظام الفلترة الذكي
+  // 🌟 نظام الفلترة الذكي (تم التحديث لدعم المنتهيين والبالغين للسن)
   const filteredContracts = useMemo(() => {
     const term = String(searchTerm || '').trim().toLowerCase();
     const isSearching = term.length > 0;
@@ -260,6 +270,7 @@ export default function ContractsPage() {
       if (!matchesSearch) return false;
 
       const days = getDaysRemaining(emp.contract_end_date);
+      const daysTo60 = getDaysToSixty(emp.birth_date);
       const reqInfo = getRenewalStatusInfo(String(emp.employee_code || ''));
       
       const matchesDept = !selectedDept || empDept === selectedDept;
@@ -273,7 +284,13 @@ export default function ContractsPage() {
       let matchesCard = true;
       if (activeFilterCard === 'fixed') matchesCard = empType.includes('محدد');
       if (activeFilterCard === 'overage') matchesCard = empType.includes('فوق السن') || (calculateAge(emp.birth_date) ?? 0) >= 60;
-      if (activeFilterCard === 'expiring') matchesCard = days !== null && days <= 60 && days >= 0;
+      
+      // 🚀 التحديث هنا: يشمل من ينتهي عقده ومن يبلغ السن حتى لو دائم وأيامه بالسالب
+      if (activeFilterCard === 'expiring') {
+        const contractExpiring = !empType.includes('دائم') && days !== null && days <= 60;
+        const ageExpiring = !empType.includes('فوق السن') && daysTo60 !== null && daysTo60 <= 60;
+        matchesCard = contractExpiring || ageExpiring;
+      }
 
       let matchesReqStatus = true;
       if (selectedReqStatus) {
@@ -302,8 +319,19 @@ export default function ContractsPage() {
       }
 
       if (sortColumn === 'days_left') {
-        valA = getDaysRemaining(a.contract_end_date) ?? (sortDirection === 'asc' ? 99999 : -99999);
-        valB = getDaysRemaining(b.contract_end_date) ?? (sortDirection === 'asc' ? 99999 : -99999);
+        // ترتيب ذكي بناءً على الأيام المؤثرة (سن الستين أو نهاية العقد)
+        const getEffectiveDays = (emp: any) => {
+           const type = String(emp.contract_type || '');
+           const d60 = getDaysToSixty(emp.birth_date);
+           const needsAgeAction = !type.includes('فوق السن') && d60 !== null && d60 <= 60;
+           if (needsAgeAction) return d60;
+           const d = getDaysRemaining(emp.contract_end_date);
+           if (!type.includes('دائم') && d !== null) return d;
+           return null;
+        };
+
+        valA = getEffectiveDays(a) ?? (sortDirection === 'asc' ? 99999 : -99999);
+        valB = getEffectiveDays(b) ?? (sortDirection === 'asc' ? 99999 : -99999);
         return sortDirection === 'asc' ? valA - valB : valB - valA;
       }
       
@@ -336,7 +364,16 @@ export default function ContractsPage() {
   const totalAll = activeEmployees.length;
   const totalFixedContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('محدد')).length;
   const overAgeContracts = activeEmployees.filter(e => String(e.contract_type || '').includes('فوق السن') || (calculateAge(e.birth_date) ?? 0) >= 60).length;
-  const expiringSoonCount = activeEmployees.filter(e => { const d = getDaysRemaining(e.contract_end_date); return d !== null && d <= 60 && d >= 0; }).length;
+  
+  // 🚀 التحديث هنا: يشمل من ينتهي عقده ومن يبلغ السن حتى لو دائم وأيامه بالسالب
+  const expiringSoonCount = activeEmployees.filter(e => { 
+    const type = String(e.contract_type || '');
+    const d = getDaysRemaining(e.contract_end_date); 
+    const d60 = getDaysToSixty(e.birth_date);
+    const contractExpiring = !type.includes('دائم') && d !== null && d <= 60;
+    const ageExpiring = !type.includes('فوق السن') && d60 !== null && d60 <= 60;
+    return contractExpiring || ageExpiring;
+  }).length;
   
   const suspendedCount = employees.filter(emp => {
     if (!emp) return false;
@@ -665,12 +702,16 @@ export default function ContractsPage() {
 
     const rows = sortedContracts.map(emp => {
       const age = calculateAge(emp.birth_date);
-      const daysLeft = getDaysRemaining(emp.contract_end_date);
-      const reqInfo = getRenewalStatusInfo(String(emp.employee_code || '')).text;
       
+      // 🚀 حساب الأيام الفعالة للإكسيل (بياخد في اعتباره الموقوف والمستمر والبالغ للسن)
+      const empType = String(emp.contract_type || '');
+      const d60 = getDaysToSixty(emp.birth_date);
+      const needsAgeAction = !empType.includes('فوق السن') && d60 !== null && d60 <= 60;
+      const daysLeft = needsAgeAction ? d60 : getDaysRemaining(emp.contract_end_date);
+      
+      const reqInfo = getRenewalStatusInfo(String(emp.employee_code || '')).text;
       const empDept = String(emp.department || '');
       const empJob = String(emp.job_title || '');
-      const empType = String(emp.contract_type || '');
       const empStatus = String(emp.status || '');
       const termReasonFromDb = String(getField(emp, 'termination_reason', 'TerminationReason')); 
       const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType) || empDept.includes('تحويلات');
@@ -799,7 +840,7 @@ export default function ContractsPage() {
 
           <div className={`modern-stat-card ${activeFilterCard === 'expiring' ? 'active' : ''}`} style={{ '--theme-color': '#8b5cf6', '--icon-bg': '#f3e8ff' } as React.CSSProperties} onClick={() => setActiveFilterCard('expiring')}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>ينتهي قريباً</span>
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>إجراء مطلوب (سن/عقد)</span>
               <div className="card-icon-box">⏳</div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
@@ -920,26 +961,36 @@ export default function ContractsPage() {
                 const isTerminated = empStatus === 'Inactive' || empStatus === 'Terminated' || TERMINATION_REASONS.includes(empType);
                 const isInactiveVisual = isHiddenDept || isHiddenJob || isTerminated;
 
-                // 🚀 عرض تاريخ الإنهاء الفعلي في خانة النهاية لو الموظف موقوف
                 const displayedEndDate = (isInactiveVisual && termDateFromDb) ? termDateFromDb : (emp.contract_end_date || '—');
 
                 const daysLeft = getDaysRemaining(emp.contract_end_date);
+                const daysTo60 = getDaysToSixty(emp.birth_date);
                 const age = calculateAge(emp.birth_date);
                 const isOverAgeContract = empType.includes('فوق السن');
                 const isAgeSixtyOrAbove = age !== null && age >= 60;
                 const isNearSixty = age !== null && age >= 59 && age < 60;
 
+                // 🚀 تحديد إذا كان الموظف مطلوب منه إجراء بسبب السن
+                const needsAgeAction = !isOverAgeContract && daysTo60 !== null && daysTo60 <= 60;
+
                 let remainingLabel = <span style={{ color: '#64748b' }}>—</span>;
                 
-                // 🚀 عرض رسالة واضحة في خانة المتبقي
                 if (isInactiveVisual && termDateFromDb) {
-                  remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>ينتهي في {termDateFromDb}</span>;
-                } else if (daysLeft !== null) {
-                  if (daysLeft < 0) remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>منتهي ({Math.abs(daysLeft)} يوم)</span>;
-                  else if (daysLeft <= 60) remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>متبقي {daysLeft} يوم</span>;
+                  remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>أُنهي في {termDateFromDb}</span>;
+                } else if (needsAgeAction) {
+                  // 🚀 رسالة تحذيرية لبلوغ أو تجاوز الـ 60
+                  if (daysTo60 < 0) {
+                    remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>تجاوز الـ 60 ({Math.abs(daysTo60)} يوم)</span>;
+                  } else {
+                    remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>يبلغ الـ 60 ({daysTo60} يوم)</span>;
+                  }
+                } else if (daysLeft !== null && !empType.includes('دائم')) {
+                  if (daysLeft < 0) remainingLabel = <span style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>منتهي ({Math.abs(daysLeft)} يوم)</span>;
+                  else if (daysLeft <= 60) remainingLabel = <span style={{ background: '#fffbeb', color: '#d97706', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>متبقي {daysLeft} يوم</span>;
                   else remainingLabel = <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>متبقي {daysLeft} يوم</span>;
+                } else if (empType.includes('دائم')) {
+                  remainingLabel = <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم</span>;
                 }
-                if (empType === 'دائم') remainingLabel = <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>عقد دائم</span>;
 
                 let reqBadge = <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 'bold' }}>متاح للطلب</span>;
                 if (reqInfo.text.includes('اعتماد')) reqBadge = <span style={{ background: '#eff6ff', color: '#3b82f6', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bfdbfe' }}>⏳ تحت الاعتماد</span>;
