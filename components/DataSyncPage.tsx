@@ -4,20 +4,99 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
-// استقبال بيانات المستخدم الحالي زي صفحة الإعدادات
 interface DataSyncProps {
   currentUser?: any;
 }
+
+/* ===================== أدوات التواريخ (بدون Timezone) ===================== */
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+const normalizeDigits = (s: string) =>
+  s
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)))
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+
+// يتأكد إن التاريخ حقيقي (مش 31/02 مثلاً) ومنطقي
+const fmtYMD = (y: number, m: number, d: number): string | null => {
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const ok =
+    y >= 1950 && y <= 2100 &&
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d;
+  return ok ? `${y}-${pad(m)}-${pad(d)}` : null;
+};
+
+// تاريخ اليوم بالتوقيت المحلي (مش UTC)
+const todayLocal = () => {
+  const n = new Date();
+  return `${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())}`;
+};
+
+// بيرجّع التاريخ زي ما هو مكتوب في الإكسيل
+const parseExcelDate = (val: any): string | null => {
+  if (val === null || val === undefined || val === '') return null;
+
+  // رقم Excel serial (الحالة الأساسية)
+  if (typeof val === 'number') {
+    const p = XLSX.SSF.parse_date_code(val);
+    return p ? fmtYMD(p.y, p.m, p.d) : null;
+  }
+
+  // احتياط لو جالك Date: نستخدم المحلي عشان يطابق اللي ظاهر في الشيت
+  if (val instanceof Date) {
+    return isNaN(val.getTime())
+      ? null
+      : fmtYMD(val.getFullYear(), val.getMonth() + 1, val.getDate());
+  }
+
+  // نص
+  const str = normalizeDigits(String(val).trim());
+  let m = str.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})/); // YYYY-MM-DD
+  if (m) return fmtYMD(+m[1], +m[2], +m[3]);
+  m = str.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})/); // DD-MM-YYYY
+  if (m) return fmtYMD(+m[3], +m[2], +m[1]);
+  return null;
+};
+
+// الافتراضي للموظفين الجدد فقط: تاريخ التعيين + سنة − يوم
+const calculateYearMinusOneDay = (startDateStr: string | null): string | null => {
+  if (!startDateStr) return null;
+  const [y, m, d] = startDateStr.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(Date.UTC(y + 1, m - 1, d - 1)).toISOString().slice(0, 10);
+};
+
+/* ===================== أدوات عامة ===================== */
+
+// تشغيل مهام بعدد محدود من الطلبات المتوازية
+async function runLimited<T>(items: T[], limit: number, worker: (item: T) => Promise<void>) {
+  let idx = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (idx < items.length) {
+      const current = items[idx++];
+      await worker(current);
+    }
+  });
+  await Promise.all(runners);
+}
+
+const clean = (v: any) => {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === '' ? null : s;
+};
 
 export default function DataSyncPage({ currentUser }: DataSyncProps) {
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState('');
   const [progress, setProgress] = useState(0);
 
-  // 🌟 حماية الصفحة للأدمن فقط
   const [userRole, setUserRole] = useState<string>('');
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
+  // ⚠️ ده فحص واجهة فقط. الحماية الحقيقية لازم تكون RLS في Supabase أو API على السيرفر.
   useEffect(() => {
     if (currentUser?.role) {
       setUserRole(currentUser.role);
@@ -27,7 +106,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
       if (savedUser) {
         try {
           const parsed = JSON.parse(savedUser);
-          setUserRole(parsed.role || 'Viewer'); 
+          setUserRole(parsed.role || 'Viewer');
         } catch (e) {
           console.error(e);
           setUserRole('Viewer');
@@ -41,7 +120,6 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
 
   const isAdmin = userRole.toLowerCase() === 'admin';
 
-  // 🌟 دالة إنشاء وتحميل قالب Excel
   const handleDownloadTemplate = () => {
     const templateData = [
       {
@@ -51,6 +129,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         job_title: 'أخصائي HR',
         company: 'المراسم الدولية',
         hiring_date: '2024-01-01',
+        contract_end_date: '', // اختياري: للجدد فقط. لو فاضي = تاريخ التعيين + سنة − يوم
         email: 'ahmed@company.com',
         mobile: '01012345678',
         manager: 'محمود حسن',
@@ -58,7 +137,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         termination_date: '',
         termination_reason: '',
         national_id: '29401010101234',
-        birth_date: '1994-01-01'
+        birth_date: '1994-01-01',
       },
       {
         employee_code: '1002',
@@ -67,6 +146,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         job_title: 'ايقاف راتب - اجازة بدون راتب',
         company: 'المراسم الدولية',
         hiring_date: '2023-05-15',
+        contract_end_date: '',
         email: 'ibrahim@company.com',
         mobile: '01198765432',
         manager: 'علي جابر',
@@ -74,15 +154,15 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         termination_date: '2024-02-01',
         termination_reason: 'إجازة بدون راتب',
         national_id: '28905050105678',
-        birth_date: '1989-05-05'
-      }
+        birth_date: '1989-05-05',
+      },
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(templateData);
     worksheet['!cols'] = [
       { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 20 },
-      { wch: 15 }, { wch: 25 }, { wch: 15 }, { wch: 20 }, { wch: 12 },
-      { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 15 }
+      { wch: 15 }, { wch: 18 }, { wch: 25 }, { wch: 15 }, { wch: 20 },
+      { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 15 },
     ];
 
     const workbook = XLSX.utils.book_new();
@@ -90,61 +170,19 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
-  // 🚀 التحديث الجذري: دالة قراءة التاريخ المضادة لفرق التوقيت (Timezone-proof)
-  const parseExcelDate = (excelDate: any) => {
-    if (!excelDate) return null;
-    
-    // 1. لو التاريخ جي من الإكسيل على هيئة رقم (Serial Number)
-    if (typeof excelDate === 'number') {
-      const d = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-      return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
-    }
-    
-    // 2. لو التاريخ جي على هيئة كائن (Date) من مكتبة الإكسيل
-    if (excelDate instanceof Date) {
-      if (isNaN(excelDate.getTime())) return null;
-      // نستخرج اليوم والشهر والسنة باستخدام UTC لتفادي رجوع التاريخ للخلف
-      const yyyy = excelDate.getUTCFullYear();
-      const mm = String(excelDate.getUTCMonth() + 1).padStart(2, '0');
-      const dd = String(excelDate.getUTCDate()).padStart(2, '0');
-      return `${yyyy}-${mm}-${dd}`;
-    }
-
-    // 3. لو التاريخ جي كنص (String) عادي
-    const d = new Date(excelDate);
-    if (isNaN(d.getTime())) return null;
-    // نستخرج التاريخ المحلي مباشرة بدون استخدام toISOString اللي بيسبب شيفت للتوقيت
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
-  // دالة حساب تاريخ الانتهاء: تحافظ على يوم التعيين وتضيف سنة وتطرح يوم واحد من نهاية العقد
-  const calculateYearMinusOneDay = (startDateStr: string | null) => {
-    if (!startDateStr) return null;
-    const parts = startDateStr.split('-');
-    if (parts.length < 3) return null;
-    
-    // استخدام الساعة 12 ظهراً لتجنب أي شيفت في التوقيت المحلي عند إضافة/طرح الأيام
-    const start = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
-    if (isNaN(start.getTime())) return null;
-
-    const end = new Date(start);
-    end.setFullYear(end.getFullYear() + 1); // إضافة سنة كاملة
-    end.setDate(end.getDate() - 1); // طرح يوم واحد من العقد
-
-    return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-  };
-
-  const fetchAllRows = async (tableName: string, selectFields = '*') => {
+  // جلب كل الصفوف، ولو حصل خطأ بنوقف العملية (مش نكمل ببيانات ناقصة)
+  const fetchAllRows = async (tableName: string, selectFields = '*', orderBy = 'employee_code') => {
     let allRows: any[] = [];
     let from = 0;
     const step = 1000;
     while (true) {
-      const { data, error } = await supabase.from(tableName).select(selectFields).range(from, from + step - 1);
-      if (error || !data || data.length === 0) break;
+      const { data, error } = await supabase
+        .from(tableName)
+        .select(selectFields)
+        .order(orderBy, { ascending: true })
+        .range(from, from + step - 1);
+      if (error) throw new Error(`فشل جلب بيانات ${tableName}: ${error.message}`);
+      if (!data || data.length === 0) break;
       allRows = [...allRows, ...data];
       if (data.length < step) break;
       from += step;
@@ -153,7 +191,8 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
 
     setLoading(true);
@@ -162,11 +201,11 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
+      const errors: string[] = [];
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary', cellDates: true });
-        const wsName = wb.SheetNames[0];
-        const ws = wb.Sheets[wsName];
+        // بدون cellDates: التاريخ بيجي كرقم serial ونحوله مباشرة (بدون Timezone)
+        const wb = XLSX.read(evt.target?.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(ws);
 
         if (rows.length === 0) throw new Error('الملف المرفوع فارغ تماماً.');
@@ -174,16 +213,18 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         setStatusMsg(`تم قراءة ${rows.length} صف. جاري فحص قاعدة البيانات... 🚀`);
         setProgress(15);
 
-        // 1. جلب أكواد الموظفين الحالية (للتمييز بين القديم والجديد)
         const existingEmps = await fetchAllRows('employees', 'employee_code');
-        const existingCodesSet = new Set(existingEmps.map(e => String(e.employee_code || '').trim().replace(/^0+/, '')));
+        const existingCodesSet = new Set(
+          existingEmps.map((x) => String(x.employee_code || '').trim().replace(/^0+/, ''))
+        );
 
-        const oldToUpdateGeneral: any[] = [];
-        const oldToSetInactive: any[] = [];
-        const newEmpsPayload: any[] = [];
-        const newContractsPayload: any[] = [];
+        // Map عشان نمنع تكرار نفس الكود جوه الملف (آخر صف يكسب)
+        const oldToUpdateGeneral = new Map<number, any>();
+        const oldToSetInactive = new Map<number, any>();
+        const newEmps = new Map<number, { emp: any; contract: any }>();
+        let duplicatesInFile = 0;
+        let invalidDates = 0;
 
-        // 2. تصنيف السجلات بدقة
         for (const row of rows) {
           const rawCode = row['employee_code'] || row['كود الموظف'] || row['EmployeeCode'] || row['code'];
           if (!rawCode) continue;
@@ -192,35 +233,63 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
           const parsedCodeInt = parseInt(cleanCode, 10);
           if (isNaN(parsedCodeInt)) continue;
 
-          // سحب البيانات من الصف
-          const deptVal = row['department'] || row['الإدارة'] || row['Department'] || null;
-          const jobVal = row['job_title'] || row['الوظيفة'] || row['JobTitle'] || null;
-          const nameVal = row['employee_name'] || row['اسم الموظف'] || null;
-          const compVal = row['company'] || row['الشركة'] || null;
-          const emailVal = row['email'] || row['البريد الإلكتروني'] || null;
-          const mobileVal = row['mobile'] || row['الموبايل'] || null;
-          const managerVal = row['manager'] || row['المدير'] || null;
-          const natIdVal = row['national_id'] ? String(row['national_id']) : null;
-          const termReasonVal = row['termination_reason'] || row['سبب الإنهاء'] || 'ايقاف راتب / تحويلات';
-          const birthDateFormatted = parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']);
-          
-          // 🚀 تاريخ التعيين هينزل زي ما هو بدون أي نقصان
-          const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
-          const terminationDateFormatted = parseExcelDate(row['termination_date'] || row['تاريخ الإنهاء']);
+          const deptVal = clean(row['department'] || row['الإدارة'] || row['Department']);
+          const jobVal = clean(row['job_title'] || row['الوظيفة'] || row['JobTitle']);
+          const nameVal = clean(row['employee_name'] || row['اسم الموظف']);
+          const compVal = clean(row['company'] || row['الشركة']);
+          const emailVal = clean(row['email'] || row['البريد الإلكتروني']);
+          const mobileVal = clean(row['mobile'] || row['الموبايل']);
+          const managerVal = clean(row['manager'] || row['المدير']);
+          const natIdVal = clean(row['national_id']);
+          const termReasonRaw = clean(row['termination_reason'] || row['سبب الإنهاء']);
 
-          const deptStr = String(deptVal || '');
-          const jobStr = String(jobVal || '');
-          const isTransferDept = deptStr.includes('تحويلات/تحت الاعتماد') || deptStr.includes('تحويلات تحت الاعتماد') || deptStr.includes('تحويلات');
+          const rawBirth = row['birth_date'] || row['تاريخ الميلاد'];
+          const rawHiring = row['hiring_date'] || row['تاريخ التعيين'];
+          const rawTerm = row['termination_date'] || row['تاريخ الإنهاء'];
+          const rawContractEnd = row['contract_end_date'] || row['تاريخ نهاية العقد'];
+
+          const birthDateFormatted = parseExcelDate(rawBirth);
+          const hiringDateFormatted = parseExcelDate(rawHiring); // زي ما هو في الشيت
+          const terminationDateFormatted = parseExcelDate(rawTerm);
+          const contractEndFromSheet = parseExcelDate(rawContractEnd);
+
+          if (
+            (rawBirth && !birthDateFormatted) ||
+            (rawHiring && !hiringDateFormatted) ||
+            (rawTerm && !terminationDateFormatted) ||
+            (rawContractEnd && !contractEndFromSheet)
+          ) {
+            invalidDates++;
+            errors.push(`الموظف ${parsedCodeInt}: يوجد تاريخ غير صالح وتم تجاهله`);
+          }
+
+          const deptStr = deptVal || '';
+          const jobStr = jobVal || '';
+          const isTransferDept = deptStr.includes('تحويلات');
           const isSalaryStop = jobStr.includes('ايقاف راتب');
+          const shouldBeInactive = isTransferDept || isSalaryStop;
 
           const isOldEmployee = existingCodesSet.has(cleanCode);
 
+          // تتبع التكرار داخل الملف
+          const alreadySeen =
+            oldToUpdateGeneral.has(parsedCodeInt) ||
+            oldToSetInactive.has(parsedCodeInt) ||
+            newEmps.has(parsedCodeInt);
+          if (alreadySeen) {
+            duplicatesInFile++;
+            oldToUpdateGeneral.delete(parsedCodeInt);
+            oldToSetInactive.delete(parsedCodeInt);
+            newEmps.delete(parsedCodeInt);
+          }
+
           if (isOldEmployee) {
-            if (isTransferDept || isSalaryStop) {
-              oldToSetInactive.push({
+            // 🔒 القدامى: contract_end_date خط أحمر، مش بيتقرأ ولا بيتكتب هنا نهائياً
+            if (shouldBeInactive) {
+              oldToSetInactive.set(parsedCodeInt, {
                 employee_code: parsedCodeInt,
-                termination_reason: termReasonVal,
-                termination_date: terminationDateFormatted || new Date().toISOString().split('T')[0]
+                termination_reason: termReasonRaw || 'ايقاف راتب / تحويلات',
+                termination_date: terminationDateFormatted || todayLocal(),
               });
             } else {
               const updateObj: any = { employee_code: parsedCodeInt };
@@ -236,36 +305,41 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
               if (hiringDateFormatted !== null) updateObj.hiring_date = hiringDateFormatted;
 
               if (Object.keys(updateObj).length > 1) {
-                oldToUpdateGeneral.push(updateObj);
+                oldToUpdateGeneral.set(parsedCodeInt, updateObj);
               }
             }
           } else {
-            // 🚀 العقد الجديد هياخد تاريخ التعيين الحقيقي، ويحسب عليه سنة ناقص يوم
-            const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
+            // موظف جديد: تاريخ التعيين من الشيت زي ما هو.
+            // نهاية العقد: لو متحددة في الشيت ناخدها، غير كده الافتراضي (+سنة −يوم).
+            const contractEndFormatted =
+              contractEndFromSheet || calculateYearMinusOneDay(hiringDateFormatted);
+            const status = shouldBeInactive ? 'Inactive' : 'Active';
 
-            newEmpsPayload.push({
-              employee_code: parsedCodeInt,
-              employee_name: nameVal || 'غير مسجل',
-              department: deptVal,
-              job_title: jobVal,
-              company: compVal,
-              hiring_date: hiringDateFormatted,
-              status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active',
-              email: emailVal,
-              mobile: mobileVal,
-              manager: managerVal,
-              national_id: natIdVal,
-              birth_date: birthDateFormatted,
-              termination_date: terminationDateFormatted,
-              termination_reason: termReasonVal,
-            });
-
-            newContractsPayload.push({
-              employee_code: parsedCodeInt,
-              contract_type: 'محدد المدة',
-              contract_start_date: hiringDateFormatted,
-              contract_end_date: contractEndFormatted,
-              status: (isTransferDept || isSalaryStop) ? 'Inactive' : 'Active'
+            newEmps.set(parsedCodeInt, {
+              emp: {
+                employee_code: parsedCodeInt,
+                employee_name: nameVal || 'غير مسجل',
+                department: deptVal,
+                job_title: jobVal,
+                company: compVal,
+                hiring_date: hiringDateFormatted,
+                status,
+                email: emailVal,
+                mobile: mobileVal,
+                manager: managerVal,
+                national_id: natIdVal,
+                birth_date: birthDateFormatted,
+                // سبب/تاريخ الإنهاء بس للي Inactive
+                termination_date: shouldBeInactive ? terminationDateFormatted || todayLocal() : terminationDateFormatted,
+                termination_reason: shouldBeInactive ? termReasonRaw || 'ايقاف راتب / تحويلات' : termReasonRaw,
+              },
+              contract: {
+                employee_code: parsedCodeInt,
+                contract_type: 'محدد المدة',
+                contract_start_date: hiringDateFormatted,
+                contract_end_date: contractEndFormatted,
+                status,
+              },
             });
           }
         }
@@ -273,89 +347,129 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         setProgress(30);
 
         const BATCH_SIZE = 300;
+        const CONCURRENCY = 15;
 
-        if (oldToSetInactive.length > 0) {
-          setStatusMsg(`جاري إيقاف وتحويل ${oldToSetInactive.length} موظف قديم...`);
-          for (let i = 0; i < oldToSetInactive.length; i += BATCH_SIZE) {
-            const chunk = oldToSetInactive.slice(i, i + BATCH_SIZE);
-            
-            const empUpdatePromises = chunk.map(emp => 
-              supabase.from('employees').update({ 
-                status: 'Inactive', 
+        const inactiveList = Array.from(oldToSetInactive.values());
+        const updateList = Array.from(oldToUpdateGeneral.values());
+        const newList = Array.from(newEmps.values());
+
+        // 1) إيقاف القدامى المحولين
+        if (inactiveList.length > 0) {
+          setStatusMsg(`جاري إيقاف وتحويل ${inactiveList.length} موظف قديم...`);
+          await runLimited(inactiveList, CONCURRENCY, async (emp) => {
+            const { error: empErr } = await supabase
+              .from('employees')
+              .update({
+                status: 'Inactive',
                 department: 'تحويلات تحت الاعتماد',
                 termination_reason: emp.termination_reason,
-                termination_date: emp.termination_date
-              }).eq('employee_code', emp.employee_code)
-            );
-            await Promise.all(empUpdatePromises);
+                termination_date: emp.termination_date,
+              })
+              .eq('employee_code', emp.employee_code);
+            if (empErr) {
+              errors.push(`إيقاف الموظف ${emp.employee_code}: ${empErr.message}`);
+              return;
+            }
 
-            const contractUpdatePromises = chunk.map(emp => 
-              supabase.from('contracts').update({ 
+            // 🔒 contract_end_date مش بيتلمس: بنغير الحالة والنوع بس
+            const { error: conErr } = await supabase
+              .from('contracts')
+              .update({
                 status: 'Inactive',
-                contract_type: emp.termination_reason, 
-                contract_end_date: emp.termination_date
-              }).eq('employee_code', emp.employee_code).eq('status', 'Active')
-            );
-            await Promise.all(contractUpdatePromises);
-          }
+                contract_type: emp.termination_reason,
+              })
+              .eq('employee_code', emp.employee_code)
+              .eq('status', 'Active');
+            if (conErr) errors.push(`تحديث عقد الموظف ${emp.employee_code}: ${conErr.message}`);
+          });
         }
 
         setProgress(45);
 
-        if (oldToUpdateGeneral.length > 0) {
-          setStatusMsg(`جاري تحديث بيانات ${oldToUpdateGeneral.length} موظف قديم...`);
-          for (let i = 0; i < oldToUpdateGeneral.length; i += BATCH_SIZE) {
-            const chunk = oldToUpdateGeneral.slice(i, i + BATCH_SIZE);
-            
-            const updatePromises = chunk.map(emp => {
-              const { employee_code, ...fieldsToUpdate } = emp;
-              return supabase.from('employees')
-                .update(fieldsToUpdate)
-                .eq('employee_code', employee_code);
-            });
-            await Promise.all(updatePromises);
-            
-            const currentPct = Math.min(85, 45 + Math.round(((i + chunk.length) / oldToUpdateGeneral.length) * 40));
-            setProgress(currentPct);
-            setStatusMsg(`جاري تحديث الموظفين القدامى: ${currentPct}% (${Math.min(i + BATCH_SIZE, oldToUpdateGeneral.length)} من ${oldToUpdateGeneral.length})`);
-          }
+        // 2) تحديث بيانات القدامى (جدول employees فقط، جدول contracts مش بيتلمس)
+        if (updateList.length > 0) {
+          let done = 0;
+          setStatusMsg(`جاري تحديث بيانات ${updateList.length} موظف قديم...`);
+          await runLimited(updateList, CONCURRENCY, async (emp) => {
+            const { employee_code, ...fields } = emp;
+            const { error } = await supabase.from('employees').update(fields).eq('employee_code', employee_code);
+            if (error) errors.push(`تحديث الموظف ${employee_code}: ${error.message}`);
+            done++;
+            if (done % 20 === 0 || done === updateList.length) {
+              const pct = Math.min(85, 45 + Math.round((done / updateList.length) * 40));
+              setProgress(pct);
+              setStatusMsg(`جاري تحديث الموظفين القدامى: ${pct}% (${done} من ${updateList.length})`);
+            }
+          });
         }
 
-        if (newEmpsPayload.length > 0) {
-          setStatusMsg(`جاري إضافة ${newEmpsPayload.length} موظف جديد بعقودهم...`);
-          for (let i = 0; i < newEmpsPayload.length; i += BATCH_SIZE) {
-            const empChunk = newEmpsPayload.slice(i, i + BATCH_SIZE);
-            const contChunk = newContractsPayload.slice(i, i + BATCH_SIZE);
+        // 3) إضافة الجدد مع عقودهم (لو العقود فشلت بنرجع الموظفين اللي اتضافوا في نفس الدفعة)
+        let insertedNew = 0;
+        if (newList.length > 0) {
+          setStatusMsg(`جاري إضافة ${newList.length} موظف جديد بعقودهم...`);
+          for (let i = 0; i < newList.length; i += BATCH_SIZE) {
+            const chunk = newList.slice(i, i + BATCH_SIZE);
+            const empChunk = chunk.map((x) => x.emp);
+            const contChunk = chunk.map((x) => x.contract);
+            const codes = empChunk.map((x) => x.employee_code);
 
-            await supabase.from('employees').insert(empChunk);
-            await supabase.from('contracts').insert(contChunk);
+            const { error: empErr } = await supabase
+              .from('employees')
+              .upsert(empChunk, { onConflict: 'employee_code' });
+            if (empErr) {
+              errors.push(`إضافة دفعة موظفين (${i + 1}-${i + chunk.length}): ${empErr.message}`);
+              continue;
+            }
+
+            const { error: conErr } = await supabase.from('contracts').insert(contChunk);
+            if (conErr) {
+              errors.push(`إضافة عقود الدفعة (${i + 1}-${i + chunk.length}): ${conErr.message} — تم التراجع عن موظفي الدفعة`);
+              const { error: rollbackErr } = await supabase.from('employees').delete().in('employee_code', codes);
+              if (rollbackErr) errors.push(`فشل التراجع عن الدفعة: ${rollbackErr.message}`);
+              continue;
+            }
+
+            insertedNew += chunk.length;
+            setProgress(Math.min(99, 85 + Math.round(((i + chunk.length) / newList.length) * 14)));
           }
         }
 
         setProgress(100);
-        const finalMsg = `تمت المزامنة بنجاح 100%! 🎉\n\n- قدامى تم تحديث بياناتهم الشخصية/الوظيفية: ${oldToUpdateGeneral.length}\n- قدامى تم إيقافهم وتحديث عقودهم: ${oldToSetInactive.length}\n- موظفين وعقود جديدة تم إنشاؤهم: ${newEmpsPayload.length}`;
-        setStatusMsg(finalMsg);
-        alert('تمت المزامنة بنجاح بنسبة 100%!');
-        e.target.value = '';
 
+        const failedCount = errors.length;
+        let finalMsg =
+          (failedCount === 0 ? 'تمت المزامنة بنجاح 100%! 🎉' : `⚠️ انتهت المزامنة مع ${failedCount} ملاحظة/خطأ`) +
+          `\n\n- قدامى تم تحديث بياناتهم الشخصية/الوظيفية: ${updateList.length}` +
+          `\n- قدامى تم إيقافهم وتحديث عقودهم (بدون المساس بتاريخ نهاية العقد): ${inactiveList.length}` +
+          `\n- موظفين وعقود جديدة تم إنشاؤهم: ${insertedNew} من ${newList.length}`;
+        if (duplicatesInFile > 0) finalMsg += `\n- أكواد مكررة داخل الملف (تم اعتماد آخر صف): ${duplicatesInFile}`;
+        if (invalidDates > 0) finalMsg += `\n- صفوف بها تواريخ غير صالحة: ${invalidDates}`;
+        if (failedCount > 0) {
+          finalMsg += `\n\nالتفاصيل (أول 10):\n` + errors.slice(0, 10).map((x) => '• ' + x).join('\n');
+          if (failedCount > 10) finalMsg += `\n... و ${failedCount - 10} أخرى (راجع الـ Console)`;
+          console.error('Sync errors:', errors);
+        }
+
+        setStatusMsg(finalMsg);
+        alert(failedCount === 0 ? 'تمت المزامنة بنجاح بنسبة 100%!' : 'انتهت المزامنة مع بعض الأخطاء، راجع التفاصيل.');
+        input.value = '';
       } catch (err: any) {
         console.error(err);
         setStatusMsg('❌ حدث خطأ أثناء المزامنة: ' + err.message);
         alert('خطأ: ' + err.message);
+        input.value = '';
       } finally {
         setLoading(false);
       }
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
-  // 🚨 شاشة التحميل لمنع الوميض
   if (isAuthChecking) {
     return <div style={{ padding: '60px', textAlign: 'center', fontWeight: 'bold', color: '#64748b' }}>جاري التحقق من الصلاحيات... ⏳</div>;
   }
 
-  // 🚨 حماية الصفحة لمنع غير الأدمن من الدخول
   if (!isAdmin) {
     return (
       <div style={{ padding: '40px', direction: 'rtl' }}>
@@ -369,7 +483,6 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
 
   return (
     <div style={{ padding: '24px', direction: 'rtl' }}>
-      
       <style>{`
         .upload-card {
           background: #ffffff;
@@ -423,14 +536,13 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
       `}</style>
 
       <div className="upload-card">
-        
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '32px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
             <h3 style={{ margin: '0 0 8px', fontSize: '22px', color: '#0f172a', fontWeight: '900' }}>
               📊 مركز مزامنة ورفع البيانات (Data Sync Tool) 👑
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
-              تحديث شامل وآمن. لا يتم المساس بأنواع عقود القدامى إلا في حالات الإيقاف.
+              تحديث شامل وآمن. لا يتم المساس بتواريخ نهاية العقود للموظفين القدامى نهائياً.
             </p>
           </div>
 
@@ -442,7 +554,6 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
           </button>
         </div>
 
-        {/* منطقة رفع الملف */}
         <div className="upload-area">
           <div style={{ fontSize: '40px', marginBottom: '16px' }}>📂</div>
           <h4 style={{ margin: '0 0 8px', fontSize: '16px', color: '#0f172a', fontWeight: '800' }}>ارفع ملف الإكسيل المعبأ هنا</h4>
@@ -457,15 +568,10 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
             style={{ display: 'none' }}
           />
           <label htmlFor="excel-upload-input" className={`custom-file-upload ${loading ? 'disabled' : ''}`}>
-            {loading ? (
-              <>⏳ جاري المزامنة والحفظ ({progress}%)...</>
-            ) : (
-              <>🚀 اختر الملف للرفع والتحديث</>
-            )}
+            {loading ? <>⏳ جاري المزامنة والحفظ ({progress}%)...</> : <>🚀 اختر الملف للرفع والتحديث</>}
           </label>
         </div>
 
-        {/* شاشة الكونسول والشريط الحي */}
         <div style={{ background: '#0f172a', padding: '18px', borderRadius: '12px', minHeight: '130px', border: '1px solid #334155' }}>
           <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -474,8 +580,8 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
             </span>
             {loading && <span style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{progress}%</span>}
           </div>
-          
-          <div style={{ fontSize: '13px', fontWeight: 'bold', whiteSpace: 'pre-line', color: statusMsg.includes('❌') ? '#fca5a5' : '#6ee7b7', fontFamily: 'monospace', lineHeight: '1.6' }}>
+
+          <div style={{ fontSize: '13px', fontWeight: 'bold', whiteSpace: 'pre-line', color: statusMsg.includes('❌') || statusMsg.includes('⚠️') ? '#fca5a5' : '#6ee7b7', fontFamily: 'monospace', lineHeight: '1.6' }}>
             {statusMsg || 'المنظومة في وضع الاستعداد.. اختر الملف للبدء.'}
           </div>
 
@@ -485,7 +591,6 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
             </div>
           )}
         </div>
-
       </div>
     </div>
   );
