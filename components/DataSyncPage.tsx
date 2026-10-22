@@ -90,26 +90,50 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
     XLSX.writeFile(workbook, 'Template_Employees_Import.xlsx');
   };
 
+  // 🚀 التحديث الجذري: دالة قراءة التاريخ المضادة لفرق التوقيت (Timezone-proof)
   const parseExcelDate = (excelDate: any) => {
     if (!excelDate) return null;
+    
+    // 1. لو التاريخ جي من الإكسيل على هيئة رقم (Serial Number)
     if (typeof excelDate === 'number') {
-      const d = new Date((excelDate - (25567 + 2)) * 86400 * 1000);
+      const d = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
       return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
     }
+    
+    // 2. لو التاريخ جي على هيئة كائن (Date) من مكتبة الإكسيل
+    if (excelDate instanceof Date) {
+      if (isNaN(excelDate.getTime())) return null;
+      // نستخرج اليوم والشهر والسنة باستخدام UTC لتفادي رجوع التاريخ للخلف
+      const yyyy = excelDate.getUTCFullYear();
+      const mm = String(excelDate.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(excelDate.getUTCDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    // 3. لو التاريخ جي كنص (String) عادي
     const d = new Date(excelDate);
-    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+    if (isNaN(d.getTime())) return null;
+    // نستخرج التاريخ المحلي مباشرة بدون استخدام toISOString اللي بيسبب شيفت للتوقيت
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    
+    return `${yyyy}-${mm}-${dd}`;
   };
 
+  // دالة حساب تاريخ الانتهاء: تحافظ على يوم التعيين وتضيف سنة وتطرح يوم واحد من نهاية العقد
   const calculateYearMinusOneDay = (startDateStr: string | null) => {
     if (!startDateStr) return null;
     const parts = startDateStr.split('-');
     if (parts.length < 3) return null;
+    
+    // استخدام الساعة 12 ظهراً لتجنب أي شيفت في التوقيت المحلي عند إضافة/طرح الأيام
     const start = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
     if (isNaN(start.getTime())) return null;
 
     const end = new Date(start);
-    end.setFullYear(end.getFullYear() + 1);
-    end.setDate(end.getDate() - 1);
+    end.setFullYear(end.getFullYear() + 1); // إضافة سنة كاملة
+    end.setDate(end.getDate() - 1); // طرح يوم واحد من العقد
 
     return `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
   };
@@ -179,6 +203,8 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
           const natIdVal = row['national_id'] ? String(row['national_id']) : null;
           const termReasonVal = row['termination_reason'] || row['سبب الإنهاء'] || 'ايقاف راتب / تحويلات';
           const birthDateFormatted = parseExcelDate(row['birth_date'] || row['تاريخ الميلاد']);
+          
+          // 🚀 تاريخ التعيين هينزل زي ما هو بدون أي نقصان
           const hiringDateFormatted = parseExcelDate(row['hiring_date'] || row['تاريخ التعيين']);
           const terminationDateFormatted = parseExcelDate(row['termination_date'] || row['تاريخ الإنهاء']);
 
@@ -214,6 +240,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
               }
             }
           } else {
+            // 🚀 العقد الجديد هياخد تاريخ التعيين الحقيقي، ويحسب عليه سنة ناقص يوم
             const contractEndFormatted = calculateYearMinusOneDay(hiringDateFormatted);
 
             newEmpsPayload.push({
