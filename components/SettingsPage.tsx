@@ -35,7 +35,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
   const [showAddUserModal, setShowAddModal] = useState(false);
   const [newUser, setNewUser] = useState({
     username: '',
-    password: '123456',
+    password: '',
     employee_code: '',
     role: 'Admin',
   });
@@ -131,28 +131,41 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     setLoadingRoles(false);
   };
 
-  // 3. إضافة مستخدم جديد في app_users
+  // كل عمليات إدارة المستخدمين بتعدّي على السيرفر (بيتحقق إن اللي بينادي أدمن)
+  const callAdminUsers = async (payload: any) => {
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.ok) throw new Error(json.message || 'فشل تنفيذ العملية');
+    return json;
+  };
+
+  // 3. إضافة مستخدم جديد
   const handleAddAppUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.username.trim()) return alert('يرجى كتابة اسم المستخدم.');
-    
+    if (!newUser.employee_code.trim()) return alert('كود الموظف مطلوب (بيُستخدم لتسجيل الدخول).');
+
     setAddingUser(true);
     try {
-      const insertPayload: any = {
+      const json = await callAdminUsers({
+        action: 'create',
         username: newUser.username.trim(),
-        password: newUser.password.trim() || '123456',
-        employee_code: newUser.employee_code.trim() || null,
+        employee_code: newUser.employee_code.trim(),
         role: newUser.role,
-        created_at: new Date().toISOString()
-      };
+        password: newUser.password.trim(),
+      });
 
-      const { error } = await supabase.from('app_users').insert([insertPayload]);
-
-      if (error) throw error;
-
-      alert('تم إضافة المستخدم بكلمة السر الافتراضية (123456) بنجاح ✅');
+      alert(
+        json.tempPassword
+          ? `تم إنشاء المستخدم ✅\nكلمة السر المؤقتة: ${json.tempPassword}\nسلّمها للمستخدم (ستظهر مرة واحدة فقط) وهيُطلب منه تغييرها عند أول دخول.`
+          : 'تم إنشاء المستخدم ✅ وسيُطلب منه تغيير كلمة السر عند أول دخول.'
+      );
       setShowAddModal(false);
-      setNewUser({ username: '', password: '123456', employee_code: '', role: 'Admin' });
+      setNewUser({ username: '', password: '', employee_code: '', role: 'Admin' });
       fetchAppUsers();
     } catch (err: any) {
       alert('حدث خطأ أثناء إضافة المستخدم: ' + err.message);
@@ -161,23 +174,12 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 4. 🎯 حذف مستخدم بدلالة كود الموظف أو اسم المستخدم
+  // 4. حذف مستخدم
   const handleDeleteAppUser = async (user: any) => {
-    if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username || user.employee_code}) نهائياً من app_users؟`)) return;
+    if (!window.confirm(`هل أنت متأكد من حذف المستخدم (${user.username || user.employee_code}) نهائياً؟`)) return;
 
     try {
-      let query = supabase.from('app_users').delete();
-      
-      if (user.employee_code) {
-        const codeNum = parseInt(user.employee_code, 10);
-        query = query.eq('employee_code', isNaN(codeNum) ? user.employee_code : codeNum);
-      } else {
-        query = query.eq('username', user.username);
-      }
-
-      const { error } = await query;
-      if (error) throw error;
-
+      await callAdminUsers({ action: 'delete', employee_code: user.employee_code });
       alert('تم حذف المستخدم بنجاح 🗑️');
       fetchAppUsers();
     } catch (err: any) {
@@ -185,29 +187,25 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
     }
   };
 
-  // 5. 🎯 تعديل الصلاحية بدلالة كود الموظف (employee_code) أو اسم المستخدم (username)
+  // 5. تعديل الصلاحية
   const handleAppUserRoleChange = async (user: any, newRole: string) => {
     try {
-      let query = supabase.from('app_users').update({ role: newRole });
-
-      if (user.employee_code) {
-        const codeNum = parseInt(user.employee_code, 10);
-        query = query.eq('employee_code', isNaN(codeNum) ? user.employee_code : codeNum);
-      } else if (user.username) {
-        query = query.eq('username', user.username);
-      } else if (user.id) {
-        query = query.eq('id', user.id);
-      } else {
-        throw new Error('لا يوجد كود موظف أو اسم مستخدم محدد لهذا السجل.');
-      }
-
-      const { error } = await query;
-      if (error) throw error;
-
+      await callAdminUsers({ action: 'setRole', employee_code: user.employee_code, role: newRole });
       alert(`✅ تم تحديث الصلاحية لـ (${user.username || user.employee_code}) إلى ${newRole}`);
       fetchAppUsers();
     } catch (err: any) {
       alert('خطأ أثناء تحديث الصلاحية: ' + err.message);
+    }
+  };
+
+  // 6. إعادة تعيين كلمة سر مستخدم (كلمة مؤقتة تظهر مرة واحدة)
+  const handleResetAppUserPassword = async (user: any) => {
+    if (!window.confirm(`إعادة تعيين كلمة سر (${user.username || user.employee_code})؟`)) return;
+    try {
+      const json = await callAdminUsers({ action: 'resetPassword', employee_code: user.employee_code });
+      alert(`كلمة السر المؤقتة: ${json.tempPassword}\nسلّمها للمستخدم (ستظهر مرة واحدة فقط).`);
+    } catch (err: any) {
+      alert('خطأ: ' + err.message);
     }
   };
 
@@ -547,7 +545,7 @@ export default function SettingsPage({ currentUser }: SettingsProps) {
 
               <div>
                 <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>كلمة السر (Password) *</label>
-                <input required type="text" placeholder="123456" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontFamily: 'monospace', fontWeight: 'bold' }} />
+                <input type="text" placeholder="اتركه فارغاً لتوليد كلمة مؤقتة" value={newUser.password} onChange={e => setNewUser({ ...newUser, password: e.target.value })} style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', fontFamily: 'monospace', fontWeight: 'bold' }} />
               </div>
 
               <div>

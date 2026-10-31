@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getAdminClient } from '@/lib/supabase-admin';
+import { getCaller } from '@/lib/supabase-server';
 
 // دالة سحب كافة البيانات لتجاوز حد الـ 1000 صف من Supabase
 async function fetchAllRows(tableName: string, selectFields = '*', filterEq?: { col: string; val: any }) {
@@ -7,7 +8,7 @@ async function fetchAllRows(tableName: string, selectFields = '*', filterEq?: { 
   let from = 0;
   const step = 1000;
   while (true) {
-    let query = supabase.from(tableName).select(selectFields).range(from, from + step - 1);
+    let query = getAdminClient().from(tableName).select(selectFields).range(from, from + step - 1);
     if (filterEq) query = query.eq(filterEq.col, filterEq.val);
     const { data, error } = await query;
     if (error || !data || data.length === 0) break;
@@ -29,7 +30,19 @@ const getDaysToRetirement = (birthDateRaw: any) => {
   return Math.ceil((age60Date.getTime() - today.getTime()) / (1000 * 3600 * 24));
 };
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
+  // مسموح: (1) جدولة خارجية بـ CRON_SECRET  أو  (2) مستخدم مسجّل دخول بدور Admin/HR
+  const secret = process.env.CRON_SECRET;
+  const isCron = !!secret && req.headers.get('authorization') === `Bearer ${secret}`;
+  if (!isCron) {
+    const caller = await getCaller();
+    if (!caller || !['Admin', 'HR'].includes(caller.role ?? '')) {
+      return NextResponse.json({ success: false, message: 'غير مصرّح' }, { status: 401 });
+    }
+  }
+
   try {
     // 1. قراءة الفلتر المحدد من رابط الطلب
     const { searchParams } = new URL(req.url);

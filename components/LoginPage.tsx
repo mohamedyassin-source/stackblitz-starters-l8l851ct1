@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { codeToEmail, buildSessionUser, WEAK_PASSWORDS } from '@/lib/auth-utils';
 
 export interface LoginPageProps {
   onLoginSuccess: (user: any) => void;
@@ -18,7 +19,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tempUserData, setTempUserData] = useState<any>(null);
 
-  // 1. تسجيل الدخول المباشر من جدول app_users
+  // 1. تسجيل الدخول عبر Supabase Auth (التحقق من كلمة السر على سيرفر Supabase، مش في المتصفح)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanCode = employeeCode.trim();
@@ -32,87 +33,57 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setErrorMsg('');
 
     try {
-      const codeNumber = parseInt(cleanCode, 10);
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: codeToEmail(cleanCode),
+        password,
+      });
 
-      // البحث عن المستخدم حصراً في جدول app_users
-      const { data: users, error } = await supabase
+      // رسالة موحّدة: مش بنكشف هل الكود موجود ولا لأ
+      if (error || !data.user) {
+        setErrorMsg('كود الموظف أو كلمة السر غير صحيحة.');
+        return;
+      }
+
+      // الدور بييجي من app_metadata (مينفعش المستخدم يعدّله). مفيش دور = الحساب غير مفعّل.
+      if (!data.user.app_metadata?.role) {
+        await supabase.auth.signOut();
+        setErrorMsg('هذا الحساب غير مفعّل. تواصل مع مدير النظام.');
+        return;
+      }
+
+      const { data: profile } = await supabase
         .from('app_users')
         .select('*')
-        .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
+        .eq('auth_id', data.user.id)
+        .maybeSingle();
 
-      if (error) throw error;
+      const user = buildSessionUser(data.user, profile);
 
-      if (!users || users.length === 0) {
-        setErrorMsg('كود الموظف غير موجود في حسابات النظام (app_users).');
-        setLoading(false);
-        return;
-      }
-
-      const user = users[0];
-
-      // التحقق من كلمة السر
-      if (String(user.password).trim() !== String(password).trim()) {
-        setErrorMsg('كلمة السر غير صحيحة.');
-        setLoading(false);
-        return;
-      }
-
-      // الإجبار على تغيير كلمة السر لو كانت افتراضية "123" أو "123456"
-      if (password === '123' || password === '123456') {
+      if (profile?.must_change_password) {
         setTempUserData(user);
         setRequirePasswordChange(true);
-      } else {
-        proceedToLogin(user);
+        return;
       }
-    } catch (err: any) {
+      proceedToLogin(user);
+    } catch (err) {
       console.error(err);
-      setErrorMsg(`خطأ في الاتصال بقاعدة البيانات: ${err.message}`);
+      setErrorMsg('تعذّر الاتصال بالخادم، حاول مرة أخرى.');
     } finally {
       setLoading(false);
     }
   };
 
-  // 2. طلب تغيير كلمة السر المباشر
-  const handleOpenPasswordChange = async () => {
-    const cleanCode = employeeCode.trim();
-    if (!cleanCode) {
-      setErrorMsg('يرجى إدخال كود الموظف أولاً لتغيير كلمة السر.');
-      return;
-    }
-
-    setLoading(true);
-    setErrorMsg('');
-
-    try {
-      const codeNumber = parseInt(cleanCode, 10);
-
-      const { data: users, error } = await supabase
-        .from('app_users')
-        .select('*')
-        .eq('employee_code', isNaN(codeNumber) ? cleanCode : codeNumber);
-
-      if (error) throw error;
-
-      if (users && users.length > 0) {
-        setTempUserData(users[0]);
-        setRequirePasswordChange(true);
-      } else {
-        setErrorMsg('كود الموظف غير موجود.');
-      }
-    } catch (err: any) {
-      setErrorMsg(`خطأ: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 3. حفظ كلمة السر الجديدة في app_users
+  // 2. تغيير كلمة السر الإجباري (أول دخول بعد الترحيل أو بعد إعادة التعيين)
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
 
-    if (newPassword.length < 6) {
-      setErrorMsg('كلمة السر الجديدة يجب أن تكون 6 أحرف/أرقام على الأقل.');
+    if (newPassword.length < 8) {
+      setErrorMsg('كلمة السر الجديدة يجب أن تكون 8 أحرف/أرقام على الأقل.');
+      return;
+    }
+    if (WEAK_PASSWORDS.includes(newPassword)) {
+      setErrorMsg('كلمة السر هذه شائعة وضعيفة، اختر غيرها.');
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -121,17 +92,23 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
 
     setLoading(true);
-
     try {
-      const { error } = await supabase
-        .from('app_users')
-        .update({ password: newPassword })
-        .eq('employee_code', tempUserData.employee_code);
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) throw new Error(json.message || 'فشل تحديث كلمة السر');
 
-      if (error) throw error;
+      // تجديد الجلسة بكلمة السر الجديدة لضمان إنها سليمة
+      await supabase.auth.signInWithPassword({
+        email: codeToEmail(employeeCode.trim()),
+        password: newPassword,
+      });
 
       alert('تم تحديث كلمة المرور بنجاح ✅');
-      proceedToLogin({ ...tempUserData, password: newPassword });
+      proceedToLogin(tempUserData);
     } catch (err: any) {
       setErrorMsg('حدث خطأ أثناء تحديث كلمة المرور: ' + err.message);
     } finally {
@@ -139,31 +116,10 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     }
   };
 
-  const handleSkipPasswordChange = () => {
-    if (tempUserData) {
-      proceedToLogin(tempUserData);
-    } else {
-      setRequirePasswordChange(false);
-    }
-  };
-
-  // 🚀 الدالة المحدثة: حفظ البيانات في الـ Cookies + LocalStorage
-  const proceedToLogin = (data: any) => {
-    const userData = {
-      code: data.employee_code,
-      name: data.employee_name || data.username || data.name,
-      department: data.department || 'الموارد البشرية',
-      role: data.role || 'Admin',
-      company: data.company || 'المراسم الدولية',
-    };
-
-    // 1. الحفظ في الـ Local Storage (عشان الشاشات والواجهة تقرأه بسرعة)
+  // 3. الجلسة الحقيقية في كوكيز Supabase؛ localStorage للعرض فقط (الاسم والدور في الواجهة)
+  const proceedToLogin = (userData: any) => {
     localStorage.setItem('session_user', JSON.stringify(userData));
-
-    // 2. 🛡️ الحفظ في الـ Cookies (عشان السيرفر والـ Middleware يقدروا يقرأوه ويمنعوا الاختراق)
-    // نستخدم encodeURIComponent لتجنب أي مشاكل في النصوص العربية أو الرموز داخل الكوكي
-    document.cookie = `session_user=${encodeURIComponent(JSON.stringify(userData))}; path=/; max-age=86400`; // صالحة لمدة يوم (86400 ثانية)
-
+    document.cookie = 'session_user=; path=/; max-age=0'; // تنظيف الكوكي القديمة
     onLoginSuccess(userData);
   };
 
@@ -178,7 +134,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || tempUserData?.username || ''}، يمكنك التغيير أو التخطي` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود (app_users)'}
+            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || tempUserData?.username || ''}، لازم تغيّر كلمة السر قبل المتابعة` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
           </p>
         </div>
 
@@ -221,14 +177,6 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               >
                 {loading ? 'جاري التحديث...' : 'حفظ كلمة السر الجديدة والدخول 💾'}
               </button>
-              
-              <button
-                type="button"
-                onClick={handleSkipPasswordChange}
-                style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', background: 'transparent', color: '#64748b', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}
-              >
-                التخطي والدخول بكلمة السر الحالية ↩️
-              </button>
             </div>
           </form>
         ) : (
@@ -264,15 +212,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
               {loading ? 'جاري التحقق...' : 'دخول إلى النظام 🔑'}
             </button>
 
-            <div style={{ textAlign: 'center', marginTop: '6px' }}>
-              <button
-                type="button"
-                onClick={handleOpenPasswordChange}
-                style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer', textDecoration: 'underline' }}
-              >
-                هل ترغب في تغيير كلمة السر الآن؟ 🔑
-              </button>
-            </div>
+            <div style={{ textAlign: 'center', marginTop: '6px', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>نسيت كلمة السر؟ تواصل مع مدير النظام.</div>
           </form>
         )}
       </div>

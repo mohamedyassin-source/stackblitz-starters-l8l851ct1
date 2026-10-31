@@ -1,23 +1,22 @@
-import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { NextRequest, NextResponse } from 'next/server';
+import { getAdminClient } from '@/lib/supabase-admin';
 
-export async function GET() {
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || req.headers.get('authorization') !== `Bearer ${secret}`) {
+    return NextResponse.json({ success: false }, { status: 401 });
+  }
+
   try {
-    // إجراء استعلام خفيف جداً للحفاظ على نشاط Supabase
-    const { count, error } = await supabase
+    // استعلام خفيف للحفاظ على نشاط Supabase (بدون إرجاع أي بيانات)
+    const { error } = await getAdminClient()
       .from('employees')
-      .select('*', { count: 'exact', head: true });
+      .select('employee_code', { count: 'exact', head: true });
 
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Supabase pinged successfully! Project is active.',
-      timestamp: new Date().toISOString(),
-      employeeCount: count
-    });
+    if (error) return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, timestamp: new Date().toISOString() });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { onAppNavigate } from '@/lib/navigation';
+import { supabase } from '@/lib/supabase';
+import { buildSessionUser } from '@/lib/auth-utils';
 import { DataProvider, useAppData } from '@/lib/DataContext';
 
 // استيراد عادي (بدون dynamic / safeImport) — لو أي ملف عنده named export فقط
@@ -201,25 +203,61 @@ export default function Home() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('session_user');
-    if (savedUser) {
-      try {
-        setCurrentUser(JSON.parse(savedUser));
-      } catch (e) {
-        localStorage.removeItem('session_user');
-      }
-    }
+    let cancelled = false;
+
     const savedTheme = localStorage.getItem('theme');
     const dark = savedTheme === 'dark';
     setIsDarkMode(dark);
     document.body.classList.toggle('dark', dark);
-    setCheckingAuth(false);
+
+    // الجلسة الحقيقية = كوكيز Supabase. localStorage مجرد كاش للعرض.
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.app_metadata?.role) {
+          const { data: profile } = await supabase
+            .from('app_users')
+            .select('*')
+            .eq('auth_id', session.user.id)
+            .maybeSingle();
+
+          if (profile?.must_change_password) {
+            // قفل المتصفح قبل ما يغيّر كلمة السر الإجبارية → لازم يدخل من جديد
+            await supabase.auth.signOut();
+            localStorage.removeItem('session_user');
+          } else if (!cancelled) {
+            const user = buildSessionUser(session.user, profile);
+            localStorage.setItem('session_user', JSON.stringify(user));
+            setCurrentUser(user);
+          }
+        } else {
+          localStorage.removeItem('session_user');
+        }
+      } catch {
+        localStorage.removeItem('session_user');
+      } finally {
+        if (!cancelled) setCheckingAuth(false);
+      }
+    })();
+
+    // انتهاء الجلسة أو تسجيل الخروج من تبويب آخر
+    const { data: authSub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') {
+        localStorage.removeItem('session_user');
+        setCurrentUser(null);
+      }
+    });
 
     const unsubscribe = onAppNavigate(({ tab }: { tab: string }) => {
       setActiveTab(tab);
       setSidebarOpen(false);
     });
-    return unsubscribe;
+
+    return () => {
+      cancelled = true;
+      authSub.subscription.unsubscribe();
+      unsubscribe();
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -229,7 +267,8 @@ export default function Home() {
     localStorage.setItem('theme', next ? 'dark' : 'light');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     localStorage.removeItem('session_user');
     setCurrentUser(null);
   };

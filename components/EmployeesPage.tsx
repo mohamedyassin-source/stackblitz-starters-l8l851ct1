@@ -752,7 +752,7 @@ export default function EmployeesPage() {
             padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي الموظفين</div>
             <span style={{ fontSize: '14px' }}>👥</span>
           </div>
@@ -768,7 +768,7 @@ export default function EmployeesPage() {
             padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تعيينات {kpiStats.currentYear}</div>
             <span style={{ fontSize: '14px' }}>🌱</span>
           </div>
@@ -784,7 +784,7 @@ export default function EmployeesPage() {
             padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عقود محددة المدة</div>
             <span style={{ fontSize: '14px' }}>📂</span>
           </div>
@@ -800,7 +800,7 @@ export default function EmployeesPage() {
             padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عقود دائمة</div>
             <span style={{ fontSize: '14px' }}>🛡️</span>
           </div>
@@ -816,7 +816,7 @@ export default function EmployeesPage() {
             padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>فوق السن (60+)</div>
             <span style={{ fontSize: '14px' }}>💼</span>
           </div>
@@ -832,7 +832,7 @@ export default function EmployeesPage() {
             padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
           }}
         >
-          <div style={{ display: 'flex', justifyBetween: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>استكمال البيانات</div>
             <span style={{ fontSize: '14px' }}>⚠️</span>
           </div>
@@ -843,7 +843,7 @@ export default function EmployeesPage() {
 
       {/* إجراءات المحددين المجمعة */}
       {selectedEmpIds.length > 0 && (
-        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', justifyBetween: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
           <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
             تم تحديد <span style={{ color: '#60a5fa' }}>{selectedEmpIds.length}</span> موظف
           </div>
