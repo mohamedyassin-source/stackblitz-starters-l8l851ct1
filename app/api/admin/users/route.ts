@@ -28,10 +28,22 @@ export async function POST(req: Request) {
   const action = body?.action;
   const code = normalizeCode(body?.employee_code);
 
+  // 🌟 استخراج اسم الفاعل من الطلب (واللي تم ربطه من الشاشة)
+  const performingUser = body?.performing_user || caller?.employee_name || 'مدير النظام';
+
   const findUser = async () => {
     if (!code) return null;
     const { data } = await admin.from('app_users').select('*').eq('employee_code', code).limit(1);
     return data?.[0] ?? null;
+  };
+
+  // 🌟 دالة مساعدة لتسجيل الحركات بصمة المستخدم الحقيقي في الـ audit_logs
+  const logAudit = async (actionType: string, details: string) => {
+    await admin.from('audit_logs').insert([{
+      action_type: actionType,
+      details: details,
+      user_name: performingUser
+    }]);
   };
 
   try {
@@ -63,6 +75,10 @@ export async function POST(req: Request) {
         await admin.auth.admin.deleteUser(created.user.id); // تراجع كامل
         return fail(iErr.message);
       }
+
+      // 🌟 تسجيل حركة الإضافة في السجل
+      await logAudit('إضافة مستخدم (app_users)', `إضافة مستخدم جديد [${username}] بالكود (${code}) ومنحه صلاحية ${role}`);
+
       return NextResponse.json({ ok: true, tempPassword: usable ? undefined : password });
     }
 
@@ -82,6 +98,10 @@ export async function POST(req: Request) {
       }
       const { error } = await admin.from('app_users').update({ role }).eq('employee_code', code);
       if (error) return fail(error.message);
+
+      // 🌟 تسجيل حركة تغيير الصلاحية
+      await logAudit('تعديل على app_users', `تعديل صلاحية الهدف [${user.username || code}] لتصبح ${role}`);
+
       return NextResponse.json({ ok: true });
     }
 
@@ -90,9 +110,14 @@ export async function POST(req: Request) {
       const user = await findUser();
       if (!user) return fail('المستخدم غير موجود', 404);
       if (user.auth_id === caller.id) return fail('مينفعش تحذف حسابك أنت');
+      
       if (user.auth_id) await admin.auth.admin.deleteUser(user.auth_id);
       const { error } = await admin.from('app_users').delete().eq('employee_code', code);
       if (error) return fail(error.message);
+
+      // 🌟 تسجيل حركة الحذف
+      await logAudit('حذف على app_users', `تم حذف المستخدم [${user.username || code}] نهائياً من النظام`);
+
       return NextResponse.json({ ok: true });
     }
 
@@ -104,6 +129,10 @@ export async function POST(req: Request) {
       const { error } = await admin.auth.admin.updateUserById(user.auth_id, { password });
       if (error) return fail(error.message);
       await admin.from('app_users').update({ must_change_password: true }).eq('auth_id', user.auth_id);
+
+      // 🌟 تسجيل حركة إعادة التعيين
+      await logAudit('تعديل على app_users', `الهدف [${user.username || code}] | تم إعادة تعيين كلمة السر (وإجباره على التغيير عند الدخول)`);
+
       return NextResponse.json({ ok: true, tempPassword: password });
     }
 
