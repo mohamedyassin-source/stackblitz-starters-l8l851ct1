@@ -66,9 +66,9 @@ export async function GET(req: NextRequest) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // 4. فرز وتصفية القائمة بحسب الكارت المحدد
+    // 4. فرز وتصفية القائمة بناءً على خوارزمية الأولويات والأوزان الذكية
     const targetList = empData
-      .filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد')
+      .filter(e => e && e.status !== 'Inactive' && e.status !== 'Terminated' && e.contract_type !== 'إنهاء تعاقد' && !String(e.department || '').includes('تحويلات'))
       .map(emp => {
         const empCodeClean = String(emp.employee_code || '').trim().replace(/^0+/, '');
         const empContracts = contractsMap.get(empCodeClean) || [];
@@ -83,34 +83,69 @@ export async function GET(req: NextRequest) {
         const endDateStr = activeContract.contract_end_date || emp.contract_end_date || null;
         const type = String(activeContract.contract_type || emp.contract_type || '');
 
-        const daysToRetirement = getDaysToRetirement(emp.birth_date);
-        const isRetiringSoon = daysToRetirement !== null && daysToRetirement <= 90 && daysToRetirement >= 0;
+        const isPerm = type.includes('دائم') || type.includes('غير محدد');
+        const isOver = type.includes('فوق السن') || type.includes('مكافأة شاملة');
 
-        let days = null;
+        const d60 = getDaysToRetirement(emp.birth_date);
+        
+        let dC = null;
         if (endDateStr) {
           const endDate = new Date(endDateStr);
           if (!isNaN(endDate.getTime())) {
-            days = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+            dC = Math.ceil((endDate.getTime() - today.getTime()) / (1000 * 3600 * 24));
+          }
+        }
+
+        // 🌟 تقييم مستوى خطر السن
+        let ageLevel: 'critical' | 'warning' | 'retirement' | 'safe' = 'safe';
+        if (!isOver && d60 !== null && d60 <= 90) {
+          if (d60 < 0) ageLevel = 'critical';
+          else if (d60 <= 30) ageLevel = 'warning';
+          else ageLevel = 'retirement';
+        }
+
+        // 🌟 تقييم مستوى خطر العقد
+        let contractLevel: 'critical' | 'warning' | 'notice' | 'safe' = 'safe';
+        if (!isPerm && dC !== null && dC <= 90) {
+          if (dC < 0) contractLevel = 'critical';
+          else if (dC <= 30) contractLevel = 'warning';
+          else contractLevel = 'notice';
+        }
+
+        // 🌟 دمج الأولويات حسب نوع العقد
+        let finalLevel: 'critical' | 'warning' | 'notice' | 'retirement' | 'safe' = 'safe';
+        let alertReason: 'age' | 'contract' = 'contract';
+        const weights: Record<string, number> = { critical: 4, warning: 3, notice: 2, retirement: 1, safe: 0 };
+
+        if (isPerm) {
+          finalLevel = ageLevel;
+          alertReason = 'age';
+        } else if (isOver) {
+          finalLevel = contractLevel;
+          alertReason = 'contract';
+        } else {
+          if (weights[ageLevel] > weights[contractLevel]) {
+            finalLevel = ageLevel;
+            alertReason = 'age';
+          } else {
+            finalLevel = contractLevel;
+            alertReason = 'contract';
           }
         }
 
         let match = false;
-        if (filterType === 'retirement' && isRetiringSoon) {
-          match = true;
-        } else if (!type.includes('دائم') && days !== null) {
-          if (filterType === 'critical' && days <= 30) match = true;
-          else if (filterType === 'warning' && days > 0 && days <= 30) match = true;
-          else if (filterType === 'notice' && days > 30 && days <= 90) match = true;
-          else if (filterType === 'all' && (days <= 90 || isRetiringSoon)) match = true;
-        }
+        if (filterType === 'all' && finalLevel !== 'safe') match = true;
+        else if (finalLevel === filterType) match = true;
 
         if (match) {
           return {
             code: empCodeClean,
-            name: emp.employee_name || emp.ArabicName,
+            name: emp.employee_name || emp.ArabicName || '—',
             department: emp.department || '—',
-            daysLeft: days,
-            daysToRetirement
+            daysLeft: dC,
+            daysToRetirement: d60,
+            alertLevel: finalLevel,
+            alertReason
           };
         }
         return null;
@@ -118,11 +153,11 @@ export async function GET(req: NextRequest) {
       .filter(Boolean);
 
     const titlesMap: Record<string, string> = {
-      critical: 'خطر قانوني/حرج جداً (أقل من 30 يوم)',
-      warning: 'تنبيه حرج جداً (أقل من 30 يوم)',
-      notice: 'إنذار قياسي (أقل من 90 يوم)',
-      retirement: 'رادار المعاشات (سن الـ 60)',
-      all: 'صندوق التنبيهات الشامل'
+      critical: 'خطر قانوني/تجاوز التاريخ أو السن 🔴',
+      warning: 'تنبيه حرج جداً (أقل من 30 يوم) 🟠',
+      notice: 'إنذار قياسي (أقل من 90 يوم) 🟡',
+      retirement: 'رادار المعاشات (يبلغون السن قريباً) 👴',
+      all: 'صندوق التنبيهات الشامل 📂'
     };
 
     const cardTitle = titlesMap[filterType] || 'تقرير التنبيهات';
