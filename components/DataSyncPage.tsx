@@ -542,7 +542,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
               📊 مركز مزامنة ورفع البيانات (Data Sync Tool) 👑
             </h3>
             <p style={{ margin: 0, fontSize: '13px', color: '#64748b', fontWeight: 'bold', lineHeight: '1.6' }}>
-              تحديث شامل وآمن. لا يتم المساس بتواريخ نهاية العقود للموظفين القدامى نهائياً.
+              تحديث شامل وآمن.
             </p>
           </div>
 
