@@ -69,8 +69,16 @@ export async function POST(req: Request) {
       if (cErr || !created.user) return fail(cErr?.message || 'تعذر إنشاء الحساب');
 
       const { error: iErr } = await admin.from('app_users').insert([
-        { username, employee_code: code, role, auth_id: created.user.id, must_change_password: true },
+        { 
+          username, 
+          employee_code: code, 
+          role, 
+          auth_id: created.user.id, 
+          must_change_password: true,
+          password: password // 👈 التعديل هنا: تم إضافة الباسورد لتجنب خطأ الـ Not Null
+        },
       ]);
+      
       if (iErr) {
         await admin.auth.admin.deleteUser(created.user.id); // تراجع كامل
         return fail(iErr.message);
@@ -128,7 +136,12 @@ export async function POST(req: Request) {
       const password = tempPassword();
       const { error } = await admin.auth.admin.updateUserById(user.auth_id, { password });
       if (error) return fail(error.message);
-      await admin.from('app_users').update({ must_change_password: true }).eq('auth_id', user.auth_id);
+      
+      // تحديث كلمة السر في الجدول وحالة الإجبار
+      await admin.from('app_users').update({ 
+        must_change_password: true,
+        password: password // 👈 يفضل نحدثها هنا كمان عشان لو حد عمل Reset
+      }).eq('auth_id', user.auth_id);
 
       // 🌟 تسجيل حركة إعادة التعيين
       await logAudit('تعديل على app_users', `الهدف [${user.username || code}] | تم إعادة تعيين كلمة السر (وإجباره على التغيير عند الدخول)`);
