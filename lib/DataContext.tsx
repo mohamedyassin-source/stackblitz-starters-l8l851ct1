@@ -47,7 +47,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       // 1. جلب الجداول الثلاثة (الموظفين، التجديدات، والعقود)
       const [emps, rens, allContracts] = await Promise.all([
-        fetchAllRows('employees'),
+        fetchAllRows('employees_with_medical'),
         fetchAllRows('renewal_requests'),
         fetchAllRows('contracts') // ⬅️ جلب جدول العقود
       ]);
