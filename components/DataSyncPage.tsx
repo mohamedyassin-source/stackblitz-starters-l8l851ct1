@@ -127,6 +127,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         employee_name: 'أحمد محمد علي',
         department: 'الموارد البشرية',
         job_title: 'أخصائي HR',
+        grad: '9', // ✨ تعديل 1: إضافة عمود الدرجة للقالب
         company: 'المراسم الدولية',
         hiring_date: '2024-01-01',
         contract_end_date: '', // اختياري: للجدد فقط. لو فاضي = تاريخ التعيين + سنة − يوم
@@ -144,6 +145,7 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
         employee_name: 'إبراهيم السيد',
         department: 'تحويلات/تحت الاعتماد',
         job_title: 'ايقاف راتب - اجازة بدون راتب',
+        grad: '7', // ✨ تعديل 1: إضافة عمود الدرجة للقالب
         company: 'المراسم الدولية',
         hiring_date: '2023-05-15',
         contract_end_date: '',
@@ -159,8 +161,9 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
     ];
 
     const worksheet = XLSX.utils.json_to_sheet(templateData);
+    // ✨ تعديل 2: زيادة عدد الأعمدة ليصبح 16 عمود وضبط عرض عمود الدرجة
     worksheet['!cols'] = [
-      { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 20 },
+      { wch: 15 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 10 }, { wch: 20 },
       { wch: 15 }, { wch: 18 }, { wch: 25 }, { wch: 15 }, { wch: 20 },
       { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 20 }, { wch: 15 },
     ];
@@ -235,6 +238,10 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
 
           const deptVal = clean(row['department'] || row['الإدارة'] || row['Department']);
           const jobVal = clean(row['job_title'] || row['الوظيفة'] || row['JobTitle']);
+          
+          // ✨ تعديل 3: قراءة عمود الدرجة الوظيفية من الشيت
+          const gradeVal = clean(row['grad'] || row['الدرجة'] || row['Grade'] || row['grade']); 
+          
           const nameVal = clean(row['employee_name'] || row['اسم الموظف']);
           const compVal = clean(row['company'] || row['الشركة']);
           const emailVal = clean(row['email'] || row['البريد الإلكتروني']);
@@ -295,6 +302,10 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
               const updateObj: any = { employee_code: parsedCodeInt };
               if (deptVal !== null) updateObj.department = deptVal;
               if (jobVal !== null) updateObj.job_title = jobVal;
+              
+              // ✨ تعديل 4: تحديث الدرجة للموظف القديم لو الخلية مش فاضية
+              if (gradeVal !== null) updateObj.grad = gradeVal; 
+              
               if (nameVal !== null) updateObj.employee_name = nameVal;
               if (compVal !== null) updateObj.company = compVal;
               if (emailVal !== null) updateObj.email = emailVal;
@@ -321,6 +332,10 @@ export default function DataSyncPage({ currentUser }: DataSyncProps) {
                 employee_name: nameVal || 'غير مسجل',
                 department: deptVal,
                 job_title: jobVal,
+                
+                // ✨ تعديل 5: إضافة الدرجة للموظف الجديد
+                grad: gradeVal, 
+                
                 company: compVal,
                 hiring_date: hiringDateFormatted,
                 status,
