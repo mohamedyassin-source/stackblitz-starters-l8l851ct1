@@ -299,7 +299,7 @@ export default function EmployeesPage() {
     setReactivateSaving(true);
     try {
       const empCode = getField(reactivateEmp, 'employee_code', 'EmployeeCode');
-      const parsedCode = String(empCode).trim(); // التعديل هنا ✅
+      const parsedCode = String(empCode).trim(); 
 
       const { error: empError } = await supabase
         .from('employees')
@@ -352,7 +352,7 @@ export default function EmployeesPage() {
         rawEnd = ''; 
       }
 
-      const parsedCode = String(empCode).trim(); // التعديل هنا ✅
+      const parsedCode = String(empCode).trim(); 
 
       const employeeUpdateData = {
         employee_code: parsedCode,
@@ -423,7 +423,7 @@ export default function EmployeesPage() {
     setTermSaving(true);
     try {
       const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
-      const parsedCode = String(empCode).trim(); // التعديل هنا ✅
+      const parsedCode = String(empCode).trim(); 
 
       // 1. تحديث الموظف
       const { error: empError } = await supabase
@@ -469,7 +469,7 @@ export default function EmployeesPage() {
 
     setBulkSaving(true);
     try {
-      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); // التعديل هنا ✅
+      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); 
       const updatePayload: any = {};
       if (bulkDept) updatePayload.department = bulkDept;
       if (bulkCompany) updatePayload.company = bulkCompany;
@@ -501,7 +501,7 @@ export default function EmployeesPage() {
 
     setIsDeleting(true);
     try {
-      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); // التعديل هنا ✅
+      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); 
       await supabase.from('contracts').delete().in('employee_code', parsedCodes);
       
       const { error: empError } = await supabase.from('employees').delete().in('employee_code', parsedCodes);
@@ -557,7 +557,7 @@ export default function EmployeesPage() {
           const bestRecord = records[0];
           
           const payload = {
-            employee_code: String(code).trim(), // التعديل هنا ✅
+            employee_code: String(code).trim(), 
             employee_name: getField(bestRecord, 'employee_name', 'ArabicName'),
             national_id: getField(bestRecord, 'national_id', 'NationalID') || null,
             birth_date: getField(bestRecord, 'birth_date', 'BirthDate') || null,
@@ -572,7 +572,7 @@ export default function EmployeesPage() {
 
           promises.push(
             (async () => {
-              await supabase.from('employees').delete().eq('employee_code', String(code).trim()); // التعديل هنا ✅
+              await supabase.from('employees').delete().eq('employee_code', String(code).trim());
               await supabase.from('employees').insert([payload]);
             })()
           );
@@ -596,7 +596,7 @@ export default function EmployeesPage() {
     }
   };
 
-  // ➕ دالة الإضافة المحدثة
+  // ➕ دالة الإضافة المباشرة
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -605,7 +605,7 @@ export default function EmployeesPage() {
         finalEndDate = calculateInitialEndDate(newEmp.hiring_date);
       }
 
-      const parsedCode = String(newEmp.employee_code).trim(); // التعديل هنا ✅
+      const parsedCode = String(newEmp.employee_code).trim(); 
 
       const { error: empError } = await supabase.from('employees').insert([{
         employee_code: parsedCode,
@@ -656,6 +656,9 @@ export default function EmployeesPage() {
       'employee_name': getField(e, 'employee_name', 'ArabicName'),
       'job_title': getField(e, 'job_title', 'JobTitle'),
       'department': getField(e, 'department', 'Department'),
+      // ✨ تم الإضافة لملف الإكسيل أيضاً
+      'grade': getField(e, 'grad', 'Grade', 'grade'),
+      'medical_category': getField(e, 'medical_category', 'MedicalCategory'),
       'age': getEmployeeAge(e) ? `${getEmployeeAge(e)} سنة` : '—',
       'national_id': getField(e, 'national_id', 'NationalID'),
       'mobile': getField(e, 'mobile', 'Mobile'),
@@ -914,7 +917,13 @@ export default function EmployeesPage() {
                   <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
                   <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
                   <th onClick={() => handleSort('job_title')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
+                  
                   <th onClick={() => handleSort('department')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
+                  
+                  {/* ✨ الإضافة الجديدة للأعمدة في الـ Header */}
+                  <th onClick={() => handleSort('grad')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الدرجة {renderSortArrow('grad')}</th>
+                  <th onClick={() => handleSort('medical_category')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الفئة الطبية {renderSortArrow('medical_category')}</th>
+
                   <th onClick={() => handleSort('age')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
                   <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
                   <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
@@ -965,7 +974,13 @@ export default function EmployeesPage() {
                         )}
                       </td>
                       <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
+                      
                       <td style={{ padding: '10px', color: isTransferredOrInactive ? '#dc2626' : '#64748b', fontWeight: isTransferredOrInactive ? 'bold' : '500' }}>{dept || '—'}</td>
+                      
+                      {/* ✨ الإضافة الجديدة للخلايا */}
+                      <td style={{ padding: '10px', color: '#0f172a', fontWeight: 'bold' }}>{getField(emp, 'grad', 'Grade', 'grade') || '—'}</td>
+                      <td style={{ padding: '10px', color: '#0d9488', fontWeight: 'bold' }}>{getField(emp, 'medical_category', 'MedicalCategory') || '—'}</td>
+
                       <td style={{ padding: '10px' }}>{renderAgeBadge(emp)}</td>
                       <td style={{ padding: '10px', fontFamily: 'monospace', color: '#0f172a' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
                       <td style={{ padding: '10px', fontWeight: 'bold' }}>{cType || '—'}</td>
@@ -1052,6 +1067,11 @@ export default function EmployeesPage() {
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الموبايل:</strong> {getField(profileEmp, 'mobile', 'Mobile') || 'غير مسجل ⚠️'}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
+              
+              {/* ✨ تم الإضافة هنا أيضاً للملف الشامل */}
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الدرجة:</strong> {getField(profileEmp, 'grad', 'Grade', 'grade') || 'غير مسجل'}</div>
+              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الفئة الطبية:</strong> {getField(profileEmp, 'medical_category', 'MedicalCategory') || 'غير مسجل'}</div>
+
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
               <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
