@@ -1,1329 +1,1280 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '@/lib/supabase';
 import { useAppData } from '@/lib/DataContext';
-import * as XLSX from 'xlsx';
 
-// 🌟 القائمة الموحدة الرسمية لأنواع العقود
+/* ================================================================== */
+/*  الأنواع والثوابت والدوال المساعدة                                      */
+/* ================================================================== */
+// كل ما يخص شكل بيانات الموظف + الثوابت + الدوال المساعدة في مكان واحد.
+
+/** اسم عمود الدرجة في جدول employees بقاعدة البيانات. غيّره هنا فقط لو الاسم عندك مختلف (مثلاً 'grade'). */
+const GRADE_COLUMN = 'grad';
+
+const PERMANENT = 'دائم';
+const TRANSFER_DEPARTMENT = 'تحويلات تحت الاعتماد';
+const ABOVE_AGE_THRESHOLD = 60;
+
 const STANDARD_CONTRACT_TYPES = [
   'محدد المدة',
   'محدد المدة - فوق السن',
   'محدد المدة - مكافأة شاملة',
-  'دائم'
-];
+  PERMANENT,
+] as const;
 
-// 🌟 أسباب الإنهاء والإيقاف الشائعة
 const TERMINATION_REASONS = [
-  'انتهاء عقد', 'إنهاء تعاقد', 'استقالة', 'إنهاء خدمات', 
+  'انتهاء عقد', 'إنهاء تعاقد', 'استقالة', 'إنهاء خدمات',
   'بلوغ سن', 'انقطاع عن العمل', 'نقل شركة شقيقة',
-  'عدم اجتياز فترة الاختبار', 'أجازة بدون راتب'
+  'عدم اجتياز فترة الاختبار', 'أجازة بدون راتب',
+] as const;
+
+const AGE_RANGES = {
+  '60_plus': { label: 'فوق السن (60 فأكثر)', test: (a: number) => a >= 60 },
+  '50_59': { label: 'من 50 إلى 59', test: (a: number) => a >= 50 && a < 60 },
+  '30_49': { label: 'من 30 إلى 49', test: (a: number) => a >= 30 && a < 50 },
+  under_30: { label: 'أقل من 30', test: (a: number) => a < 30 },
+} as const;
+type AgeRangeKey = keyof typeof AGE_RANGES;
+
+/* ------------------------------------------------------------------ */
+/*  نموذج الموظف بعد التنظيف (Normalized)                                */
+/* ------------------------------------------------------------------ */
+
+interface Employee {
+  id: string | number | null;
+  code: string;
+  name: string;
+  nationalId: string;
+  birthDate: string;
+  department: string;
+  company: string;
+  jobTitle: string;
+  grade: string;
+  medicalCategory: string;
+  hiringDate: string;
+  contractId: string;
+  contractType: string;
+  contractEndDate: string;
+  status: string;
+  email: string;
+  mobile: string;
+  manager: string;
+  terminationReason: string;
+  // مشتقات محسوبة مرة واحدة
+  age: number | null;
+  isInactive: boolean;
+  isFixedTerm: boolean;
+  isMissingData: boolean;
+}
+
+type Raw = Record<string, any>;
+
+/** يقرأ أول مفتاح موجود من الصف الخام (يدعم الأسماء القديمة PascalCase). */
+const pick = (raw: Raw, ...keys: string[]): string => {
+  for (const k of keys) {
+    if (raw[k] !== undefined && raw[k] !== null) return String(raw[k]).trim();
+  }
+  return '';
+};
+
+const toISODate = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+/** سنة ناقص يوم من تاريخ البداية (للعقود المحددة). بتستخدم UTC عشان ما يحصلش فرق يوم بسبب التوقيت. */
+const addYearMinusDay = (start?: string | null): string => {
+  if (!start) return '';
+  const d = new Date(start);
+  if (isNaN(d.getTime())) return '';
+  d.setUTCFullYear(d.getUTCFullYear() + 1);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().split('T')[0];
+};
+
+const calcAge = (rawAge: string, birthDate: string, nationalId: string): number | null => {
+  if (rawAge !== '' && !isNaN(Number(rawAge))) return Number(rawAge);
+
+  let birth: Date | null = null;
+  if (birthDate) {
+    const b = new Date(birthDate);
+    if (!isNaN(b.getTime())) birth = b;
+  }
+  if (!birth) {
+    const id = nationalId.replace(/\D/g, '');
+    if (id.length === 14) {
+      const century = id[0] === '3' ? '20' : '19';
+      const b = new Date(`${century}${id.slice(1, 3)}-${id.slice(3, 5)}-${id.slice(5, 7)}`);
+      if (!isNaN(b.getTime())) birth = b;
+    }
+  }
+  if (!birth) return null;
+
+  const today = new Date();
+  let age = today.getFullYear() - birth.getUTCFullYear();
+  const m = today.getMonth() - birth.getUTCMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birth.getUTCDate())) age--;
+  return age;
+};
+
+const normalizeEmployee = (raw: Raw): Employee => {
+  const nationalId = pick(raw, 'national_id', 'NationalID');
+  const mobile = pick(raw, 'mobile', 'Mobile', 'MOBILE');
+  const birthDate = pick(raw, 'birth_date', 'BirthDate');
+  const department = pick(raw, 'department', 'Department');
+  const status = pick(raw, 'status', 'Status') || 'Active';
+  const contractType = pick(raw, 'contract_type', 'ContractType');
+
+  return {
+    id: raw.id ?? null,
+    code: pick(raw, 'employee_code', 'EmployeeCode'),
+    name: pick(raw, 'employee_name', 'ArabicName'),
+    nationalId,
+    birthDate,
+    department,
+    company: pick(raw, 'company', 'Company'),
+    jobTitle: pick(raw, 'job_title', 'JobTitle'),
+    grade: pick(raw, GRADE_COLUMN, 'Grade', 'grade'),
+    medicalCategory: pick(raw, 'medical_category', 'MedicalCategory'),
+    hiringDate: pick(raw, 'hiring_date', 'HiringDate'),
+    contractId: pick(raw, 'contract_id', 'ContractID'),
+    contractType,
+    contractEndDate: pick(raw, 'contract_end_date', 'ContractEndDate'),
+    status,
+    email: pick(raw, 'email', 'Email'),
+    mobile,
+    manager: pick(raw, 'manager', 'Manager'),
+    terminationReason: pick(raw, 'termination_reason', 'TerminationReason'),
+    age: calcAge(pick(raw, 'age', 'Age'), birthDate, nationalId),
+    isInactive: department.includes('تحويلات') || status.toLowerCase() !== 'active',
+    isFixedTerm: contractType.includes('محدد'),
+    isMissingData: !nationalId || !mobile,
+  };
+};
+
+/* ------------------------------------------------------------------ */
+/*  فلاتر الكروت                                                        */
+/* ------------------------------------------------------------------ */
+
+type CardKey = 'ALL_ACTIVE' | 'NEW_JOINERS' | 'FIXED' | 'PERM' | 'ABOVE_AGE' | 'MISSING_DATA';
+
+const CARD_PREDICATES: Record<CardKey, (e: Employee, year: number) => boolean> = {
+  ALL_ACTIVE: () => true,
+  NEW_JOINERS: (e, year) => {
+    if (!e.hiringDate) return false;
+    const d = new Date(e.hiringDate);
+    return !isNaN(d.getTime()) && d.getFullYear() === year;
+  },
+  FIXED: (e) => e.isFixedTerm,
+  PERM: (e) => e.contractType === PERMANENT,
+  ABOVE_AGE: (e) => e.contractType.includes('فوق السن') || (e.age !== null && e.age >= ABOVE_AGE_THRESHOLD),
+  MISSING_DATA: (e) => e.isMissingData,
+};
+
+/* ------------------------------------------------------------------ */
+/*  نموذج الإضافة / التعديل وتحويله لصفوف قاعدة البيانات                     */
+/* ------------------------------------------------------------------ */
+
+type EmployeeDraft = Pick<
+  Employee,
+  | 'code' | 'name' | 'nationalId' | 'birthDate' | 'department' | 'company'
+  | 'jobTitle' | 'grade' | 'hiringDate' | 'contractType' | 'contractEndDate'
+  | 'status' | 'email' | 'mobile' | 'manager'
+>;
+
+const EMPTY_DRAFT: EmployeeDraft = {
+  code: '', name: '', nationalId: '', birthDate: '', department: '', company: '',
+  jobTitle: '', grade: '', hiringDate: '', contractType: STANDARD_CONTRACT_TYPES[0],
+  contractEndDate: '', status: 'Active', email: '', mobile: '', manager: '',
+};
+
+const toDraft = (e: Employee): EmployeeDraft => ({
+  code: e.code, name: e.name, nationalId: e.nationalId, birthDate: e.birthDate,
+  department: e.department, company: e.company, jobTitle: e.jobTitle, grade: e.grade,
+  hiringDate: e.hiringDate, contractType: e.contractType || STANDARD_CONTRACT_TYPES[0],
+  contractEndDate: e.contractEndDate, status: e.status, email: e.email,
+  mobile: e.mobile, manager: e.manager,
+});
+
+const buildEmployeeRow = (d: EmployeeDraft) => ({
+  employee_code: d.code.trim(),
+  employee_name: d.name.trim(),
+  national_id: d.nationalId.trim(),
+  birth_date: d.birthDate || null,
+  department: d.department.trim(),
+  company: d.company.trim(),
+  job_title: d.jobTitle.trim(),
+  [GRADE_COLUMN]: d.grade.trim() || null,
+  hiring_date: d.hiringDate || null,
+  status: d.status || 'Active',
+  email: d.email.trim(),
+  mobile: d.mobile.trim(),
+  manager: d.manager.trim(),
+});
+
+/** نهاية العقد: دائم = لا يوجد، محدد بدون تاريخ = سنة ناقص يوم من التعيين. */
+const resolveContractEnd = (d: EmployeeDraft): string | null => {
+  if (d.contractType === PERMANENT) return null;
+  if (d.contractEndDate) return d.contractEndDate;
+  if (d.contractType.includes('محدد') && d.hiringDate) return addYearMinusDay(d.hiringDate) || null;
+  return null;
+};
+
+const buildContractRow = (d: EmployeeDraft) => ({
+  employee_code: d.code.trim(),
+  contract_type: d.contractType,
+  contract_start_date: d.hiringDate || null,
+  contract_end_date: resolveContractEnd(d),
+  status: d.status || 'Active',
+});
+
+/* ================================================================== */
+/*  الأنماط (CSS)                                                       */
+/* ================================================================== */
+const EMP_CSS = `
+.emp-page {
+  --ink: #14202b;
+  --muted: #5b6b7a;
+  --line: #e3e8ee;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --brand: #0f766e;
+  --brand-soft: #e6f4f1;
+  --blue: #1d4ed8;
+  --blue-soft: #e8effe;
+  --green: #15803d;
+  --green-soft: #e6f6ec;
+  --amber: #b45309;
+  --amber-soft: #fef3c7;
+  --rose: #be123c;
+  --rose-soft: #ffe9ed;
+  --radius: 12px;
+
+  direction: rtl;
+  color: var(--ink);
+  font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+  padding-bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- الرأس ---------- */
+.emp-header {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 18px 22px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.emp-title { margin: 0; font-size: 20px; font-weight: 800; }
+.emp-subtitle { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); }
+.emp-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ---------- الأزرار ---------- */
+.emp-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.emp-btn:hover:not(:disabled) { background: #f0f3f6; }
+.emp-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.emp-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.emp-btnPrimary { background: var(--brand); border-color: var(--brand); color: #fff; }
+.emp-btnPrimary:hover:not(:disabled) { background: #0b5f58; }
+.emp-btnDanger { background: var(--rose); border-color: var(--rose); color: #fff; }
+.emp-btnDanger:hover:not(:disabled) { background: #9f0f33; }
+.emp-btnSuccess { background: var(--green); border-color: var(--green); color: #fff; }
+.emp-btnSuccess:hover:not(:disabled) { background: #11652f; }
+.emp-btnSm { padding: 4px 10px; font-size: 11.5px; }
+
+/* ---------- كروت الإحصائيات ---------- */
+.emp-kpiGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (min-width: 768px) { .emp-kpiGrid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 1280px) { .emp-kpiGrid { grid-template-columns: repeat(6, 1fr); } }
+
+.emp-kpi {
+  --accent: var(--brand);
+  --accent-soft: var(--brand-soft);
+  position: relative;
+  text-align: right;
+  font: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.emp-kpi::before {
+  content: '';
+  position: absolute;
+  inset-block: 14px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+.emp-kpi:hover { border-color: var(--accent); }
+.emp-kpi:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.emp-kpiActive { background: var(--accent-soft); border-color: var(--accent); }
+.emp-kpiLabel { font-size: 12px; color: var(--muted); font-weight: 700; display: flex; justify-content: space-between; }
+.emp-kpiValue { font-size: 26px; font-weight: 800; color: var(--accent); margin-top: 6px; line-height: 1.1; }
+.emp-kpiHint { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+
+/* ---------- شريط الإجراءات المجمعة ---------- */
+.emp-bulkBar {
+  background: var(--ink);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.emp-bulkCount { font-size: 13px; font-weight: 700; }
+.emp-bulkBar .emp-btn { background: transparent; border-color: #3a4a5a; color: #e8edf2; }
+.emp-bulkBar .emp-btn:hover:not(:disabled) { background: #22313f; }
+.emp-bulkBar .emp-btnDanger { background: var(--rose); border-color: var(--rose); color: #fff; }
+
+/* ---------- الفلاتر ---------- */
+.emp-toolbar {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.emp-input, .emp-select {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  background: #fff;
+  min-width: 0;
+}
+.emp-input:focus, .emp-select:focus { outline: 2px solid var(--brand); outline-offset: 0; border-color: var(--brand); }
+.emp-searchInput { min-width: 240px; }
+.emp-shortInput { width: 150px; }
+.emp-resultCount { margin-inline-start: auto; font-size: 12.5px; color: var(--muted); }
+.emp-resultCount strong { color: var(--ink); font-size: 14px; }
+
+/* ---------- الجدول ---------- */
+.emp-tableCard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.emp-tableScroll { max-height: 62vh; overflow: auto; }
+.emp-table { width: 100%; border-collapse: collapse; text-align: right; font-size: 12.5px; white-space: nowrap; }
+.emp-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #f8fafb;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 700;
+  padding: 11px 12px;
+  user-select: none;
+}
+.emp-sortable { cursor: pointer; }
+.emp-sortable:hover { color: var(--ink); }
+.emp-sortArrow { color: var(--brand); margin-inline-start: 4px; }
+.emp-sortIdle { opacity: 0.3; margin-inline-start: 4px; }
+.emp-table td { padding: 10px 12px; border-bottom: 1px solid #f0f3f6; }
+.emp-table tbody tr:hover { background: #fafbfc; }
+.emp-rowInactive { background: #fff7f8; }
+.emp-rowSelected { background: var(--brand-soft); }
+.emp-mono { font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+.emp-code { font-weight: 800; color: var(--brand); }
+.emp-codeInactive { color: var(--rose); }
+.emp-nameCell { font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.emp-muted { color: var(--muted); }
+.emp-cellActions { display: flex; gap: 6px; justify-content: center; }
+.emp-empty { padding: 56px 20px; text-align: center; color: var(--muted); font-size: 13.5px; }
+
+/* ---------- الشارات ---------- */
+.emp-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.emp-badgeBlue { background: var(--blue-soft); color: var(--blue); border-color: #c7d7fb; }
+.emp-badgeGreen { background: var(--green-soft); color: var(--green); border-color: #bde5c9; }
+.emp-badgeAmber { background: var(--amber-soft); color: var(--amber); border-color: #f6dc8a; }
+.emp-badgeRed { background: var(--rose-soft); color: var(--rose); border-color: #f8c2cd; }
+.emp-badgeGray { background: #f1f4f7; color: #334155; border-color: var(--line); }
+
+/* ---------- النوافذ المنبثقة ---------- */
+.emp-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 32, 43, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 20px;
+}
+.emp-modal {
+  background: var(--surface);
+  border-radius: 16px;
+  width: 100%;
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 22px 24px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+}
+.emp-modalHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+}
+.emp-modalTitle { margin: 0; font-size: 17px; font-weight: 800; }
+.emp-modalFoot { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.emp-form { display: flex; flex-direction: column; gap: 14px; }
+.emp-notice { background: var(--brand-soft); color: #0b5f58; border-radius: 10px; padding: 12px; font-size: 12.5px; }
+.emp-noticeDanger { background: var(--rose-soft); color: var(--rose); }
+
+.emp-section {
+  background: #f8fafb;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.emp-sectionTitle { margin: 0 0 12px; font-size: 14px; font-weight: 800; color: var(--brand); }
+.emp-formGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+@media (max-width: 720px) { .emp-formGrid { grid-template-columns: 1fr 1fr; } }
+.emp-field label { display: block; font-size: 11.5px; font-weight: 700; color: var(--muted); margin-bottom: 5px; }
+.emp-field .emp-input, .emp-field .emp-select { width: 100%; box-sizing: border-box; }
+.emp-field .emp-input:disabled { background: #f1f4f7; color: var(--muted); }
+
+.emp-profileGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 12.5px; }
+.emp-profileItem { background: #f8fafb; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.emp-profileItem span { display: block; font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+
+.emp-suggest {
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+  margin-top: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+.emp-suggestItem { display: block; width: 100%; text-align: right; background: none; border: 0; border-bottom: 1px solid #f0f3f6; padding: 10px 12px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.emp-suggestItem:hover { background: #f8fafb; }
+
+/* ---------- التنبيهات ---------- */
+.emp-toast {
+  position: fixed;
+  bottom: 24px;
+  inset-inline-start: 24px;
+  z-index: 10000;
+  padding: 12px 18px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  max-width: min(480px, calc(100vw - 48px));
+}
+.emp-toastOk { background: var(--green); color: #fff; }
+.emp-toastError { background: var(--rose); color: #fff; }
+
+@media (prefers-reduced-motion: reduce) {
+  .emp-page * { transition: none !important; }
+}
+
+`;
+
+/* ================================================================== */
+/*  إعدادات العرض                                                       */
+/* ================================================================== */
+
+interface KpiConfig { key: CardKey; label: string; icon: string; accent: string; soft: string; hint: (pct: string) => string }
+
+const KPI_CARDS: KpiConfig[] = [
+  { key: 'ALL_ACTIVE', label: 'إجمالي الموظفين', icon: '👥', accent: '#0f766e', soft: '#e6f4f1', hint: () => 'القوة الفعالة' },
+  { key: 'NEW_JOINERS', label: 'تعيينات العام', icon: '🌱', accent: '#15803d', soft: '#e6f6ec', hint: (p) => `${p}% من القوة` },
+  { key: 'FIXED', label: 'عقود محددة المدة', icon: '📂', accent: '#1d4ed8', soft: '#e8effe', hint: (p) => `${p}% من القوة` },
+  { key: 'PERM', label: 'عقود دائمة', icon: '🛡️', accent: '#0e7490', soft: '#e3f4f8', hint: (p) => `${p}% من القوة` },
+  { key: 'ABOVE_AGE', label: `فوق السن (${ABOVE_AGE_THRESHOLD}+)`, icon: '💼', accent: '#b45309', soft: '#fef3c7', hint: (p) => `${p}% من القوة` },
+  { key: 'MISSING_DATA', label: 'بيانات ناقصة', icon: '⚠️', accent: '#be123c', soft: '#ffe9ed', hint: () => 'اضغط للاستكمال' },
 ];
 
-export default function EmployeesPage() {
-  const { employees, loading, refresh: fetchEmployees } = useAppData();
-
-  // حالات الفلاتر والكروت الإحصائية الـ 6
-  const [activeCardFilter, setActiveCardFilter] = useState<'ALL_ACTIVE' | 'NEW_JOINERS' | 'PERM' | 'FIXED' | 'ABOVE_AGE' | 'MISSING_DATA' | null>('ALL_ACTIVE');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDept, setSelectedDept] = useState('');
-  const [selectedCompany, setSelectedCompany] = useState('');
-  const [selectedType, setSelectedType] = useState('');
-  const [selectedAgeRange, setSelectedAgeRange] = useState('');
-
-  // حالات الترتيب والتحديد
-  const [sortColumn, setSortColumn] = useState<string>('employee_code');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
-
-  // النوافذ المنبثقة
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showTermModal, setShowTermModal] = useState(false);
-  const [showBulkTransferModal, setShowBulkTransferModal] = useState(false);
-  const [editData, setEditData] = useState<any>(null);
-  const [profileEmp, setProfileEmp] = useState<any>(null);
-
-  // حالة نافذة إعادة التفعيل
-  const [reactivateEmp, setReactivateEmp] = useState<any>(null);
-  const [reactivateDept, setReactivateDept] = useState('');
-  const [reactivateCompany, setReactivateCompany] = useState('');
-  const [reactivateSaving, setReactivateSaving] = useState(false);
-
-  // حالات النقل والحذف وإنهاء الخدمة
-  const [bulkDept, setBulkDept] = useState('');
-  const [bulkCompany, setBulkCompany] = useState('');
-  const [bulkSaving, setBulkSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const [termSearch, setTermSearch] = useState('');
-  const [selectedTermEmp, setSelectedTermEmp] = useState<any>(null);
-  const [termReason, setTermReason] = useState('استقالة');
-  const [termDate, setTermDate] = useState(new Date().toISOString().split('T')[0]);
-  const [termSaving, setTermSaving] = useState(false);
-
-  // الموظف الجديد
-  const [newEmp, setNewEmp] = useState({
-    employee_code: '', 
-    employee_name: '', 
-    national_id: '',
-    birth_date: '',
-    department: '', 
-    company: '', 
-    job_title: '', 
-    hiring_date: '',
-    contract_type: 'محدد المدة', 
-    contract_end_date: '', 
-    status: 'Active', 
-    email: '', 
-    mobile: ''
-  });
-
-  const getField = (obj: any, ...keys: string[]) => {
-    if (!obj) return '';
-    for (const key of keys) {
-      if (obj[key] !== undefined && obj[key] !== null) return String(obj[key]).trim();
-    }
-    return '';
-  };
-
-  // 🎂 دالة حساب العمر المرنة
-  const getEmployeeAge = (emp: any) => {
-    const rawAge = getField(emp, 'age', 'Age');
-    if (rawAge !== '' && rawAge !== null && !isNaN(Number(rawAge))) {
-      return Number(rawAge);
-    }
-
-    const bDateStr = getField(emp, 'birth_date', 'BirthDate');
-    const natId = getField(emp, 'national_id', 'NationalID');
-
-    let birthDate: Date | null = null;
-    if (bDateStr) {
-      const b = new Date(bDateStr);
-      if (!isNaN(b.getTime())) birthDate = b;
-    }
-
-    if (!birthDate && natId) {
-      const idStr = String(natId).replace(/\D/g, '');
-      if (idStr.length === 14) {
-        const centuryDigit = idStr.charAt(0);
-        const yearDigits = idStr.substring(1, 3);
-        const monthDigits = idStr.substring(3, 5);
-        const dayDigits = idStr.substring(5, 7);
-        const fullYear = (centuryDigit === '3' ? '20' : '19') + yearDigits;
-        const b = new Date(`${fullYear}-${monthDigits}-${dayDigits}`);
-        if (!isNaN(b.getTime())) birthDate = b;
-      }
-    }
-
-    if (birthDate) {
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const m = today.getMonth() - birthDate.getMonth();
-      if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-      }
-      return age;
-    }
-
-    return null;
-  };
-
-  // 🎯 دالة جديدة لحساب سنة ناقص يوم أوتوماتيكياً للعقود المحددة
-  const calculateInitialEndDate = (startDateStr: string | null | undefined) => {
-    if (!startDateStr) return '';
-    const d = new Date(startDateStr);
-    if (isNaN(d.getTime())) return '';
-    d.setFullYear(d.getFullYear() + 1);
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  };
-
-  // قائمة الإدارات والشركات الفعالة للفلترة
-  const deptsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'department', 'Department')).filter(Boolean))), [employees]);
-  const compsList = useMemo(() => Array.from(new Set(employees.map(e => getField(e, 'company', 'Company')).filter(Boolean))), [employees]);
-
-  // التصفية الأولية بناءً على خيارات البحث والشروط
-  const baseFilteredEmployees = useMemo(() => {
-    return employees.filter(emp => {
-      const term = searchTerm.toLowerCase();
-      const empCode = getField(emp, 'employee_code', 'EmployeeCode').toLowerCase();
-      const empName = getField(emp, 'employee_name', 'ArabicName').toLowerCase();
-      const empDept = getField(emp, 'department', 'Department').toLowerCase();
-      const empComp = getField(emp, 'company', 'Company').toLowerCase();
-      const cType = getField(emp, 'contract_type', 'ContractType');
-      const age = getEmployeeAge(emp);
-
-      const matchesSearch = !term || empCode.includes(term) || empName.includes(term) || empDept.includes(term);
-      const matchesDept = !selectedDept || empDept.includes(selectedDept.toLowerCase());
-      const matchesComp = !selectedCompany || empComp.includes(selectedCompany.toLowerCase());
-      const matchesType = !selectedType || cType === selectedType || cType.includes(selectedType);
-
-      let matchesAge = true;
-      if (selectedAgeRange === '60_plus') matchesAge = age !== null && age >= 60;
-      else if (selectedAgeRange === '50_59') matchesAge = age !== null && age >= 50 && age < 60;
-      else if (selectedAgeRange === '30_49') matchesAge = age !== null && age >= 30 && age < 50;
-      else if (selectedAgeRange === 'under_30') matchesAge = age !== null && age < 30;
-
-      return matchesSearch && matchesDept && matchesComp && matchesType && matchesAge;
-    });
-  }, [employees, searchTerm, selectedDept, selectedCompany, selectedType, selectedAgeRange]);
-
-  // 📊 حسابات كروت الـ KPI
-  const kpiStats = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-
-    const activeOnlyForKpi = baseFilteredEmployees.filter(e => {
-      const dept = getField(e, 'department', 'Department');
-      const status = getField(e, 'status', 'Status') || 'Active';
-      return !dept.includes('تحويلات') && status.toLowerCase() === 'active';
-    });
-
-    const total = activeOnlyForKpi.length;
-    let newJoiners = 0, perm = 0, fixed = 0, aboveAge = 0, missingData = 0;
-
-    activeOnlyForKpi.forEach(e => {
-      const cType = getField(e, 'contract_type', 'ContractType');
-      const age = getEmployeeAge(e);
-      const hiringDateStr = getField(e, 'hiring_date', 'HiringDate');
-      const natId = getField(e, 'national_id', 'NationalID');
-      const mobile = getField(e, 'mobile', 'Mobile');
-
-      if (hiringDateStr) {
-        const hDate = new Date(hiringDateStr);
-        if (!isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear) {
-          newJoiners++;
-        }
-      }
-
-      if (cType === 'دائم') perm++;
-      else if (cType.includes('محدد')) fixed++;
-
-      if (cType.includes('فوق السن') || (age !== null && age >= 60)) {
-        aboveAge++;
-      }
-
-      if (!natId || !mobile) {
-        missingData++;
-      }
-    });
-
-    const calcPct = (val: number) => (total > 0 ? ((val / total) * 100).toFixed(1) : '0');
-
-    return { 
-      total, newJoiners, newJoinersPct: calcPct(newJoiners),
-      perm, permPct: calcPct(perm), fixed, fixedPct: calcPct(fixed), 
-      aboveAge, aboveAgePct: calcPct(aboveAge), missingData, missingDataPct: calcPct(missingData), currentYear
-    };
-  }, [baseFilteredEmployees]);
-
-  // 🌟 فلترة الجدول النهائي
-  const finalTableEmployees = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-
-    const filtered = baseFilteredEmployees.filter(emp => {
-      const dept = getField(emp, 'department', 'Department');
-      const status = getField(emp, 'status', 'Status') || 'Active';
-      const cType = getField(emp, 'contract_type', 'ContractType');
-      const age = getEmployeeAge(emp);
-      const hiringDateStr = getField(emp, 'hiring_date', 'HiringDate');
-      const natId = getField(emp, 'national_id', 'NationalID');
-      const mobile = getField(emp, 'mobile', 'Mobile');
-
-      const isTransfer = dept.includes('تحويلات') || status.toLowerCase() !== 'active';
-      const isExplicitSearch = searchTerm.trim() !== '' || selectedDept.includes('تحويلات');
-
-      if (isTransfer && !isExplicitSearch) return false;
-
-      if (activeCardFilter === 'NEW_JOINERS') {
-        if (!hiringDateStr) return false;
-        const hDate = new Date(hiringDateStr);
-        return !isNaN(hDate.getTime()) && hDate.getFullYear() === currentYear;
-      }
-      if (activeCardFilter === 'PERM') return cType === 'دائم';
-      if (activeCardFilter === 'FIXED') return cType.includes('محدد');
-      if (activeCardFilter === 'ABOVE_AGE') return cType.includes('فوق السن') || (age !== null && age >= 60);
-      if (activeCardFilter === 'MISSING_DATA') return !natId || !mobile;
-
-      return true;
-    });
-
-    return filtered.sort((a, b) => {
-      if (sortColumn === 'age') {
-        const ageA = getEmployeeAge(a) !== null ? getEmployeeAge(a) : 0;
-        const ageB = getEmployeeAge(b) !== null ? getEmployeeAge(b) : 0;
-        const res = (ageA as number) - (ageB as number);
-        return sortDirection === 'asc' ? res : -res;
-      }
-      
-      let valA = getField(a, sortColumn, 'employee_code');
-      let valB = getField(b, sortColumn, 'employee_code');
-      const res = valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
-      return sortDirection === 'asc' ? res : -res;
-    });
-  }, [baseFilteredEmployees, activeCardFilter, sortColumn, sortDirection, searchTerm, selectedDept]);
-
-  const termSearchResults = useMemo(() => {
-    if (!termSearch.trim()) return [];
-    const term = termSearch.toLowerCase().trim();
-    return employees.filter(e => {
-      const code = getField(e, 'employee_code', 'EmployeeCode').toLowerCase();
-      const name = getField(e, 'employee_name', 'ArabicName').toLowerCase();
-      const dept = getField(e, 'department', 'Department').toLowerCase();
-      return code.includes(term) || name.includes(term) || dept.includes(term);
-    }).slice(0, 8);
-  }, [employees, termSearch]);
-
-  const handleSort = (columnKey: string) => {
-    if (sortColumn === columnKey) {
-      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setSortColumn(columnKey);
-      setSortDirection('asc');
-    }
-  };
-
-  const renderSortArrow = (colKey: string) => {
-    if (sortColumn !== colKey) return <span style={{ opacity: 0.3, marginRight: '4px' }}>↕</span>;
-    return sortDirection === 'asc' ? <span style={{ color: '#0d9488', marginRight: '4px' }}>▲</span> : <span style={{ color: '#0d9488', marginRight: '4px' }}>▼</span>;
-  };
-
-  const handleOpenEdit = async (emp: any) => {
-    setEditData({ emp: { ...emp }, loading: false });
-  };
-
-  const handleConfirmReactivate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reactivateEmp) return;
-    if (!reactivateDept) return alert('يرجى تحديد الإدارة التي سيعود إليها الموظف.');
-
-    setReactivateSaving(true);
-    try {
-      const empCode = getField(reactivateEmp, 'employee_code', 'EmployeeCode');
-      const parsedCode = String(empCode).trim(); 
-
-      const { error: empError } = await supabase
-        .from('employees')
-        .update({
-          department: reactivateDept,
-          company: reactivateCompany || getField(reactivateEmp, 'company', 'Company'),
-          status: 'Active',
-          termination_reason: null,
-          termination_date: null
-        })
-        .eq('employee_code', parsedCode);
-
-      if (empError) throw empError;
-
-      await supabase
-        .from('contracts')
-        .update({ status: 'Active' })
-        .eq('employee_code', parsedCode);
-
-      alert(`✅ تم إعادة تفعيل الموظف (${getField(reactivateEmp, 'employee_name', 'ArabicName')}) ونقله إلى إدارة (${reactivateDept}) بنجاح.`);
-      setReactivateEmp(null);
-      setReactivateDept('');
-      setReactivateCompany('');
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('خطأ أثناء إعادة التفعيل: ' + err.message);
-    } finally {
-      setReactivateSaving(false);
-    }
-  };
-
-  // 💾 دالة الحفظ المحدثة
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editData) return;
-    setEditData({ ...editData, saving: true });
-
-    try {
-      const rawHiring = getField(editData.emp, 'hiring_date', 'HiringDate');
-      let rawEnd = getField(editData.emp, 'contract_end_date', 'ContractEndDate');
-      const empCode = getField(editData.emp, 'employee_code', 'EmployeeCode');
-      const contractType = getField(editData.emp, 'contract_type', 'ContractType');
-      const status = getField(editData.emp, 'status', 'Status') || 'Active';
-      
-      const contractId = getField(editData.emp, 'contract_id', 'ContractID'); 
-
-      if (contractType.includes('محدد') && (!rawEnd || rawEnd.trim() === '') && rawHiring) {
-        rawEnd = calculateInitialEndDate(rawHiring);
-      } else if (contractType === 'دائم') {
-        rawEnd = ''; 
-      }
-
-      const parsedCode = String(empCode).trim(); 
-
-      const employeeUpdateData = {
-        employee_code: parsedCode,
-        employee_name: getField(editData.emp, 'employee_name', 'ArabicName'),
-        national_id: getField(editData.emp, 'national_id', 'NationalID'),
-        birth_date: getField(editData.emp, 'birth_date', 'BirthDate') || null,
-        department: getField(editData.emp, 'department', 'Department'),
-        company: getField(editData.emp, 'company', 'Company'),
-        job_title: getField(editData.emp, 'job_title', 'JobTitle'),
-        hiring_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
-        status: status,
-        email: getField(editData.emp, 'email', 'Email'),
-        mobile: getField(editData.emp, 'mobile', 'Mobile', 'MOBILE'),
-        manager: getField(editData.emp, 'manager', 'Manager')
-      };
-
-      const { error: empError } = await supabase
-        .from('employees')
-        .update(employeeUpdateData)
-        .eq('employee_code', parsedCode);
-
-      if (empError) throw new Error("خطأ في تحديث بيانات الموظف: " + empError.message);
-
-      const contractData = {
-        employee_code: parsedCode,
-        contract_type: contractType, 
-        contract_start_date: rawHiring && rawHiring.trim() !== '' ? rawHiring : null,
-        contract_end_date: rawEnd && rawEnd.trim() !== '' ? rawEnd : null,
-        status: status
-      };
-
-      if (contractId) {
-        const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', contractId);
-        if (cErr) throw new Error("خطأ في تحديث العقد المباشر: " + cErr.message);
-      } else {
-        const { data: latestContracts, error: fetchErr } = await supabase
-          .from('contracts')
-          .select('contract_id')
-          .eq('employee_code', parsedCode)
-          .order('contract_id', { ascending: false })
-          .limit(1);
-
-        if (fetchErr) throw new Error("خطأ في جلب العقد: " + fetchErr.message);
-
-        if (latestContracts && latestContracts.length > 0) {
-          const { error: cErr } = await supabase.from('contracts').update(contractData).eq('contract_id', latestContracts[0].contract_id);
-          if (cErr) throw new Error("خطأ في تحديث العقد: " + cErr.message);
-        } else {
-          const { error: cErr } = await supabase.from('contracts').insert([contractData]);
-          if (cErr) throw new Error("خطأ في إنشاء عقد جديد: " + cErr.message);
-        }
-      }
-
-      alert('تم حفظ التعديلات وتسميع نوع العقد بنجاح ✅');
-      setEditData(null);
-      await fetchEmployees(); 
-    } catch (err: any) {
-      alert('🚨 ' + err.message);
-      setEditData((prev: any) => prev ? { ...prev, saving: false } : null);
-    }
-  };
-
-  // 🌟 دالة الإنهاء الدقيقة
-  const handleConfirmTermination = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTermEmp) return alert('يرجى اختيار موظف أولاً.');
-
-    setTermSaving(true);
-    try {
-      const empCode = getField(selectedTermEmp, 'employee_code', 'EmployeeCode');
-      const parsedCode = String(empCode).trim(); 
-
-      // 1. تحديث الموظف
-      const { error: empError } = await supabase
-        .from('employees')
-        .update({
-          department: 'تحويلات تحت الاعتماد',
-          status: 'Inactive',
-          termination_reason: termReason,
-          termination_date: termDate
-        })
-        .eq('employee_code', parsedCode);
-
-      if (empError) throw empError;
-
-      // 2. تحديث عقد الموظف ليأخذ سبب الإنهاء كـ (نوع عقد)
-      const { error: contractError } = await supabase
-        .from('contracts')
-        .update({ 
-          status: 'Inactive',
-          contract_end_date: termDate,
-          contract_type: termReason 
-        })
-        .eq('employee_code', parsedCode); 
-
-      if (contractError) throw contractError;
-
-      alert(`✅ تم تحويل الموظف وتحديث نوع العقد إلى (${termReason}) بنجاح.`);
-      setShowTermModal(false);
-      setSelectedTermEmp(null);
-      setTermSearch('');
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('خطأ أثناء العملية: ' + err.message);
-    } finally {
-      setTermSaving(false);
-    }
-  };
-
-  const handleConfirmBulkTransfer = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedEmpIds.length === 0) return;
-    if (!bulkDept && !bulkCompany) return alert('يرجى تحديد إدارة جديدة أو شركة جديدة.');
-
-    setBulkSaving(true);
-    try {
-      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); 
-      const updatePayload: any = {};
-      if (bulkDept) updatePayload.department = bulkDept;
-      if (bulkCompany) updatePayload.company = bulkCompany;
-
-      const { error } = await supabase
-        .from('employees')
-        .update(updatePayload)
-        .in('employee_code', parsedCodes);
-
-      if (error) throw error;
-
-      alert(`✅ تم نقل ${selectedEmpIds.length} موظف بنجاح.`);
-      setShowBulkTransferModal(false);
-      setSelectedEmpIds([]);
-      setBulkDept('');
-      setBulkCompany('');
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('خطأ أثناء النقل المجمع: ' + err.message);
-    } finally {
-      setBulkSaving(false);
-    }
-  };
-
-  const handleDeleteSelected = async () => {
-    if (!window.confirm(`هل أنت متأكد من حذف ${selectedEmpIds.length} موظف بشكل نهائي من قاعدة البيانات؟\n(هذا الإجراء لا يمكن التراجع عنه وسيحذف العقود المرتبطة بهم أيضاً)`)) {
-      return;
-    }
-
-    setIsDeleting(true);
-    try {
-      const parsedCodes = selectedEmpIds.map(id => String(id).trim()); 
-      await supabase.from('contracts').delete().in('employee_code', parsedCodes);
-      
-      const { error: empError } = await supabase.from('employees').delete().in('employee_code', parsedCodes);
-      if (empError) throw empError;
-
-      alert('تم حذف الموظفين بنجاح 🗑️✅');
-      setSelectedEmpIds([]);
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('حدث خطأ أثناء الحذف: ' + err.message);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  // 🧹 دالة تنظيف التكرارات (Deduplication) مصححة
-  const handleCleanDuplicates = async () => {
-    const confirmStr = window.prompt('🚨 تحذير: هذا الإجراء سيفحص قاعدة البيانات ويقوم بحذف السجلات المكررة للموظفين (الذين لديهم نفس الكود) مع الاحتفاظ بالنسخة الأكمل والأنشط فقط.\n\nاكتب كلمة "تأكيد" للاستمرار:');
-    if (confirmStr !== 'تأكيد') return;
-
-    setIsDeleting(true);
-    try {
-      const grouped = new Map<string, any[]>();
-      employees.forEach(emp => {
-        const code = String(getField(emp, 'employee_code', 'EmployeeCode')).trim();
-        if (code) {
-          if (!grouped.has(code)) grouped.set(code, []);
-          grouped.get(code)?.push(emp);
-        }
-      });
-
-      let duplicateCount = 0;
-      const promises: Promise<any>[] = [];
-
-      grouped.forEach((records, code) => {
-        if (records.length > 1) {
-          duplicateCount += (records.length - 1);
-          
-          records.sort((a, b) => {
-            const aActive = getField(a, 'status', 'Status').toLowerCase() === 'active';
-            const bActive = getField(b, 'status', 'Status').toLowerCase() === 'active';
-            if (aActive && !bActive) return -1;
-            if (!aActive && bActive) return 1;
-
-            const aNat = getField(a, 'national_id', 'NationalID');
-            const bNat = getField(b, 'national_id', 'NationalID');
-            if (aNat && !bNat) return -1;
-            if (!aNat && bNat) return 1;
-
-            return 0;
-          });
-
-          const bestRecord = records[0];
-          
-          const payload = {
-            employee_code: String(code).trim(), 
-            employee_name: getField(bestRecord, 'employee_name', 'ArabicName'),
-            national_id: getField(bestRecord, 'national_id', 'NationalID') || null,
-            birth_date: getField(bestRecord, 'birth_date', 'BirthDate') || null,
-            department: getField(bestRecord, 'department', 'Department') || null,
-            company: getField(bestRecord, 'company', 'Company') || null,
-            job_title: getField(bestRecord, 'job_title', 'JobTitle') || null,
-            hiring_date: getField(bestRecord, 'hiring_date', 'HiringDate') || null,
-            status: getField(bestRecord, 'status', 'Status') || 'Active',
-            email: getField(bestRecord, 'email', 'Email') || null,
-            mobile: getField(bestRecord, 'mobile', 'Mobile') || null
-          };
-
-          promises.push(
-            (async () => {
-              await supabase.from('employees').delete().eq('employee_code', String(code).trim());
-              await supabase.from('employees').insert([payload]);
-            })()
-          );
-        }
-      });
-
-      if (promises.length === 0) {
-        alert('لم يتم العثور على أي سجلات مكررة بنفس الكود. قاعدة بياناتك نظيفة! ✨');
-        setIsDeleting(false);
-        return;
-      }
-
-      await Promise.all(promises);
-
-      alert(`تم تنظيف قاعدة البيانات وحذف ${duplicateCount} سجل مكرر بنجاح! 🧹✨`);
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('حدث خطأ أثناء تنظيف التكرارات: ' + err.message);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  // ➕ دالة الإضافة المباشرة
-  const handleAddEmployee = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      let finalEndDate = newEmp.contract_end_date;
-      if (newEmp.contract_type.includes('محدد') && !finalEndDate && newEmp.hiring_date) {
-        finalEndDate = calculateInitialEndDate(newEmp.hiring_date);
-      }
-
-      const parsedCode = String(newEmp.employee_code).trim(); 
-
-      const { error: empError } = await supabase.from('employees').insert([{
-        employee_code: parsedCode,
-        employee_name: newEmp.employee_name,
-        national_id: newEmp.national_id,
-        birth_date: newEmp.birth_date ? newEmp.birth_date : null,
-        department: newEmp.department,
-        company: newEmp.company,
-        job_title: newEmp.job_title,
-        hiring_date: newEmp.hiring_date ? newEmp.hiring_date : null,
-        status: newEmp.status,
-        email: newEmp.email,
-        mobile: newEmp.mobile
-      }]);
-
-      if (empError) throw empError;
-
-      const { error: contractError } = await supabase.from('contracts').insert([{
-        employee_code: parsedCode,
-        contract_type: newEmp.contract_type,
-        contract_start_date: newEmp.hiring_date ? newEmp.hiring_date : null,
-        contract_end_date: (newEmp.contract_type === 'دائم') ? null : (finalEndDate || null),
-        status: newEmp.status
-      }]);
-
-      if (contractError) throw contractError;
-
-      alert('تم إضافة الموظف وعقده وتواريخه بنجاح ✅');
-      setShowAddModal(false);
-      setNewEmp({
-        employee_code: '', employee_name: '', national_id: '', birth_date: '',
-        department: '', company: '', job_title: '', hiring_date: '',
-        contract_type: 'محدد المدة', contract_end_date: '', status: 'Active', email: '', mobile: ''
-      });
-      await fetchEmployees();
-    } catch (err: any) {
-      alert('خطأ أثناء الإضافة: ' + err.message);
-    }
-  };
-
-  const handleExportToExcel = (onlySelected = false) => {
-    const listToExport = onlySelected 
-      ? finalTableEmployees.filter(e => selectedEmpIds.includes(getField(e, 'employee_code', 'EmployeeCode')))
-      : finalTableEmployees;
-
-    const exportData = listToExport.map(e => ({
-      'employee_code': getField(e, 'employee_code', 'EmployeeCode'),
-      'employee_name': getField(e, 'employee_name', 'ArabicName'),
-      'job_title': getField(e, 'job_title', 'JobTitle'),
-      'department': getField(e, 'department', 'Department'),
-      // ✨ تم الإضافة لملف الإكسيل أيضاً
-      'grade': getField(e, 'grad', 'Grade', 'grade'),
-      'medical_category': getField(e, 'medical_category', 'MedicalCategory'),
-      'age': getEmployeeAge(e) ? `${getEmployeeAge(e)} سنة` : '—',
-      'national_id': getField(e, 'national_id', 'NationalID'),
-      'mobile': getField(e, 'mobile', 'Mobile'),
-      'hiring_date': getField(e, 'hiring_date', 'HiringDate'),
-      'contract_end_date': getField(e, 'contract_end_date', 'ContractEndDate'),
-      'contract_type': getField(e, 'contract_type', 'ContractType'),
-      'company': getField(e, 'company', 'Company')
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'الموظفين_Active');
-    XLSX.writeFile(wb, `بيانات_الموظفين_${new Date().toISOString().split('T')[0]}.xlsx`);
-  };
-
-  const getContractStatusBadge = (contractType: string, endDateStr: string) => {
-    if (endDateStr && endDateStr.trim() !== '') {
-      const end = new Date(endDateStr);
-      const today = new Date();
-      const days = Math.ceil((end.getTime() - today.getTime()) / (1000 * 3600 * 24));
-
-      if (days < 0) {
-        return <span style={{ background: '#fef2f2', color: '#dc2626', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fecaca' }}>{endDateStr} 🚨</span>;
-      }
-      if (days <= 60) {
-        return <span style={{ background: '#fffbe1', color: '#b45309', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #fde68a' }}>{endDateStr} ⏳</span>;
-      }
-      return <span style={{ background: '#eff6ff', color: '#2563eb', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bfdbfe' }}>{endDateStr}</span>;
-    }
-
-    if (contractType === 'دائم') {
-      return <span style={{ background: '#f0fdf4', color: '#16a34a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #bbf7d0' }}>عقد دائم 🛡️</span>;
-    }
-
-    return <span style={{ color: '#64748b' }}>—</span>;
-  };
-
-  const renderAgeBadge = (emp: any) => {
-    const age = getEmployeeAge(emp);
-    if (age === null) return <span style={{ color: '#64748b' }}>—</span>;
-
-    if (age >= 60) {
-      return <span style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px' }}>💼 {age} سنة (60+)</span>;
-    }
-    return <span style={{ background: '#f8fafc', color: '#0f172a', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '10px', border: '1px solid #e2e8f0' }}>{age} سنة</span>;
-  };
+type SortKey = keyof Employee;
+
+const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
+
+const Dash = () => <span className={'emp-muted'}>—</span>;
+
+const ContractEndBadge = ({ emp }: { emp: Employee }) => {
+  if (emp.contractEndDate) {
+    const days = Math.ceil((new Date(emp.contractEndDate).getTime() - Date.now()) / 86_400_000);
+    if (days < 0) return <span className={cx('emp-badge', 'emp-badgeRed')}>{emp.contractEndDate} · منتهي</span>;
+    if (days <= 60) return <span className={cx('emp-badge', 'emp-badgeAmber')}>{emp.contractEndDate} · خلال {days} يوم</span>;
+    return <span className={cx('emp-badge', 'emp-badgeBlue')}>{emp.contractEndDate}</span>;
+  }
+  if (emp.contractType === PERMANENT) return <span className={cx('emp-badge', 'emp-badgeGreen')}>عقد دائم</span>;
+  return <Dash />;
+};
+
+const AgeBadge = ({ age }: { age: number | null }) => {
+  if (age === null) return <Dash />;
+  return age >= ABOVE_AGE_THRESHOLD
+    ? <span className={cx('emp-badge', 'emp-badgeAmber')}>{age} سنة (+{ABOVE_AGE_THRESHOLD})</span>
+    : <span className={cx('emp-badge', 'emp-badgeGray')}>{age} سنة</span>;
+};
+
+interface Column { key: SortKey | null; label: string; render: (e: Employee) => ReactNode }
+
+const COLUMNS: Column[] = [
+  { key: 'code', label: 'الكود', render: (e) => <span className={cx('emp-mono', 'emp-code', e.isInactive && 'emp-codeInactive')}>{e.code}</span> },
+  {
+    key: 'name', label: 'الاسم',
+    render: (e) => (
+      <span className={'emp-nameCell'}>
+        {e.name}
+        {e.isMissingData && <span title="ناقص الرقم القومي أو الموبايل">⚠️</span>}
+        {e.isInactive && <span className={cx('emp-badge', 'emp-badgeRed')}>{e.terminationReason || 'محول / موقوف'}</span>}
+      </span>
+    ),
+  },
+  { key: 'jobTitle', label: 'الوظيفة', render: (e) => e.jobTitle || <Dash /> },
+  { key: 'department', label: 'الإدارة', render: (e) => e.department || <Dash /> },
+  { key: 'grade', label: 'الدرجة', render: (e) => e.grade || <Dash /> },
+  { key: 'medicalCategory', label: 'الفئة الطبية', render: (e) => e.medicalCategory || <Dash /> },
+  { key: 'age', label: 'السن', render: (e) => <AgeBadge age={e.age} /> },
+  { key: 'hiringDate', label: 'تاريخ التعيين', render: (e) => <span className={'emp-mono'}>{e.hiringDate || '—'}</span> },
+  { key: 'contractType', label: 'نوع العقد', render: (e) => e.contractType || <Dash /> },
+  { key: 'contractEndDate', label: 'نهاية العقد', render: (e) => <ContractEndBadge emp={e} /> },
+];
+
+/* ================================================================== */
+/*  مكونات مساعدة صغيرة                                                  */
+/* ================================================================== */
+
+function Modal({ title, onClose, width = 560, children }: { title: string; onClose: () => void; width?: number; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   return (
-    <div style={{ direction: 'rtl', paddingBottom: '40px', fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" }}>
-      
-      {/* رأس الصفحة */}
-      <div style={{ background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0', padding: '16px 20px', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+    <div className={'emp-overlay'} role="dialog" aria-modal="true" aria-label={title}>
+      <div className={'emp-modal'} style={{ maxWidth: width }}>
+        <div className={'emp-modalHead'}>
+          <h3 className={'emp-modalTitle'}>{title}</h3>
+          <button type="button" className={'emp-btn'} onClick={onClose}>إغلاق</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={'emp-field'}>
+      <label>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+/* ================================================================== */
+/*  نافذة الإضافة / التعديل (نفس النموذج للاتنين)                           */
+/* ================================================================== */
+
+interface FormModalProps {
+  mode: 'add' | 'edit';
+  initial: EmployeeDraft;
+  busy: boolean;
+  grades: string[];
+  onSubmit: (draft: EmployeeDraft) => void;
+  onClose: () => void;
+}
+
+function EmployeeFormModal({ mode, initial, busy, grades, onSubmit, onClose }: FormModalProps) {
+  const [d, setD] = useState<EmployeeDraft>(initial);
+  const set = <K extends keyof EmployeeDraft>(key: K, value: EmployeeDraft[K]) => setD((p) => ({ ...p, [key]: value }));
+  const isPerm = d.contractType === PERMANENT;
+
+  const text = (key: keyof EmployeeDraft, label: string, opts: { required?: boolean; type?: string; disabled?: boolean; list?: string } = {}) => (
+    <Field label={opts.required ? `${label} *` : label}>
+      <input
+        className={'emp-input'}
+        type={opts.type ?? 'text'}
+        required={opts.required}
+        disabled={opts.disabled}
+        list={opts.list}
+        value={d[key]}
+        onChange={(e) => set(key, e.target.value as never)}
+      />
+    </Field>
+  );
+
+  const submit = (e: FormEvent) => { e.preventDefault(); onSubmit(d); };
+
+  return (
+    <Modal title={mode === 'add' ? 'إضافة موظف جديد' : 'تعديل بيانات الموظف'} onClose={onClose} width={820}>
+      <form onSubmit={submit}>
+        <div className={'emp-section'}>
+          <h4 className={'emp-sectionTitle'}>البيانات الأساسية</h4>
+          <div className={'emp-formGrid'}>
+            {text('code', 'كود الموظف', { required: true, disabled: mode === 'edit' })}
+            {text('name', 'الاسم', { required: true })}
+            {text('nationalId', 'الرقم القومي')}
+            {text('birthDate', 'تاريخ الميلاد', { type: 'date' })}
+            {text('mobile', 'الموبايل')}
+            {text('email', 'البريد الإلكتروني', { type: 'email' })}
+            {text('department', 'الإدارة')}
+            {text('company', 'الشركة')}
+            {text('jobTitle', 'الوظيفة')}
+            {text('grade', 'الدرجة', { list: 'gradeOptions' })}
+            {text('manager', 'المدير المباشر')}
+          </div>
+          <datalist id="gradeOptions">{grades.map((g) => <option key={g} value={g} />)}</datalist>
+        </div>
+
+        <div className={'emp-section'}>
+          <h4 className={'emp-sectionTitle'}>التعاقد</h4>
+          <div className={'emp-formGrid'}>
+            {text('hiringDate', 'تاريخ التعيين', { type: 'date' })}
+            <Field label="نوع العقد">
+              <select className={'emp-select'} value={d.contractType} onChange={(e) => set('contractType', e.target.value)}>
+                {STANDARD_CONTRACT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label={isPerm ? 'نهاية العقد (غير مطلوبة)' : 'نهاية العقد (تُحسب تلقائياً لو تُركت فارغة)'}>
+              <input className={'emp-input'} type="date" disabled={isPerm} value={isPerm ? '' : d.contractEndDate} onChange={(e) => set('contractEndDate', e.target.value)} />
+            </Field>
+            {mode === 'edit' && (
+              <Field label="حالة الموظف">
+                <select className={'emp-select'} value={d.status} onChange={(e) => set('status', e.target.value)}>
+                  <option value="Active">نشط (Active)</option>
+                  <option value="Inactive">منتهي الخدمة (Inactive)</option>
+                </select>
+              </Field>
+            )}
+          </div>
+        </div>
+
+        <div className={'emp-modalFoot'}>
+          <button type="button" className={'emp-btn'} onClick={onClose}>إلغاء</button>
+          <button type="submit" className={cx('emp-btn', 'emp-btnPrimary')} disabled={busy}>
+            {busy ? 'جاري الحفظ...' : mode === 'add' ? 'إضافة الموظف' : 'حفظ التعديلات'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ================================================================== */
+/*  الصفحة                                                              */
+/* ================================================================== */
+
+type ModalState =
+  | { type: 'add' }
+  | { type: 'edit'; emp: Employee }
+  | { type: 'profile'; emp: Employee }
+  | { type: 'terminate' }
+  | { type: 'reactivate'; emp: Employee }
+  | { type: 'bulk' }
+  | null;
+
+export default function EmployeesPage() {
+  const { employees: rawEmployees, loading, refresh } = useAppData();
+  const employees = useMemo<Employee[]>(() => ((rawEmployees ?? []) as any[]).map((r) => normalizeEmployee(r)), [rawEmployees]);
+
+  /* ---------- الحالة ---------- */
+  const [activeCard, setActiveCard] = useState<CardKey | null>('ALL_ACTIVE');
+  const [search, setSearch] = useState('');
+  const [dept, setDept] = useState('');
+  const [company, setCompany] = useState('');
+  const [contractType, setContractType] = useState('');
+  const [ageRange, setAgeRange] = useState<AgeRangeKey | ''>('');
+
+  const [sortKey, setSortKey] = useState<SortKey>('code');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [selected, setSelected] = useState<string[]>([]);
+
+  const [modal, setModal] = useState<ModalState>(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+
+  const closeModal = useCallback(() => setModal(null), []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  /** ينفذ عملية على قاعدة البيانات مع إدارة حالة التحميل والتنبيهات. يرجع true عند النجاح. */
+  const run = useCallback(async (action: () => Promise<string>) => {
+    setBusy(true);
+    try {
+      const message = await action();
+      setToast({ kind: 'ok', text: message });
+      await refresh();
+      return true;
+    } catch (err: any) {
+      setToast({ kind: 'error', text: err?.message ?? 'حدث خطأ غير متوقع' });
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [refresh]);
+
+  /* ---------- القوائم ---------- */
+  const unique = (pick: (e: Employee) => string): string[] => Array.from(new Set<string>(employees.map(pick).filter(Boolean)));
+  const departments = useMemo(() => unique((e) => e.department), [employees]);
+  const companies = useMemo(() => unique((e) => e.company), [employees]);
+  const grades = useMemo(() => unique((e) => e.grade), [employees]);
+
+  /* ---------- الفلترة ---------- */
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return employees.filter((e) => {
+      if (term && !(e.code.toLowerCase().includes(term) || e.name.toLowerCase().includes(term) || e.department.toLowerCase().includes(term))) return false;
+      if (dept && !e.department.toLowerCase().includes(dept.toLowerCase())) return false;
+      if (company && !e.company.toLowerCase().includes(company.toLowerCase())) return false;
+      if (contractType && !e.contractType.includes(contractType)) return false;
+      if (ageRange && !(e.age !== null && AGE_RANGES[ageRange].test(e.age))) return false;
+      return true;
+    });
+  }, [employees, search, dept, company, contractType, ageRange]);
+
+  const year = new Date().getFullYear();
+
+  const kpi = useMemo(() => {
+    const active = filtered.filter((e) => !e.isInactive);
+    const total = active.length;
+    const counts = {} as Record<CardKey, number>;
+    (Object.keys(CARD_PREDICATES) as CardKey[]).forEach((k) => {
+      counts[k] = k === 'ALL_ACTIVE' ? total : active.filter((e) => CARD_PREDICATES[k](e, year)).length;
+    });
+    const pct = (n: number) => (total > 0 ? ((n / total) * 100).toFixed(1) : '0');
+    return { counts, pct };
+  }, [filtered, year]);
+
+  const rows = useMemo(() => {
+    const explicitSearch = search.trim() !== '' || dept.includes('تحويلات');
+    const list = filtered.filter((e) => {
+      if (e.isInactive && !explicitSearch) return false;
+      return activeCard ? CARD_PREDICATES[activeCard](e, year) : true;
+    });
+
+    const sign = sortDir === 'asc' ? 1 : -1;
+    return [...list].sort((a, b) => {
+      const va = a[sortKey];
+      const vb = b[sortKey];
+      if (sortKey === 'age') return sign * (((va as number | null) ?? 0) - ((vb as number | null) ?? 0));
+      return sign * String(va ?? '').localeCompare(String(vb ?? ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [filtered, activeCard, sortKey, sortDir, search, dept, year]);
+
+  /* ---------- الفرز والتحديد ---------- */
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((p) => (p === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(key); setSortDir('asc'); }
+  };
+
+  const allSelected = rows.length > 0 && rows.every((e) => selected.includes(e.code));
+  const toggleAll = (checked: boolean) => setSelected(checked ? rows.map((e) => e.code) : []);
+  const toggleOne = (code: string, checked: boolean) =>
+    setSelected((p) => (checked ? [...p, code] : p.filter((c) => c !== code)));
+
+  const resetFilters = () => {
+    setSearch(''); setDept(''); setCompany(''); setContractType(''); setAgeRange(''); setActiveCard('ALL_ACTIVE');
+  };
+
+  /* ---------- العمليات على قاعدة البيانات ---------- */
+
+  const addEmployee = (d: EmployeeDraft) =>
+    run(async () => {
+      const { error: empErr } = await supabase.from('employees').insert([buildEmployeeRow(d)]);
+      if (empErr) throw new Error('تعذر إضافة الموظف: ' + empErr.message);
+
+      const { error: conErr } = await supabase.from('contracts').insert([buildContractRow(d)]);
+      if (conErr) {
+        // نتراجع عن الموظف حتى ما يفضلش سجل بدون عقد
+        await supabase.from('employees').delete().eq('employee_code', d.code.trim());
+        throw new Error('تعذر إنشاء العقد، تم إلغاء الإضافة: ' + conErr.message);
+      }
+      return `تمت إضافة الموظف ${d.name} وعقده.`;
+    }).then((ok) => ok && closeModal());
+
+  const saveEmployee = (d: EmployeeDraft, contractId: string) =>
+    run(async () => {
+      const code = d.code.trim();
+      const { error: empErr } = await supabase.from('employees').update(buildEmployeeRow(d)).eq('employee_code', code);
+      if (empErr) throw new Error('تعذر تحديث بيانات الموظف: ' + empErr.message);
+
+      const contractRow = buildContractRow(d);
+
+      if (contractId) {
+        const { error } = await supabase.from('contracts').update(contractRow).eq('contract_id', contractId);
+        if (error) throw new Error('تعذر تحديث العقد: ' + error.message);
+      } else {
+        const { data: latest, error: fetchErr } = await supabase
+          .from('contracts').select('contract_id').eq('employee_code', code)
+          .order('contract_id', { ascending: false }).limit(1);
+        if (fetchErr) throw new Error('تعذر جلب العقد: ' + fetchErr.message);
+
+        const { error } = latest?.length
+          ? await supabase.from('contracts').update(contractRow).eq('contract_id', latest[0].contract_id)
+          : await supabase.from('contracts').insert([contractRow]);
+        if (error) throw new Error('تعذر حفظ العقد: ' + error.message);
+      }
+      return 'تم حفظ التعديلات.';
+    }).then((ok) => ok && closeModal());
+
+  const terminateEmployee = (emp: Employee, reason: string, date: string) =>
+    run(async () => {
+      const { error: empErr } = await supabase.from('employees')
+        .update({ department: TRANSFER_DEPARTMENT, status: 'Inactive', termination_reason: reason, termination_date: date })
+        .eq('employee_code', emp.code);
+      if (empErr) throw empErr;
+
+      const { error: conErr } = await supabase.from('contracts')
+        .update({ status: 'Inactive', contract_end_date: date, contract_type: reason })
+        .eq('employee_code', emp.code);
+      if (conErr) throw conErr;
+
+      return `تم تحويل ${emp.name} (${reason}).`;
+    }).then((ok) => ok && closeModal());
+
+  const reactivateEmployee = (emp: Employee, newDept: string, newCompany: string) =>
+    run(async () => {
+      const { error } = await supabase.from('employees')
+        .update({ department: newDept, company: newCompany || emp.company, status: 'Active', termination_reason: null, termination_date: null })
+        .eq('employee_code', emp.code);
+      if (error) throw error;
+
+      const { error: conErr } = await supabase.from('contracts').update({ status: 'Active' }).eq('employee_code', emp.code);
+      if (conErr) throw conErr;
+
+      return `تمت إعادة تفعيل ${emp.name} في إدارة ${newDept}.`;
+    }).then((ok) => ok && closeModal());
+
+  const bulkTransfer = (newDept: string, newCompany: string) =>
+    run(async () => {
+      const payload: Record<string, string> = {};
+      if (newDept) payload.department = newDept;
+      if (newCompany) payload.company = newCompany;
+
+      const { error } = await supabase.from('employees').update(payload).in('employee_code', selected);
+      if (error) throw error;
+      const count = selected.length;
+      setSelected([]);
+      return `تم نقل ${count} موظف.`;
+    }).then((ok) => ok && closeModal());
+
+  const deleteSelected = () => {
+    if (!window.confirm(`حذف ${selected.length} موظف نهائياً مع عقودهم؟ لا يمكن التراجع عن هذا الإجراء.`)) return;
+    run(async () => {
+      const { error: conErr } = await supabase.from('contracts').delete().in('employee_code', selected);
+      if (conErr) throw conErr;
+      const { error } = await supabase.from('employees').delete().in('employee_code', selected);
+      if (error) throw error;
+      const count = selected.length;
+      setSelected([]);
+      return `تم حذف ${count} موظف.`;
+    });
+  };
+
+  /** يحذف النسخ المكررة بالـ id فقط ويحتفظ بأفضل سجل لكل كود، بدون حذف وإعادة إدخال. */
+  const cleanDuplicates = () => {
+    if (window.prompt('سيتم حذف السجلات المكررة (نفس الكود) والإبقاء على الأكمل والأنشط.\nاكتب كلمة "تأكيد" للمتابعة:') !== 'تأكيد') return;
+
+    run(async () => {
+      const groups = new Map<string, Employee[]>();
+      employees.forEach((e) => e.code && groups.set(e.code, [...(groups.get(e.code) ?? []), e]));
+
+      const score = (e: Employee) =>
+        (e.isInactive ? 0 : 100) + (e.nationalId ? 10 : 0) + (e.mobile ? 5 : 0) + (e.birthDate ? 2 : 0) + (e.grade ? 1 : 0);
+
+      const toDelete: (string | number)[] = [];
+      let missingId = false;
+      groups.forEach((records) => {
+        if (records.length < 2) return;
+        [...records].sort((a, b) => score(b) - score(a)).slice(1).forEach((r) => {
+          if (r.id === null) missingId = true; else toDelete.push(r.id);
+        });
+      });
+
+      if (missingId) throw new Error('جدول employees لا يحتوي عمود id، لا يمكن تحديد السجل المكرر بأمان.');
+      if (toDelete.length === 0) return 'لا توجد سجلات مكررة.';
+
+      const { error } = await supabase.from('employees').delete().in('id', toDelete);
+      if (error) throw error;
+      return `تم حذف ${toDelete.length} سجل مكرر.`;
+    });
+  };
+
+  /* ---------- التصدير ---------- */
+  const exportToExcel = (onlySelected: boolean) => {
+    const list = onlySelected ? rows.filter((e) => selected.includes(e.code)) : rows;
+    const data = list.map((e) => ({
+      'الكود': e.code,
+      'الاسم': e.name,
+      'الوظيفة': e.jobTitle,
+      'الإدارة': e.department,
+      'الدرجة': e.grade,
+      'الفئة الطبية': e.medicalCategory,
+      'السن': e.age ?? '',
+      'الرقم القومي': e.nationalId,
+      'الموبايل': e.mobile,
+      'تاريخ التعيين': e.hiringDate,
+      'نوع العقد': e.contractType,
+      'نهاية العقد': e.contractEndDate,
+      'الشركة': e.company,
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'الموظفين');
+    XLSX.writeFile(wb, `بيانات_الموظفين_${toISODate(new Date())}.xlsx`);
+  };
+
+  /* ---------- الواجهة ---------- */
+  return (
+    <div className={'emp-page'}>
+      <style>{EMP_CSS}</style>
+      <header className={'emp-header'}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>👥 سجل الموظفين الفعالين (Active)</h3>
-          <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إدارة وتتبع السجل الرئيسي وقوة العمل بالشركة والشركات الشقيقة</p>
+          <h1 className={'emp-title'}>سجل الموظفين الفعالين</h1>
+          <p className={'emp-subtitle'}>إدارة بيانات وعقود قوة العمل بالشركة والشركات الشقيقة</p>
         </div>
-        
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <button 
-            onClick={handleCleanDuplicates}
-            disabled={isDeleting}
-            style={{ background: '#f8fafc', color: '#475569', border: '1px solid #cbd5e1', padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: isDeleting ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}
-          >
-            🧹 تنظيف التكرارات
-          </button>
-
-          <button 
-            onClick={() => handleExportToExcel(false)}
-            style={{ background: '#10b981', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
-          >
-            📥 تصدير Excel
-          </button>
-
-          <button 
-            onClick={() => { setShowTermModal(true); setSelectedTermEmp(null); setTermSearch(''); }} 
-            style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}
-          >
-            🚫 Terminated (إنهاء)
-          </button>
-
-          <button onClick={() => setShowAddModal(true)} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 14px', borderRadius: '8px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer', transition: 'all 0.2s' }}>
-            + إضافة موظف جديد
-          </button>
+        <div className={'emp-actions'}>
+          <button className={'emp-btn'} onClick={cleanDuplicates} disabled={busy}>تنظيف التكرارات</button>
+          <button className={'emp-btn'} onClick={() => exportToExcel(false)}>تصدير Excel</button>
+          <button className={cx('emp-btn', 'emp-btnDanger')} onClick={() => setModal({ type: 'terminate' })}>إنهاء خدمة</button>
+          <button className={cx('emp-btn', 'emp-btnPrimary')} onClick={() => setModal({ type: 'add' })}>+ إضافة موظف</button>
         </div>
-      </div>
+      </header>
 
-      {/* الكروت الإحصائية الـ 6 التفاعلية */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" style={{ marginBottom: '20px' }}>
-        <div 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'ALL_ACTIVE' ? null : 'ALL_ACTIVE')}
-          style={{ 
-            background: '#ffffff', 
-            border: activeCardFilter === 'ALL_ACTIVE' ? '2px solid #0d9488' : '1px solid #e2e8f0', 
-            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>إجمالي الموظفين</div>
-            <span style={{ fontSize: '14px' }}>👥</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#0f172a', marginTop: '4px' }}>{kpiStats.total.toLocaleString('en-US')}</div>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#0d9488', marginTop: '2px' }}>القوة الفعالة (100%)</div>
-        </div>
-
-        <div 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'NEW_JOINERS' ? null : 'NEW_JOINERS')}
-          style={{ 
-            background: activeCardFilter === 'NEW_JOINERS' ? '#f0fdf4' : '#ffffff', 
-            border: activeCardFilter === 'NEW_JOINERS' ? '2px solid #10b981' : '1px solid #e2e8f0', 
-            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>تعيينات {kpiStats.currentYear}</div>
-            <span style={{ fontSize: '14px' }}>🌱</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#10b981', marginTop: '4px' }}>{kpiStats.newJoiners.toLocaleString('en-US')}</div>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#10b981', marginTop: '2px' }}>نسبة {kpiStats.newJoinersPct}% من القوة</div>
-        </div>
-
-        <div 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'FIXED' ? null : 'FIXED')}
-          style={{ 
-            background: activeCardFilter === 'FIXED' ? '#eff6ff' : '#ffffff', 
-            border: activeCardFilter === 'FIXED' ? '2px solid #2563eb' : '1px solid #e2e8f0', 
-            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عقود محددة المدة</div>
-            <span style={{ fontSize: '14px' }}>📂</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#2563eb', marginTop: '4px' }}>{kpiStats.fixed.toLocaleString('en-US')}</div>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#2563eb', marginTop: '2px' }}>نسبة {kpiStats.fixedPct}% من القوة</div>
-        </div>
-
-        <div 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'PERM' ? null : 'PERM')}
-          style={{ 
-            background: activeCardFilter === 'PERM' ? '#f0fdf4' : '#ffffff', 
-            border: activeCardFilter === 'PERM' ? '2px solid #16a34a' : '1px solid #e2e8f0', 
-            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>عقود دائمة</div>
-            <span style={{ fontSize: '14px' }}>🛡️</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#16a34a', marginTop: '4px' }}>{kpiStats.perm.toLocaleString('en-US')}</div>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#16a34a', marginTop: '2px' }}>نسبة {kpiStats.permPct}% من القوة</div>
-        </div>
-
-        <div 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'ABOVE_AGE' ? null : 'ABOVE_AGE')}
-          style={{ 
-            background: activeCardFilter === 'ABOVE_AGE' ? '#fffbe1' : '#ffffff', 
-            border: activeCardFilter === 'ABOVE_AGE' ? '2px solid #d97706' : '1px solid #e2e8f0', 
-            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>فوق السن (60+)</div>
-            <span style={{ fontSize: '14px' }}>💼</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#d97706', marginTop: '4px' }}>{kpiStats.aboveAge.toLocaleString('en-US')}</div>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#d97706', marginTop: '2px' }}>نسبة {kpiStats.aboveAgePct}% من القوة</div>
-        </div>
-
-        <div 
-          onClick={() => setActiveCardFilter(activeCardFilter === 'MISSING_DATA' ? null : 'MISSING_DATA')}
-          style={{ 
-            background: activeCardFilter === 'MISSING_DATA' ? '#fef2f2' : '#ffffff', 
-            border: activeCardFilter === 'MISSING_DATA' ? '2px solid #dc2626' : '1px solid #e2e8f0', 
-            padding: '12px 14px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s', boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
-          }}
-        >
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>استكمال البيانات</div>
-            <span style={{ fontSize: '14px' }}>⚠️</span>
-          </div>
-          <div style={{ fontSize: '20px', fontWeight: '900', color: '#dc2626', marginTop: '4px' }}>{kpiStats.missingData.toLocaleString('en-US')}</div>
-          <div style={{ fontSize: '10px', fontWeight: 'bold', color: '#dc2626', marginTop: '2px' }}>اضغط للاستكمال ✏️</div>
-        </div>
-      </div>
-
-      {/* إجراءات المحددين المجمعة */}
-      {selectedEmpIds.length > 0 && (
-        <div style={{ background: '#0f172a', color: '#fff', padding: '10px 16px', borderRadius: '12px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-          <div style={{ fontSize: '12px', fontWeight: 'bold' }}>
-            تم تحديد <span style={{ color: '#60a5fa' }}>{selectedEmpIds.length}</span> موظف
-          </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => setShowBulkTransferModal(true)} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-              نقل مجمع 🔄
+      <section className={'emp-kpiGrid'} aria-label="إحصائيات سريعة">
+        {KPI_CARDS.map((c) => {
+          const count = kpi.counts[c.key];
+          const isActive = activeCard === c.key;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              aria-pressed={isActive}
+              className={cx('emp-kpi', isActive && 'emp-kpiActive')}
+              style={{ ['--accent' as string]: c.accent, ['--accent-soft' as string]: c.soft }}
+              onClick={() => setActiveCard(isActive ? null : c.key)}
+            >
+              <div className={'emp-kpiLabel'}>
+                <span>{c.key === 'NEW_JOINERS' ? `تعيينات ${year}` : c.label}</span>
+                <span aria-hidden>{c.icon}</span>
+              </div>
+              <div className={'emp-kpiValue'}>{count.toLocaleString('en-US')}</div>
+              <div className={'emp-kpiHint'}>{c.hint(kpi.pct(count))}</div>
             </button>
-            <button onClick={() => handleExportToExcel(true)} style={{ background: '#10b981', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-              تصدير المحدد 📥
-            </button>
-            <button onClick={handleDeleteSelected} disabled={isDeleting} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: isDeleting ? 'not-allowed' : 'pointer', opacity: isDeleting ? 0.7 : 1 }}>
-              {isDeleting ? 'جاري الحذف...' : 'حذف نهائي 🗑️'}
-            </button>
-            <button onClick={() => setSelectedEmpIds([])} style={{ background: 'transparent', border: '1px solid #475569', color: '#cbd5e1', padding: '6px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer' }}>
-              إلغاء التحديد ✕
-            </button>
+          );
+        })}
+      </section>
+
+      {selected.length > 0 && (
+        <div className={'emp-bulkBar'}>
+          <span className={'emp-bulkCount'}>تم تحديد {selected.length} موظف</span>
+          <div className={'emp-actions'}>
+            <button className={'emp-btn'} onClick={() => setModal({ type: 'bulk' })}>نقل مجمع</button>
+            <button className={'emp-btn'} onClick={() => exportToExcel(true)}>تصدير المحدد</button>
+            <button className={cx('emp-btn', 'emp-btnDanger')} onClick={deleteSelected} disabled={busy}>حذف نهائي</button>
+            <button className={'emp-btn'} onClick={() => setSelected([])}>إلغاء التحديد</button>
           </div>
         </div>
       )}
 
-      {/* الفلاتر والبحث */}
-      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '14px 16px', borderRadius: '16px', marginBottom: '20px', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.02)' }}>
-        <input type="text" placeholder="بحث بالاسم، الكود، الإدارة..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', minWidth: '220px', color: '#0f172a' }} />
-        
-        <input list="deptList" placeholder="الإدارة..." value={selectedDept} onChange={e => setSelectedDept(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
-        <datalist id="deptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-        
-        <input list="compList" placeholder="الشركة..." value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', width: '140px', color: '#0f172a' }} />
-        <datalist id="compList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
+      <section className={'emp-toolbar'} aria-label="البحث والفلاتر">
+        <input className={cx('emp-input', 'emp-searchInput')} placeholder="بحث بالاسم أو الكود أو الإدارة" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className={cx('emp-input', 'emp-shortInput')} list="deptFilter" placeholder="الإدارة" value={dept} onChange={(e) => setDept(e.target.value)} />
+        <datalist id="deptFilter">{departments.map((d) => <option key={d} value={d} />)}</datalist>
+        <input className={cx('emp-input', 'emp-shortInput')} list="companyFilter" placeholder="الشركة" value={company} onChange={(e) => setCompany(e.target.value)} />
+        <datalist id="companyFilter">{companies.map((c) => <option key={c} value={c} />)}</datalist>
 
-        <select value={selectedType} onChange={e => setSelectedType(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
+        <select className={'emp-select'} value={contractType} onChange={(e) => setContractType(e.target.value)}>
           <option value="">كل أنواع العقود</option>
-          {STANDARD_CONTRACT_TYPES.map((t, i) => <option key={i} value={t}>{t}</option>)}
+          {STANDARD_CONTRACT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select className={'emp-select'} value={ageRange} onChange={(e) => setAgeRange(e.target.value as AgeRangeKey | '')}>
+          <option value="">كل الفئات العمرية</option>
+          {(Object.keys(AGE_RANGES) as AgeRangeKey[]).map((k) => <option key={k} value={k}>{AGE_RANGES[k].label}</option>)}
         </select>
 
-        <select value={selectedAgeRange} onChange={e => setSelectedAgeRange(e.target.value)} style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
-          <option value="">فئة السن (الكل)</option>
-          <option value="60_plus">💼 فوق السن (60 سنة فأكثر)</option>
-          <option value="50_59">🎂 من 50 إلى 59 سنة</option>
-          <option value="30_49">👔 من 30 إلى 49 سنة</option>
-          <option value="under_30">🌱 أقل من 30 سنة</option>
-        </select>
+        <button className={'emp-btn'} onClick={resetFilters}>إعادة ضبط</button>
+        <div className={'emp-resultCount'}>النتائج: <strong>{rows.length.toLocaleString('en-US')}</strong> موظف</div>
+      </section>
 
-        <button onClick={() => { setSearchTerm(''); setSelectedDept(''); setSelectedCompany(''); setSelectedType(''); setSelectedAgeRange(''); setActiveCardFilter('ALL_ACTIVE'); }} style={{ background: '#f1f5f9', color: '#334155', border: 0, padding: '8px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>إعادة ضبط</button>
-        
-        <div style={{ marginRight: 'auto', fontSize: '12px', color: '#64748b', fontWeight: 'bold' }}>
-          النتائج بالجدول: <span style={{ color: '#0f172a', fontSize: '13px' }}>{finalTableEmployees.length.toLocaleString('en-US')}</span> موظف
-        </div>
-      </div>
-
-      {/* الجدول الرئيسي */}
-      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 20px -2px rgba(0,0,0,0.03)' }}>
+      <section className={'emp-tableCard'}>
         {loading ? (
-          <div style={{ padding: '60px', textAlign: 'center', fontSize: '13px', fontWeight: 'bold', color: '#64748b' }}>جاري سحب بيانات الموظفين... ⏳</div>
+          <div className={'emp-empty'}>جاري تحميل بيانات الموظفين...</div>
+        ) : rows.length === 0 ? (
+          <div className={'emp-empty'}>لا توجد نتائج مطابقة. جرّب تغيير الفلاتر أو اضغط «إعادة ضبط».</div>
         ) : (
-          <div style={{ maxHeight: '60vh', overflowY: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'right', fontSize: '11.5px', whiteSpace: 'nowrap' }}>
-              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', zIndex: 10 }}>
-                <tr style={{ color: '#64748b' }}>
-                  <th style={{ padding: '12px', textAlign: 'center', width: '40px' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={selectedEmpIds.length === finalTableEmployees.length && finalTableEmployees.length > 0} 
-                      onChange={e => setSelectedEmpIds(e.target.checked ? finalTableEmployees.map(emp => getField(emp, 'employee_code', 'EmployeeCode')) : [])} 
-                      style={{ accentColor: '#0d9488' }} 
-                    />
+          <div className={'emp-tableScroll'}>
+            <table className={'emp-table'}>
+              <thead>
+                <tr>
+                  <th style={{ width: 40, textAlign: 'center' }}>
+                    <input type="checkbox" aria-label="تحديد الكل" checked={allSelected} onChange={(e) => toggleAll(e.target.checked)} />
                   </th>
-                  <th onClick={() => handleSort('employee_code')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الكود {renderSortArrow('employee_code')}</th>
-                  <th onClick={() => handleSort('employee_name')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الاسم {renderSortArrow('employee_name')}</th>
-                  <th onClick={() => handleSort('job_title')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الوظيفة {renderSortArrow('job_title')}</th>
-                  
-                  <th onClick={() => handleSort('department')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الإدارة {renderSortArrow('department')}</th>
-                  
-                  {/* ✨ الإضافة الجديدة للأعمدة في الـ Header */}
-                  <th onClick={() => handleSort('grad')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الدرجة {renderSortArrow('grad')}</th>
-                  <th onClick={() => handleSort('medical_category')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>الفئة الطبية {renderSortArrow('medical_category')}</th>
-
-                  <th onClick={() => handleSort('age')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>السن {renderSortArrow('age')}</th>
-                  <th onClick={() => handleSort('hiring_date')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>تاريخ التعيين {renderSortArrow('hiring_date')}</th>
-                  <th onClick={() => handleSort('contract_type')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>نوع العقد {renderSortArrow('contract_type')}</th>
-                  <th onClick={() => handleSort('contract_end_date')} style={{ padding: '12px', cursor: 'pointer', userSelect: 'none' }}>نهاية العقد {renderSortArrow('contract_end_date')}</th>
-                  <th style={{ padding: '12px', textAlign: 'center' }}>إجراءات</th>
+                  {COLUMNS.map((c) => (
+                    <th key={c.label} className={'emp-sortable'} onClick={() => c.key && toggleSort(c.key)}>
+                      {c.label}
+                      {c.key && (sortKey === c.key
+                        ? <span className={'emp-sortArrow'}>{sortDir === 'asc' ? '▲' : '▼'}</span>
+                        : <span className={'emp-sortIdle'}>↕</span>)}
+                    </th>
+                  ))}
+                  <th style={{ textAlign: 'center' }}>إجراءات</th>
                 </tr>
               </thead>
               <tbody>
-                {finalTableEmployees.map((emp, i) => {
-                  const empCode = getField(emp, 'employee_code', 'EmployeeCode');
-                  const dept = getField(emp, 'department', 'Department');
-                  const status = getField(emp, 'status', 'Status') || 'Active';
-                  const nationalId = getField(emp, 'national_id', 'NationalID');
-                  const mobile = getField(emp, 'mobile', 'Mobile');
-                  const isMissingData = !nationalId || !mobile;
-                  const cType = getField(emp, 'contract_type', 'ContractType');
-                  const endDate = getField(emp, 'contract_end_date', 'ContractEndDate');
-
-                  const isTransferredOrInactive = dept.includes('تحويلات') || status.toLowerCase() !== 'active';
-                  
-                  // 🌟 إحضار سبب الإنهاء الفعلي من الداتا بيز
-                  const termReasonFromDb = getField(emp, 'termination_reason', 'TerminationReason');
-                  const displayTermReason = termReasonFromDb || 'محول / موقوف';
-
-                  return (
-                    <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', background: isTransferredOrInactive ? '#fff5f5' : selectedEmpIds.includes(empCode) ? '#f0fdf4' : 'transparent' }}>
-                      <td style={{ padding: '10px', textAlign: 'center' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={selectedEmpIds.includes(empCode)} 
-                          onChange={e => setSelectedEmpIds(e.target.checked ? [...selectedEmpIds, empCode] : selectedEmpIds.filter(id => id !== empCode))} 
-                          style={{ accentColor: '#0d9488' }} 
-                        />
-                      </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', fontFamily: 'monospace', color: isTransferredOrInactive ? '#dc2626' : '#0d9488' }}>
-                        {empCode}
-                      </td>
-                      <td style={{ padding: '10px', fontWeight: 'bold', color: '#0f172a' }}>
-                        {getField(emp, 'employee_name', 'ArabicName')}
-                        {isMissingData && (
-                          <span title="بيانات غير مكتملة (ناقص الرقم القومي أو الموبايل)" style={{ marginRight: '6px', fontSize: '11px', cursor: 'help' }}>⚠️</span>
+                {rows.map((e) => (
+                  <tr key={e.id ?? e.code} className={cx(e.isInactive && 'emp-rowInactive', selected.includes(e.code) && 'emp-rowSelected')}>
+                    <td style={{ textAlign: 'center' }}>
+                      <input type="checkbox" aria-label={`تحديد ${e.name}`} checked={selected.includes(e.code)} onChange={(ev) => toggleOne(e.code, ev.target.checked)} />
+                    </td>
+                    {COLUMNS.map((c) => <td key={c.label}>{c.render(e)}</td>)}
+                    <td>
+                      <div className={'emp-cellActions'}>
+                        <button className={cx('emp-btn', 'emp-btnSm')} onClick={() => setModal({ type: 'profile', emp: e })}>الملف</button>
+                        <button className={cx('emp-btn', 'emp-btnSm')} onClick={() => setModal({ type: 'edit', emp: e })}>تعديل</button>
+                        {e.isInactive && (
+                          <button className={cx('emp-btn', 'emp-btnSm', 'emp-btnSuccess')} onClick={() => setModal({ type: 'reactivate', emp: e })}>إعادة تفعيل</button>
                         )}
-                        {/* 🌟 عرض سبب الإنهاء هنا بشكل ديناميكي */}
-                        {isTransferredOrInactive && (
-                          <span style={{ marginRight: '6px', background: '#fef2f2', color: '#dc2626', padding: '2px 6px', borderRadius: '4px', fontSize: '10px', border: '1px solid #fecaca' }}>
-                            {displayTermReason}
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: '10px', color: '#64748b', fontWeight: '500' }}>{getField(emp, 'job_title', 'JobTitle') || '—'}</td>
-                      
-                      <td style={{ padding: '10px', color: isTransferredOrInactive ? '#dc2626' : '#64748b', fontWeight: isTransferredOrInactive ? 'bold' : '500' }}>{dept || '—'}</td>
-                      
-                      {/* ✨ الإضافة الجديدة للخلايا */}
-                      <td style={{ padding: '10px', color: '#0f172a', fontWeight: 'bold' }}>{getField(emp, 'grad', 'Grade', 'grade') || '—'}</td>
-                      <td style={{ padding: '10px', color: '#0d9488', fontWeight: 'bold' }}>{getField(emp, 'medical_category', 'MedicalCategory') || '—'}</td>
-
-                      <td style={{ padding: '10px' }}>{renderAgeBadge(emp)}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace', color: '#0f172a' }}>{getField(emp, 'hiring_date', 'HiringDate') || '—'}</td>
-                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{cType || '—'}</td>
-                      <td style={{ padding: '10px', fontFamily: 'monospace', fontWeight: 'bold' }}>
-                        {getContractStatusBadge(cType, endDate)}
-                      </td>
-                      <td style={{ padding: '10px', textAlign: 'center', display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                        <button onClick={() => setProfileEmp(emp)} style={{ background: '#ffffff', color: '#0f172a', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>👁️ الملف</button>
-                        <button onClick={() => handleOpenEdit(emp)} style={{ background: '#ffffff', color: '#0d9488', border: '1px solid #99f6e4', padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل ✏️</button>
-                        
-                        {isTransferredOrInactive && (
-                          <button 
-                            onClick={() => {
-                              setReactivateEmp(emp);
-                              setReactivateDept('');
-                              setReactivateCompany(getField(emp, 'company', 'Company'));
-                            }} 
-                            style={{ background: '#10b981', color: '#ffffff', border: 0, padding: '4px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 'bold', cursor: 'pointer' }}
-                          >
-                            🔄 إعادة تفعيل
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
-      </div>
+      </section>
 
-      {/* 🌟 نافذة إعادة التفعيل المنبثقة */}
-      {reactivateEmp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '500px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#10b981', fontWeight: '900' }}>🔄 إعادة تفعيل الموظف</h3>
-              <button onClick={() => setReactivateEmp(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            <form onSubmit={handleConfirmReactivate} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '12px', borderRadius: '10px', fontSize: '12px', color: '#16a34a' }}>
-                سيتم إلغاء تحويل الموظف <strong>{getField(reactivateEmp, 'employee_name', 'ArabicName')}</strong> (كود: {getField(reactivateEmp, 'employee_code', 'EmployeeCode')}) وإعادته للقوة الفعالة (Active).
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>حدد الإدارة التي سيعود إليها *</label>
-                <input required list="reactDeptList" placeholder="اختر أو اكتب اسم الإدارة..." value={reactivateDept} onChange={e => setReactivateDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
-                <datalist id="reactDeptList">{deptsList.filter(d => !d.includes('تحويلات')).map((d: any, i) => <option key={i} value={d} />)}</datalist>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الشركة</label>
-                <input list="reactCompList" placeholder="الشركة التابع لها..." value={reactivateCompany} onChange={e => setReactivateCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
-                <datalist id="reactCompList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setReactivateEmp(null)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إلغاء</button>
-                <button type="submit" disabled={reactivateSaving} style={{ background: '#10b981', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: reactivateSaving ? 'not-allowed' : 'pointer' }}>
-                  {reactivateSaving ? 'جاري التحديث...' : 'تأكيد إعادة التفعيل 🟢'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {/* ---------------- النوافذ ---------------- */}
+      {modal?.type === 'add' && (
+        <EmployeeFormModal mode="add" initial={EMPTY_DRAFT} busy={busy} grades={grades} onClose={closeModal} onSubmit={addEmployee} />
+      )}
+      {modal?.type === 'edit' && (
+        <EmployeeFormModal mode="edit" initial={toDraft(modal.emp)} busy={busy} grades={grades} onClose={closeModal} onSubmit={(d) => saveEmployee(d, modal.emp.contractId)} />
+      )}
+      {modal?.type === 'profile' && (
+        <ProfileModal emp={modal.emp} onClose={closeModal} onEdit={() => setModal({ type: 'edit', emp: modal.emp })} />
+      )}
+      {modal?.type === 'terminate' && (
+        <TerminateModal employees={employees} busy={busy} onClose={closeModal} onSubmit={terminateEmployee} />
+      )}
+      {modal?.type === 'reactivate' && (
+        <ReactivateModal emp={modal.emp} departments={departments} companies={companies} busy={busy} onClose={closeModal} onSubmit={reactivateEmployee} />
+      )}
+      {modal?.type === 'bulk' && (
+        <BulkTransferModal count={selected.length} departments={departments} companies={companies} busy={busy} onClose={closeModal} onSubmit={bulkTransfer} />
       )}
 
-      {/* 👤 نافذة عرض الملف الشامل */}
-      {profileEmp && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '600px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: '900' }}>👤 الملف الوظيفي الشامل</h3>
-              <button onClick={() => setProfileEmp(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '12px' }}>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الكود:</strong> {getField(profileEmp, 'employee_code', 'EmployeeCode')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الاسم:</strong> {getField(profileEmp, 'employee_name', 'ArabicName')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الرقم القومي:</strong> {getField(profileEmp, 'national_id', 'NationalID') || 'غير مسجل ⚠️'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>تاريخ الميلاد:</strong> {getField(profileEmp, 'birth_date', 'BirthDate') || 'غير مسجل'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>السن الحالي:</strong> {getEmployeeAge(profileEmp) ? `${getEmployeeAge(profileEmp)} سنة` : 'غير مسجل'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الموبايل:</strong> {getField(profileEmp, 'mobile', 'Mobile') || 'غير مسجل ⚠️'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الإدارة:</strong> {getField(profileEmp, 'department', 'Department')}</div>
-              
-              {/* ✨ تم الإضافة هنا أيضاً للملف الشامل */}
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الدرجة:</strong> {getField(profileEmp, 'grad', 'Grade', 'grade') || 'غير مسجل'}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الفئة الطبية:</strong> {getField(profileEmp, 'medical_category', 'MedicalCategory') || 'غير مسجل'}</div>
-
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الشركة:</strong> {getField(profileEmp, 'company', 'Company')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>الوظيفة:</strong> {getField(profileEmp, 'job_title', 'JobTitle')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>تاريخ التعيين:</strong> {getField(profileEmp, 'hiring_date', 'HiringDate')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>نوع العقد:</strong> {getField(profileEmp, 'contract_type', 'ContractType')}</div>
-              <div style={{ background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #f1f5f9' }}><strong>نهاية العقد:</strong> {getField(profileEmp, 'contract_end_date', 'ContractEndDate') || '—'}</div>
-            </div>
-
-            <div style={{ marginTop: '20px', textAlign: 'left' }}>
-              <button onClick={() => { handleOpenEdit(profileEmp); setProfileEmp(null); }} style={{ background: '#0d9488', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>تعديل البيانات ✏️</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🚫 نافذة إنهاء الخدمة */}
-      {showTermModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '550px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#dc2626', fontWeight: '900' }}>🚫 إنهاء خدمة / تحويل للانتظار</h3>
-              <button onClick={() => { setShowTermModal(false); setSelectedTermEmp(null); }} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            <form onSubmit={handleConfirmTermination} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>البحث السريع عن الموظف:</label>
-                <div style={{ position: 'relative' }}>
-                  <input 
-                    type="text"
-                    placeholder="اكتب كود الموظف، اسمه، أو إدارته..."
-                    value={termSearch}
-                    onChange={e => { setTermSearch(e.target.value); setSelectedTermEmp(null); }}
-                    style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }}
-                  />
-
-                  {termSearchResults.length > 0 && !selectedTermEmp && (
-                    <div style={{ position: 'absolute', top: '100%', right: 0, left: 0, background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', marginTop: '4px', maxHeight: '180px', overflowY: 'auto', zIndex: 100, boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
-                      {termSearchResults.map((emp, i) => (
-                        <div 
-                          key={i} 
-                          onClick={() => { 
-                            setSelectedTermEmp(emp); 
-                            setTermSearch(`${getField(emp, 'employee_code', 'EmployeeCode')} - ${getField(emp, 'employee_name', 'ArabicName')}`); 
-                          }}
-                          style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: '11.5px', transition: 'background 0.2s' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
-                          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <strong style={{ color: '#0d9488' }}>[{getField(emp, 'employee_code', 'EmployeeCode')}]</strong> {getField(emp, 'employee_name', 'ArabicName')} 
-                          <span style={{ color: '#64748b', fontSize: '10.5px', marginRight: '6px' }}>({getField(emp, 'department', 'Department') || 'بدون إدارة'})</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {selectedTermEmp && (
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '10px 12px', borderRadius: '8px', fontSize: '11.5px', color: '#dc2626', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong>الموظف المحدّد:</strong> {getField(selectedTermEmp, 'employee_name', 'ArabicName')} (كود: {getField(selectedTermEmp, 'employee_code', 'EmployeeCode')})
-                  </div>
-                  <button type="button" onClick={() => { setSelectedTermEmp(null); setTermSearch(''); }} style={{ background: 'transparent', border: 0, color: '#dc2626', cursor: 'pointer', fontWeight: 'bold' }}>تغيير ✕</button>
-                </div>
-              )}
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>سبب إنهاء الخدمة / التحويل:</label>
-                <select value={termReason} onChange={e => setTermReason(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none' }}>
-                  {TERMINATION_REASONS.map((reason, idx) => (
-                    <option key={idx} value={reason}>{reason}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>تاريخ إجراء العمل:</label>
-                <input type="date" required value={termDate} onChange={e => setTermDate(e.target.value)} style={{ width: '100%', padding: '9px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
-                <button type="button" onClick={() => setShowTermModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إلغاء</button>
-                <button type="submit" disabled={termSaving || !selectedTermEmp} style={{ background: '#dc2626', color: '#fff', border: 0, padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: (termSaving || !selectedTermEmp) ? 'not-allowed' : 'pointer', opacity: (termSaving || !selectedTermEmp) ? 0.6 : 1 }}>
-                  {termSaving ? 'جاري الحفظ...' : 'تحويل الموظف لـ (تحويلات تحت الاعتماد) 🚫'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 🔄 نافذة النقل المجمع */}
-      {showBulkTransferModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '500px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '16px', color: '#2563eb', fontWeight: '900' }}>🔄 النقل المجمع للموظفين المحددين</h3>
-              <button onClick={() => setShowBulkTransferModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            <form onSubmit={handleConfirmBulkTransfer} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ fontSize: '12px', color: '#64748b' }}>
-                سيتم تطبيق البيانات المحددة على عدد <strong>{selectedEmpIds.length}</strong> موظف.
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الإدارة الجديدة:</label>
-                <input list="bulkDeptList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkDept} onChange={e => setBulkDept(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
-                <datalist id="bulkDeptList">{deptsList.map((d: any, i) => <option key={i} value={d} />)}</datalist>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '11px', color: '#64748b', fontWeight: 'bold', marginBottom: '6px' }}>الشركة الجديدة:</label>
-                <input list="bulkCompList" placeholder="اترك فارغاً إذا لم ترد التغيير..." value={bulkCompany} onChange={e => setBulkCompany(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', boxSizing: 'border-box' }} />
-                <datalist id="bulkCompList">{compsList.map((c: any, i) => <option key={i} value={c} />)}</datalist>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
-                <button type="button" onClick={() => setShowBulkTransferModal(false)} style={{ background: '#f1f5f9', border: '1px solid #cbd5e1', padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer', color: '#334155' }}>إلغاء</button>
-                <button type="submit" disabled={bulkSaving} style={{ background: '#2563eb', color: '#fff', border: 0, padding: '10px 18px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: bulkSaving ? 'not-allowed' : 'pointer' }}>
-                  {bulkSaving ? 'جاري التحديث...' : 'تأكيد النقل المجمع 🔄'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ✏️ نافذة التعديل الفردي (الشاملة) */}
-      {editData && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '800px', maxHeight: '90vh', overflowY: 'auto', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>تعديل بيانات الموظف (شامل)</h3>
-              <button onClick={() => setEditData(null)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-
-            <form onSubmit={handleSaveEdit}>
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#0d9488', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', fontWeight: 'bold' }}>بيانات السجل الأساسي (Employees)</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  
-                  {/* الحقول النصية العادية */}
-                  {[
-                    { label: 'الكود', key1: 'employee_code', key2: 'EmployeeCode' },
-                    { label: 'الاسم العربي', key1: 'employee_name', key2: 'ArabicName' },
-                    { label: 'الرقم القومي', key1: 'national_id', key2: 'NationalID' },
-                    { label: 'الإدارة', key1: 'department', key2: 'Department' },
-                    { label: 'الشركة', key1: 'company', key2: 'Company' },
-                    { label: 'الوظيفة', key1: 'job_title', key2: 'JobTitle' },
-                    { label: 'الموبايل', key1: 'mobile', key2: 'Mobile' },
-                    { label: 'البريد الإلكتروني', key1: 'email', key2: 'Email' },
-                    { label: 'المدير المباشر', key1: 'manager', key2: 'Manager' },
-                  ].map(field => (
-                    <div key={field.label}>
-                      <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>{field.label}</label>
-                      <input type="text" value={getField(editData.emp, field.key1, field.key2)} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, [field.key1]: e.target.value, [field.key2]: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
-                    </div>
-                  ))}
-
-                  {/* حقل تاريخ الميلاد */}
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ الميلاد</label>
-                    <input type="date" value={getField(editData.emp, 'birth_date', 'BirthDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, birth_date: e.target.value, BirthDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
-                  </div>
-
-                </div>
-              </div>
-
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '16px' }}>
-                <h4 style={{ margin: '0 0 16px', fontSize: '14px', color: '#2563eb', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', fontWeight: 'bold' }}>بيانات التعاقد والتجديد (Contracts & Renewals)</h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ التعيين</label>
-                    <input type="date" value={getField(editData.emp, 'hiring_date', 'HiringDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, hiring_date: e.target.value, HiringDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>نوع العقد</label>
-                    <select value={getField(editData.emp, 'contract_type', 'ContractType')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_type: e.target.value, ContractType: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a', fontWeight: 'bold' }}>
-                      {STANDARD_CONTRACT_TYPES.map((t, idx) => (
-                        <option key={idx} value={t}>{t}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>تاريخ نهاية العقد</label>
-                    <input type="date" value={getField(editData.emp, 'contract_end_date', 'ContractEndDate')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, contract_end_date: e.target.value, ContractEndDate: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }} />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: '11px', color: '#64748b', marginBottom: '6px', fontWeight: 'bold' }}>حالة الموظف (Status)</label>
-                    <select value={getField(editData.emp, 'status', 'Status')} onChange={e => setEditData({ ...editData, emp: { ...editData.emp, status: e.target.value, Status: e.target.value } })} style={{ width: '100%', padding: '8px 10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '12px', outline: 'none', color: '#0f172a' }}>
-                      <option value="Active">Active (نشط)</option><option value="Inactive">Inactive (منتهي الخدمة)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" onClick={() => setEditData(null)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" disabled={editData.saving} style={{ background: editData.saving ? '#64748b' : '#0d9488', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: editData.saving ? 'not-allowed' : 'pointer', opacity: editData.saving ? 0.7 : 1 }}>
-                  {editData.saving ? 'جاري الحفظ...' : 'حفظ كافة التعديلات'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ➕ نافذة الإضافة المباشرة */}
-      {showAddModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.7)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '20px' }}>
-          <div style={{ width: '700px', background: '#ffffff', borderRadius: '20px', padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-              <h3 style={{ margin: 0, fontSize: '18px', color: '#0f172a', fontWeight: '900' }}>إضافة موظف جديد</h3>
-              <button onClick={() => setShowAddModal(false)} style={{ background: '#fef2f2', border: 0, color: '#dc2626', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>إغلاق ✕</button>
-            </div>
-            
-            <form onSubmit={handleAddEmployee}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>كود الموظف *</label><input required value={newEmp.employee_code} onChange={e=>setNewEmp({...newEmp, employee_code: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الاسم *</label><input required value={newEmp.employee_name} onChange={e=>setNewEmp({...newEmp, employee_name: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الرقم القومي</label><input value={newEmp.national_id} onChange={e=>setNewEmp({...newEmp, national_id: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ الميلاد</label><input type="date" value={newEmp.birth_date} onChange={e=>setNewEmp({...newEmp, birth_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الإدارة</label><input value={newEmp.department} onChange={e=>setNewEmp({...newEmp, department: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الشركة</label><input value={newEmp.company} onChange={e=>setNewEmp({...newEmp, company: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الوظيفة</label><input value={newEmp.job_title} onChange={e=>setNewEmp({...newEmp, job_title: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ التعيين</label><input type="date" value={newEmp.hiring_date} onChange={e=>setNewEmp({...newEmp, hiring_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-                
-                <div>
-                  <label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>نوع العقد</label>
-                  <select value={newEmp.contract_type} onChange={e=>setNewEmp({...newEmp, contract_type: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a', fontWeight: 'bold' }}>
-                    {STANDARD_CONTRACT_TYPES.map((t, idx) => (
-                      <option key={idx} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>تاريخ نهاية العقد (للعقود المحددة)</label><input type="date" disabled={newEmp.contract_type === 'دائم'} value={newEmp.contract_end_date} onChange={e=>setNewEmp({...newEmp, contract_end_date: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', background: newEmp.contract_type === 'دائم' ? '#f8fafc' : '#ffffff', color:'#0f172a' }} /></div>
-
-                <div><label style={{ display:'block', fontSize:'11px', color:'#64748b', marginBottom:'6px', fontWeight:'bold' }}>الموبايل</label><input type="text" value={newEmp.mobile} onChange={e=>setNewEmp({...newEmp, mobile: e.target.value})} style={{ width:'100%', padding:'10px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'12px', outline:'none', color:'#0f172a' }} /></div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-                <button type="button" onClick={() => setShowAddModal(false)} style={{ background: '#f1f5f9', color: '#334155', border: '1px solid #cbd5e1', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إلغاء</button>
-                <button type="submit" style={{ background: '#0d9488', color: '#fff', border: 0, padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', fontSize: '12px', cursor: 'pointer' }}>إضافة الموظف وعقده</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
+      {toast && <div role="status" className={cx('emp-toast', toast.kind === 'ok' ? 'emp-toastOk' : 'emp-toastError')}>{toast.text}</div>}
     </div>
+  );
+}
+
+/* ================================================================== */
+/*  باقي النوافذ                                                        */
+/* ================================================================== */
+
+function ProfileModal({ emp, onClose, onEdit }: { emp: Employee; onClose: () => void; onEdit: () => void }) {
+  const items: [string, string][] = [
+    ['الكود', emp.code],
+    ['الاسم', emp.name],
+    ['الرقم القومي', emp.nationalId || 'غير مسجل'],
+    ['تاريخ الميلاد', emp.birthDate || 'غير مسجل'],
+    ['السن', emp.age !== null ? `${emp.age} سنة` : 'غير مسجل'],
+    ['الموبايل', emp.mobile || 'غير مسجل'],
+    ['الإدارة', emp.department || '—'],
+    ['الشركة', emp.company || '—'],
+    ['الوظيفة', emp.jobTitle || '—'],
+    ['الدرجة', emp.grade || 'غير مسجل'],
+    ['الفئة الطبية', emp.medicalCategory || 'غير مسجل'],
+    ['المدير المباشر', emp.manager || '—'],
+    ['تاريخ التعيين', emp.hiringDate || '—'],
+    ['نوع العقد', emp.contractType || '—'],
+    ['نهاية العقد', emp.contractEndDate || '—'],
+  ];
+  return (
+    <Modal title="الملف الوظيفي" onClose={onClose} width={640}>
+      <div className={'emp-profileGrid'}>
+        {items.map(([label, value]) => (
+          <div key={label} className={'emp-profileItem'}><span>{label}</span>{value}</div>
+        ))}
+      </div>
+      <div className={'emp-modalFoot'}>
+        <button className={cx('emp-btn', 'emp-btnPrimary')} onClick={onEdit}>تعديل البيانات</button>
+      </div>
+    </Modal>
+  );
+}
+
+function TerminateModal({ employees, busy, onClose, onSubmit }: {
+  employees: Employee[]; busy: boolean; onClose: () => void;
+  onSubmit: (emp: Employee, reason: string, date: string) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<Employee | null>(null);
+  const [reason, setReason] = useState<string>(TERMINATION_REASONS[2]);
+  const [date, setDate] = useState(toISODate(new Date()));
+
+  const results = useMemo(() => {
+    const t = query.trim().toLowerCase();
+    if (!t || picked) return [];
+    return employees
+      .filter((e) => e.code.toLowerCase().includes(t) || e.name.toLowerCase().includes(t) || e.department.toLowerCase().includes(t))
+      .slice(0, 8);
+  }, [employees, query, picked]);
+
+  const submit = (e: FormEvent) => { e.preventDefault(); if (picked) onSubmit(picked, reason, date); };
+
+  return (
+    <Modal title="إنهاء خدمة / تحويل للانتظار" onClose={onClose}>
+      <form className={'emp-form'} onSubmit={submit}>
+        <Field label="ابحث عن الموظف">
+          <div style={{ position: 'relative' }}>
+            <input className={'emp-input'} placeholder="الكود أو الاسم أو الإدارة" value={query} onChange={(e) => { setQuery(e.target.value); setPicked(null); }} />
+            {results.length > 0 && (
+              <div className={'emp-suggest'}>
+                {results.map((e) => (
+                  <button type="button" key={e.code} className={'emp-suggestItem'} onClick={() => { setPicked(e); setQuery(`${e.code} - ${e.name}`); }}>
+                    <strong>[{e.code}]</strong> {e.name} <span className={'emp-muted'}>({e.department || 'بدون إدارة'})</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </Field>
+
+        {picked && <div className={cx('emp-notice', 'emp-noticeDanger')}>الموظف المحدد: <strong>{picked.name}</strong> (كود {picked.code})</div>}
+
+        <Field label="السبب">
+          <select className={'emp-select'} value={reason} onChange={(e) => setReason(e.target.value)}>
+            {TERMINATION_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+        </Field>
+        <Field label="تاريخ الإجراء">
+          <input className={'emp-input'} type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+        </Field>
+
+        <div className={'emp-modalFoot'}>
+          <button type="button" className={'emp-btn'} onClick={onClose}>إلغاء</button>
+          <button type="submit" className={cx('emp-btn', 'emp-btnDanger')} disabled={busy || !picked}>
+            {busy ? 'جاري الحفظ...' : 'تأكيد التحويل'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function ReactivateModal({ emp, departments, companies, busy, onClose, onSubmit }: {
+  emp: Employee; departments: string[]; companies: string[]; busy: boolean; onClose: () => void;
+  onSubmit: (emp: Employee, dept: string, company: string) => void;
+}) {
+  const [dept, setDept] = useState('');
+  const [company, setCompany] = useState(emp.company);
+  const submit = (e: FormEvent) => { e.preventDefault(); onSubmit(emp, dept.trim(), company.trim()); };
+
+  return (
+    <Modal title="إعادة تفعيل الموظف" onClose={onClose}>
+      <form className={'emp-form'} onSubmit={submit}>
+        <div className={'emp-notice'}>سيعود <strong>{emp.name}</strong> (كود {emp.code}) إلى القوة الفعالة.</div>
+        <Field label="الإدارة التي سيعود إليها *">
+          <input className={'emp-input'} required list="reactDepts" placeholder="اختر أو اكتب اسم الإدارة" value={dept} onChange={(e) => setDept(e.target.value)} />
+          <datalist id="reactDepts">{departments.filter((d) => !d.includes('تحويلات')).map((d) => <option key={d} value={d} />)}</datalist>
+        </Field>
+        <Field label="الشركة">
+          <input className={'emp-input'} list="reactCompanies" value={company} onChange={(e) => setCompany(e.target.value)} />
+          <datalist id="reactCompanies">{companies.map((c) => <option key={c} value={c} />)}</datalist>
+        </Field>
+        <div className={'emp-modalFoot'}>
+          <button type="button" className={'emp-btn'} onClick={onClose}>إلغاء</button>
+          <button type="submit" className={cx('emp-btn', 'emp-btnSuccess')} disabled={busy}>{busy ? 'جاري التحديث...' : 'تأكيد إعادة التفعيل'}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function BulkTransferModal({ count, departments, companies, busy, onClose, onSubmit }: {
+  count: number; departments: string[]; companies: string[]; busy: boolean; onClose: () => void;
+  onSubmit: (dept: string, company: string) => void;
+}) {
+  const [dept, setDept] = useState('');
+  const [company, setCompany] = useState('');
+  const submit = (e: FormEvent) => { e.preventDefault(); onSubmit(dept.trim(), company.trim()); };
+
+  return (
+    <Modal title="النقل المجمع" onClose={onClose}>
+      <form className={'emp-form'} onSubmit={submit}>
+        <div className={'emp-notice'}>سيتم تطبيق التغيير على <strong>{count}</strong> موظف. اترك أي حقل فارغاً لو لا تريد تغييره.</div>
+        <Field label="الإدارة الجديدة">
+          <input className={'emp-input'} list="bulkDepts" value={dept} onChange={(e) => setDept(e.target.value)} />
+          <datalist id="bulkDepts">{departments.map((d) => <option key={d} value={d} />)}</datalist>
+        </Field>
+        <Field label="الشركة الجديدة">
+          <input className={'emp-input'} list="bulkCompanies" value={company} onChange={(e) => setCompany(e.target.value)} />
+          <datalist id="bulkCompanies">{companies.map((c) => <option key={c} value={c} />)}</datalist>
+        </Field>
+        <div className={'emp-modalFoot'}>
+          <button type="button" className={'emp-btn'} onClick={onClose}>إلغاء</button>
+          <button type="submit" className={cx('emp-btn', 'emp-btnPrimary')} disabled={busy || (!dept.trim() && !company.trim())}>
+            {busy ? 'جاري التحديث...' : 'تأكيد النقل'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
