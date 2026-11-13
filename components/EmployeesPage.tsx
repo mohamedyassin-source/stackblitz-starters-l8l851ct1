@@ -1270,4 +1270,19 @@ function BulkTransferModal({ count, departments, companies, busy, onClose, onSub
         <div className={'emp-notice'}>سيتم تطبيق التغيير على <strong>{count}</strong> موظف. اترك أي حقل فارغاً لو لا تريد تغييره.</div>
         <Field label="الإدارة الجديدة">
           <input className={'emp-input'} list="bulkDepts" value={dept} onChange={(e) => setDept(e.target.value)} />
-          <datalist id="bulkDepts">{depar
+          <datalist id="bulkDepts">{departments.map((d) => <option key={d} value={d} />)}</datalist>
+        </Field>
+        <Field label="الشركة الجديدة">
+          <input className={'emp-input'} list="bulkCompanies" value={company} onChange={(e) => setCompany(e.target.value)} />
+          <datalist id="bulkCompanies">{companies.map((c) => <option key={c} value={c} />)}</datalist>
+        </Field>
+        <div className={'emp-modalFoot'}>
+          <button type="button" className={'emp-btn'} onClick={onClose}>إلغاء</button>
+          <button type="submit" className={cx('emp-btn', 'emp-btnPrimary')} disabled={busy || (!dept.trim() && !company.trim())}>
+            {busy ? 'جاري التحديث...' : 'تأكيد النقل'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
