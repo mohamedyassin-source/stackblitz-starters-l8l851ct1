@@ -434,6 +434,7 @@ const EMP_CSS = `
 .emp-badgeGreen { background: var(--green-soft); color: var(--green); border-color: #bde5c9; }
 .emp-badgeAmber { background: var(--amber-soft); color: var(--amber); border-color: #f6dc8a; }
 .emp-badgeRed { background: var(--rose-soft); color: var(--rose); border-color: #f8c2cd; }
+.emp-badgeMedical { background: #15803d; color: #fff; border-color: #15803d; font-weight: 800; padding: 3px 10px; }
 .emp-badgeGray { background: #f1f4f7; color: #334155; border-color: var(--line); }
 
 /* ---------- النوافذ المنبثقة ---------- */
@@ -582,7 +583,7 @@ const COLUMNS: Column[] = [
   { key: 'jobTitle', label: 'الوظيفة', render: (e) => e.jobTitle || <Dash /> },
   { key: 'department', label: 'الإدارة', render: (e) => e.department || <Dash /> },
   { key: 'grade', label: 'الدرجة', render: (e) => e.grade || <Dash /> },
-  { key: 'medicalCategory', label: 'الفئة الطبية', render: (e) => e.medicalCategory || <Dash /> },
+  { key: 'medicalCategory', label: 'الفئة الطبية', render: (e) => e.medicalCategory ? <span className={cx('emp-badge', 'emp-badgeMedical')}>{e.medicalCategory}</span> : <Dash /> },
   { key: 'age', label: 'السن', render: (e) => <AgeBadge age={e.age} /> },
   { key: 'hiringDate', label: 'تاريخ التعيين', render: (e) => <span className={'emp-mono'}>{e.hiringDate || '—'}</span> },
   { key: 'contractType', label: 'نوع العقد', render: (e) => e.contractType || <Dash /> },
@@ -735,6 +736,7 @@ export default function EmployeesPage() {
   const [company, setCompany] = useState('');
   const [contractType, setContractType] = useState('');
   const [ageRange, setAgeRange] = useState<AgeRangeKey | ''>('');
+  const [medical, setMedical] = useState('');
 
   const [sortKey, setSortKey] = useState<SortKey>('code');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -773,6 +775,7 @@ export default function EmployeesPage() {
   const departments = useMemo(() => unique((e) => e.department), [employees]);
   const companies = useMemo(() => unique((e) => e.company), [employees]);
   const grades = useMemo(() => unique((e) => e.grade), [employees]);
+  const medicalCategories = useMemo(() => unique((e) => e.medicalCategory).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })), [employees]);
 
   /* ---------- الفلترة ---------- */
   const filtered = useMemo(() => {
@@ -783,9 +786,10 @@ export default function EmployeesPage() {
       if (company && !e.company.toLowerCase().includes(company.toLowerCase())) return false;
       if (contractType && !e.contractType.includes(contractType)) return false;
       if (ageRange && !(e.age !== null && AGE_RANGES[ageRange].test(e.age))) return false;
+      if (medical && e.medicalCategory !== medical) return false;
       return true;
     });
-  }, [employees, search, dept, company, contractType, ageRange]);
+  }, [employees, search, dept, company, contractType, ageRange, medical]);
 
   const year = new Date().getFullYear();
 
@@ -828,7 +832,7 @@ export default function EmployeesPage() {
     setSelected((p) => (checked ? [...p, code] : p.filter((c) => c !== code)));
 
   const resetFilters = () => {
-    setSearch(''); setDept(''); setCompany(''); setContractType(''); setAgeRange(''); setActiveCard('ALL_ACTIVE');
+    setSearch(''); setDept(''); setCompany(''); setContractType(''); setAgeRange(''); setMedical(''); setActiveCard('ALL_ACTIVE');
   };
 
   /* ---------- العمليات على قاعدة البيانات ---------- */
@@ -1046,6 +1050,10 @@ export default function EmployeesPage() {
           <option value="">كل الفئات العمرية</option>
           {(Object.keys(AGE_RANGES) as AgeRangeKey[]).map((k) => <option key={k} value={k}>{AGE_RANGES[k].label}</option>)}
         </select>
+        <select className={'emp-select'} value={medical} onChange={(e) => setMedical(e.target.value)}>
+          <option value="">كل الفئات الطبية</option>
+          {medicalCategories.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
 
         <button className={'emp-btn'} onClick={resetFilters}>إعادة ضبط</button>
         <div className={'emp-resultCount'}>النتائج: <strong>{rows.length.toLocaleString('en-US')}</strong> موظف</div>
@@ -1262,19 +1270,4 @@ function BulkTransferModal({ count, departments, companies, busy, onClose, onSub
         <div className={'emp-notice'}>سيتم تطبيق التغيير على <strong>{count}</strong> موظف. اترك أي حقل فارغاً لو لا تريد تغييره.</div>
         <Field label="الإدارة الجديدة">
           <input className={'emp-input'} list="bulkDepts" value={dept} onChange={(e) => setDept(e.target.value)} />
-          <datalist id="bulkDepts">{departments.map((d) => <option key={d} value={d} />)}</datalist>
-        </Field>
-        <Field label="الشركة الجديدة">
-          <input className={'emp-input'} list="bulkCompanies" value={company} onChange={(e) => setCompany(e.target.value)} />
-          <datalist id="bulkCompanies">{companies.map((c) => <option key={c} value={c} />)}</datalist>
-        </Field>
-        <div className={'emp-modalFoot'}>
-          <button type="button" className={'emp-btn'} onClick={onClose}>إلغاء</button>
-          <button type="submit" className={cx('emp-btn', 'emp-btnPrimary')} disabled={busy || (!dept.trim() && !company.trim())}>
-            {busy ? 'جاري التحديث...' : 'تأكيد النقل'}
-          </button>
-        </div>
-      </form>
-    </Modal>
-  );
-}
+          <datalist id="bulkDepts">{depar
