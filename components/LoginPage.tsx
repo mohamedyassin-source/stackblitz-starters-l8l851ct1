@@ -134,7 +134,7 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
             {requirePasswordChange ? 'تحديث كلمة السر' : 'مجموعة شركات المراسم الدولية'}
           </h2>
           <p style={{ margin: 0, fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>
-            {requirePasswordChange ? `أهلاً بك ${tempUserData?.employee_name || tempUserData?.username || ''}، لازم تغيّر كلمة السر قبل المتابعة` : 'بوابة تسجيل الدخول إلى نظام إدارة العقود'}
+            {requirePasswordChange ? `Welcome ${tempUserData?.employee_name || tempUserData?.username || ''}, you must change your password before proceeding` : 'Welcome to the Contract Management System'}
           </p>
         </div>
 
